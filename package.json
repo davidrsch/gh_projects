@@ -1,0 +1,55 @@
+{
+  "name": "github-projects",
+  "displayName": "Github Projects",
+  "description": "Lists unique GitHub Projects (Projects v2) associated with repositories in your workspace.",
+  "version": "0.0.1",
+  "publisher": "your-publisher",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ghProjects.refresh",
+        "title": "GitHub: Refresh Projects"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "projects",
+          "title": "projects",
+          "icon": "./media/projects.svg"
+        }
+      ]
+    },
+    "views": {
+      "projects": [
+        {
+          "id": "projects",
+          "name": "projects",
+          "icon": "./media/projects.svg"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "echo 'No lint configured'"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@octokit/graphql": "^7.0.2",
+    "p-map": "^7.0.4"
+  }
+}
