@@ -5,4 +5,14 @@ export interface ProjectNode {
   repoPath: string;
   owner: string;
   repo: string;
+  // Optional metadata for richer UI
+  number?: number;
+  public?: boolean;
+  ownerLogin?: string;
+  repoCount?: number;
+  views?: Array<{
+    id: string;
+    name: string;
+    number: number;
+  }>;
 }

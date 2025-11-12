@@ -72,7 +72,16 @@ async function fetchProjects(owner, repo, token, output) {
     query($owner:String!,$repo:String!,$after:String){
       repository(owner:$owner,name:$repo){
         projectsV2(first:100,after:$after){
-          nodes { id title url }
+          nodes {
+            id
+            title
+            url
+            number
+            public
+            owner { __typename ... on User { login } ... on Organization { login } }
+            repositories { totalCount }
+            views(first: 20) { nodes { id name number } }
+          }
           pageInfo { hasNextPage endCursor }
         }
       }
@@ -87,8 +96,22 @@ async function fetchProjects(owner, repo, token, output) {
             if (!conn)
                 break;
             for (const n of conn.nodes ?? []) {
-                if (n?.id && n?.title && n?.url)
-                    results.push({ ...n, owner, repo, repoPath: '' });
+                if (n?.id && n?.title && n?.url) {
+                    const node = {
+                        id: n.id,
+                        title: n.title,
+                        url: n.url,
+                        owner,
+                        repo,
+                        repoPath: '',
+                        number: n.number,
+                        public: n.public,
+                        ownerLogin: n.owner?.login,
+                        repoCount: n.repositories?.totalCount,
+                        views: n.views?.nodes?.map((v) => ({ id: v.id, name: v.name, number: v.number })) ?? [],
+                    };
+                    results.push(node);
+                }
             }
             if (!conn.pageInfo?.hasNextPage || !conn.pageInfo.endCursor)
                 break;

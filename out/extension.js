@@ -37,10 +37,11 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const projectsProvider_1 = require("./providers/projectsProvider");
+const webview_1 = require("./webview");
 function activate(context) {
     const output = vscode.window.createOutputChannel('Github Projects');
     const provider = new projectsProvider_1.ProjectsProvider(output);
-    context.subscriptions.push(output, vscode.window.registerTreeDataProvider('projects', provider), vscode.commands.registerCommand('ghProjects.refresh', () => provider.refresh()));
+    context.subscriptions.push(output, vscode.window.registerTreeDataProvider('projects', provider), vscode.commands.registerCommand('ghProjects.refresh', () => provider.refresh()), vscode.commands.registerCommand('ghProjects.openProject', (node) => (0, webview_1.openProjectWebview)(context, node)));
 }
 function deactivate() { }
 //# sourceMappingURL=extension.js.map

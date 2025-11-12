@@ -16,6 +16,10 @@
       {
         "command": "ghProjects.refresh",
         "title": "GitHub: Refresh Projects"
+      },
+      {
+        "command": "ghProjects.openProject",
+        "title": "GitHub: Open Project"
       }
     ],
     "viewsContainers": {

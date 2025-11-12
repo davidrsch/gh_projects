@@ -16,8 +16,13 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectNode> {
   getTreeItem(e: ProjectNode): vscode.TreeItem {
     const item = new vscode.TreeItem(e.title, vscode.TreeItemCollapsibleState.None);
     item.tooltip = `${e.url}\n[${e.owner}/${e.repo}] ${e.repoPath}`;
-    item.description = e.url;
-    item.command = { command: 'vscode.open', title: 'Open Project', arguments: [vscode.Uri.parse(e.url)] };
+    const meta: string[] = [];
+    if (e.number) meta.push(`#${e.number}`);
+    if (typeof e.public === 'boolean') meta.push(e.public ? 'public' : 'private');
+    if (e.ownerLogin) meta.push(`owner:${e.ownerLogin}`);
+    if (typeof e.repoCount === 'number') meta.push(`repos:${e.repoCount}`);
+    item.description = meta.join(' • ') || e.url;
+    item.command = { command: 'ghProjects.openProject', title: 'Open Project', arguments: [e] };
     return item;
   }
 
