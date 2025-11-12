@@ -74,4 +74,9 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectNode> {
     output.appendLine(`\n[summary] unique projects: ${unique.size}`);
     return Array.from(unique.values()).sort((a, b) => a.title.localeCompare(b.title));
   }
+
+  // Expose cached projects to enable QuickPick when running commands from the palette
+  getCachedProjects(): ProjectNode[] {
+    return Array.from(this.cache.values());
+  }
 }

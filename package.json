@@ -20,8 +20,21 @@
       {
         "command": "ghProjects.openProject",
         "title": "GitHub: Open Project"
+      },
+      {
+        "command": "ghProjects.testTableQueries",
+        "title": "GitHub: Test Project Table Queries"
       }
     ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "ghProjects.testTableQueries",
+          "when": "view == projects",
+          "group": "inline"
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -54,6 +67,7 @@
   },
   "dependencies": {
     "@octokit/graphql": "^7.0.2",
-    "p-map": "^7.0.4"
+    "p-map": "^7.0.4",
+    "@vscode-elements/elements": "^2.3.1"
   }
 }

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { ProjectNode } from './model';
+import { fetchTableMeta, fetchTableItems } from './github/tables';
 
 function getNonce() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -25,6 +26,7 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(context.extensionUri, 'node_modules', '@vscode-elements', 'elements', 'dist'),
+        vscode.Uri.joinPath(context.extensionUri, 'media'),
       ],
     }
   );
@@ -39,6 +41,7 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
     'bundled.js'
   );
   const scriptUri = webview.asWebviewUri(bundledPath);
+  const appScriptUri = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'app', 'main.js'));
   const nonce = getNonce();
 
   const title = escapeHtml(project.title);
@@ -50,7 +53,6 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
   if (typeof project.repoCount === 'number') metaParts.push(`linked repos: ${project.repoCount}`);
   const meta = metaParts.join(' • ');
   const views = project.views ?? [];
-
   panel.webview.html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -65,6 +67,8 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
                  connect-src ${webview.cspSource} https:;" />
   <title>Project: ${title}</title>
   <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}">window.WEBVIEW_STATE = ${JSON.stringify({ projectId: project.id, views })};</script>
+  <script type="module" nonce="${nonce}" src="${appScriptUri}"></script>
   <style>
     html, body {
       margin: 0;
@@ -75,6 +79,33 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
     }
     .container { padding: 12px; }
     .meta { color: var(--vscode-descriptionForeground); }
+    .table-view a { color: var(--vscode-textLink-foreground); text-decoration: none; }
+    .table-view a:hover { text-decoration: underline; }
+
+    /* Make tab header scroll gracefully when there are many/long tabs */
+    vscode-tabs::part(header) {
+      display: flex;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
+      scrollbar-width: thin;
+      scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+    }
+    /* Ensure each tab doesn't stretch; allow ellipsis for long names */
+    vscode-tabs::part(tab) {
+      flex: 0 0 auto;
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    /* WebKit scrollbar styling for the header */
+    vscode-tabs::part(header)::-webkit-scrollbar { height: 8px; }
+    vscode-tabs::part(header)::-webkit-scrollbar-track { background: transparent; }
+    vscode-tabs::part(header)::-webkit-scrollbar-thumb {
+      background: var(--vscode-scrollbarSlider-background);
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -95,64 +126,55 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
         <vscode-tab-panel>
           <div class="container">
             <h3>${escapeHtml(v.name)} (#${escapeHtml(v.number)})</h3>
-            <p>This is a placeholder for view content.</p>
+            <p class="meta">Select this tab to load content…</p>
+            <div id="view-${escapeHtml(v.number)}" class="table-view" data-view-number="${escapeHtml(v.number)}"></div>
           </div>
         </vscode-tab-panel>
       `)
       .join('\n')}
   </vscode-tabs>
-
-  <script nonce="${nonce}">
-    const tabs = document.getElementById('tabs');
-
-    function applyScrollableHeader() {
-      const root = tabs.shadowRoot;
-      if (!root) return false;
-      const header = root.querySelector('[part="header"], .header, [role="tablist"]');
-      if (!header) return false;
-
-      // Enable scrolling and layout fixes
-      header.style.display = 'flex';
-      header.style.overflowX = 'auto';
-      header.style.overflowY = 'hidden';
-      header.style.whiteSpace = 'nowrap';
-      header.style.scrollbarWidth = 'thin';
-      header.style.scrollbarColor = 'var(--vscode-scrollbarSlider-background) transparent';
-
-      // Inject thin scrollbar CSS for WebKit (closest to VS Code)
-      const style = document.createElement('style');
-      style.textContent = \`
-        *::-webkit-scrollbar {
-          height: 3px;
-        }
-        *::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        *::-webkit-scrollbar-thumb {
-          background-color: var(--vscode-scrollbarSlider-background);
-          border-radius: 0;
-        }
-        *::-webkit-scrollbar-thumb:hover {
-          background-color: var(--vscode-scrollbarSlider-hoverBackground);
-        }
-        *::-webkit-scrollbar-button {
-          display: none;
-          width: 0;
-          height: 0;
-        }
-      \`;
-      root.appendChild(style);
-      return true;
-    }
-
-    // Try immediately, and retry until tabs finish rendering
-    if (!applyScrollableHeader()) {
-      const interval = setInterval(() => {
-        if (applyScrollableHeader()) clearInterval(interval);
-      }, 100);
-      setTimeout(() => clearInterval(interval), 5000);
-    }
-  </script>
 </body>
 </html>`;
+
+  // Handle messages from the webview to load data for a view on demand
+  const metaCache = new Map<number, any>();
+  panel.webview.onDidReceiveMessage(
+    async (msg: any) => {
+      try {
+        if (!msg || msg.type !== 'loadView') return;
+        const viewNumber: number = msg.viewNumber;
+        if (typeof viewNumber !== 'number') return;
+
+        const session = await vscode.authentication.getSession('github', ['repo', 'read:project'], { createIfNone: true });
+        const token = session?.accessToken;
+        if (!token) {
+          panel.webview.postMessage({ type: 'error', payload: { viewNumber, message: 'Missing GitHub token.' } });
+          return;
+        }
+
+        let meta = metaCache.get(viewNumber) as any;
+        if (!meta) {
+          meta = await fetchTableMeta(project.id, viewNumber, token);
+          metaCache.set(viewNumber, meta);
+        }
+
+        if (meta.layout !== 'TABLE') {
+          panel.webview.postMessage({ type: 'viewData', payload: { viewNumber, layout: meta.layout, meta, items: [] } });
+          return;
+        }
+
+        const page = await fetchTableItems(project.id, meta, token);
+        panel.webview.postMessage({ type: 'viewData', payload: { viewNumber, layout: meta.layout, meta, items: page.items } });
+      } catch (err: any) {
+        const viewNumber: number | undefined = msg?.viewNumber;
+        panel.webview.postMessage({ type: 'error', payload: { viewNumber, message: err?.message ?? String(err) } });
+      }
+    },
+    undefined,
+    context.subscriptions
+  );
+
+  panel.onDidDispose(() => {
+    metaCache.clear();
+  }, null, context.subscriptions);
 }
