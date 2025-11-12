@@ -3,9 +3,7 @@ import type { ProjectNode } from './model';
 
 function getNonce() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 32; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
-  return result;
+  return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
 function escapeHtml(s: string | number | boolean | undefined | null): string {
@@ -51,7 +49,6 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
   if (project.ownerLogin) metaParts.push(`owner: ${escapeHtml(project.ownerLogin)}`);
   if (typeof project.repoCount === 'number') metaParts.push(`linked repos: ${project.repoCount}`);
   const meta = metaParts.join(' • ');
-
   const views = project.views ?? [];
 
   panel.webview.html = `<!DOCTYPE html>
@@ -59,17 +56,29 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; font-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https:;" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none';
+                 img-src ${webview.cspSource} https: data:;
+                 style-src ${webview.cspSource} 'unsafe-inline';
+                 script-src 'nonce-${nonce}' ${webview.cspSource};
+                 font-src ${webview.cspSource} https: data:;
+                 connect-src ${webview.cspSource} https:;" />
   <title>Project: ${title}</title>
   <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
   <style>
-    body { padding: 0; margin: 0; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--vscode-editor-background);
+      color: var(--vscode-foreground);
+      font-family: var(--vscode-font-family);
+    }
     .container { padding: 12px; }
     .meta { color: var(--vscode-descriptionForeground); }
   </style>
 </head>
 <body>
-  <vscode-tabs panel selected-index="0">
+  <vscode-tabs id="tabs" panel selected-index="0">
     <vscode-tab-header slot="header">Overview</vscode-tab-header>
     <vscode-tab-panel>
       <div class="container">
@@ -79,21 +88,71 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
         <p>Views: ${views.length}</p>
       </div>
     </vscode-tab-panel>
+
     ${views
-      .map(v => {
-        const vname = escapeHtml(v.name);
-        const vnum = escapeHtml(v.number);
-        return `
-        <vscode-tab-header slot="header">${vname}</vscode-tab-header>
+      .map(v => `
+        <vscode-tab-header slot="header">${escapeHtml(v.name)}</vscode-tab-header>
         <vscode-tab-panel>
           <div class="container">
-            <h3>${vname} (#${vnum})</h3>
+            <h3>${escapeHtml(v.name)} (#${escapeHtml(v.number)})</h3>
             <p>This is a placeholder for view content.</p>
           </div>
-        </vscode-tab-panel>`;
-      })
+        </vscode-tab-panel>
+      `)
       .join('\n')}
   </vscode-tabs>
+
+  <script nonce="${nonce}">
+    const tabs = document.getElementById('tabs');
+
+    function applyScrollableHeader() {
+      const root = tabs.shadowRoot;
+      if (!root) return false;
+      const header = root.querySelector('[part="header"], .header, [role="tablist"]');
+      if (!header) return false;
+
+      // Enable scrolling and layout fixes
+      header.style.display = 'flex';
+      header.style.overflowX = 'auto';
+      header.style.overflowY = 'hidden';
+      header.style.whiteSpace = 'nowrap';
+      header.style.scrollbarWidth = 'thin';
+      header.style.scrollbarColor = 'var(--vscode-scrollbarSlider-background) transparent';
+
+      // Inject thin scrollbar CSS for WebKit (closest to VS Code)
+      const style = document.createElement('style');
+      style.textContent = \`
+        *::-webkit-scrollbar {
+          height: 3px;
+        }
+        *::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        *::-webkit-scrollbar-thumb {
+          background-color: var(--vscode-scrollbarSlider-background);
+          border-radius: 0;
+        }
+        *::-webkit-scrollbar-thumb:hover {
+          background-color: var(--vscode-scrollbarSlider-hoverBackground);
+        }
+        *::-webkit-scrollbar-button {
+          display: none;
+          width: 0;
+          height: 0;
+        }
+      \`;
+      root.appendChild(style);
+      return true;
+    }
+
+    // Try immediately, and retry until tabs finish rendering
+    if (!applyScrollableHeader()) {
+      const interval = setInterval(() => {
+        if (applyScrollableHeader()) clearInterval(interval);
+      }, 100);
+      setTimeout(() => clearInterval(interval), 5000);
+    }
+  </script>
 </body>
 </html>`;
 }
