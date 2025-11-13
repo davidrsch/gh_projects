@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { graphql } from '@octokit/graphql';
+import FieldFactory from '../fields/FieldFactory';
 
 export type ProjectV2ViewLayout = 'TABLE' | 'BOARD' | 'CALENDAR' | 'ROADMAP' | 'TABLE_LAYOUT' | string;
 
@@ -45,6 +46,8 @@ export interface TableViewMeta {
   verticalGroupBy?: string[];
   visibleFieldIds: string[];
   fieldsById: Record<string, TableFieldMeta>;
+  // fieldInstancesById: optional mapping of field id -> Field instance (Phase 1)
+  fieldInstancesById?: Record<string, any>;
 }
 
 export interface ItemFieldValueMap {
@@ -157,6 +160,20 @@ export async function fetchTableMeta(
     visibleFieldIds.push(f.id);
   }
 
+  // Instantiate field helper objects for each field meta (non-breaking Phase 1)
+  const fieldInstancesById: Record<string, any> = {};
+  try {
+    for (const fid of Object.keys(fieldsById)) {
+      try {
+        fieldInstancesById[fid] = FieldFactory.create(fieldsById[fid]);
+      } catch (e) {
+        fieldInstancesById[fid] = null;
+      }
+    }
+  } catch (e) {
+    // ignore instantiation errors; this is non-fatal and purely advisory for now
+  }
+
   const sortBy: SortByField[] = (view.sortByFields?.nodes ?? [])
     .map((n: any) => ({ fieldId: n?.field?.id, direction: n?.direction }))
     .filter((s: any) => s.fieldId && s.direction);
@@ -179,6 +196,7 @@ export async function fetchTableMeta(
     verticalGroupBy,
     visibleFieldIds,
     fieldsById,
+    fieldInstancesById,
   };
   return meta;
 }
@@ -236,6 +254,10 @@ export async function fetchTableItems(
                   ... on ProjectV2ItemFieldPullRequestValue {
                     field { ...FieldConf }
                     pullRequests(first: 10) { nodes { number title url state merged repository { nameWithOwner owner { login avatarUrl } } } }
+                  }
+                  ... on ProjectV2ItemFieldMilestoneValue {
+                    field { ...FieldConf }
+                    milestone { id title dueOn state number url }
                   }
                   ... on ProjectV2ItemFieldLabelValue {
                     field { ...FieldConf }
@@ -319,80 +341,24 @@ export async function fetchTableItems(
       const fid = fv?.field?.id;
       if (!fid) continue;
       let value: any = null;
-      switch (fv.__typename) {
-        case 'ProjectV2ItemFieldTextValue':
-          value = fv.text ?? '';
-          break;
-        case 'ProjectV2ItemFieldNumberValue':
-          value = typeof fv.number === 'number' ? fv.number : Number(fv.number ?? NaN);
-          break;
-        case 'ProjectV2ItemFieldDateValue':
-          value = fv.date ?? null;
-          break;
-        case 'ProjectV2ItemFieldSingleSelectValue': {
-          // Provide richer single-select value to the webview: include id, name and color when available.
-          const optId = fv.optionId ?? null;
-          let name = fv.name ?? null;
-          let color: string | null = null;
-          try {
-            // Try to resolve option color/name from the view meta (fieldsById) if present
-            const fid = fv?.field?.id;
-            const fmeta = fid && viewMeta && viewMeta.fieldsById ? viewMeta.fieldsById[fid] : undefined;
-            if (fmeta && Array.isArray(fmeta.options) && optId) {
-              const found = fmeta.options.find((o: any) => String(o.id) === String(optId));
-              if (found) {
-                name = name || found.name || null;
-                color = found.color || null;
-              }
-            }
-          } catch (e) {
-            // ignore
-          }
-          value = optId ? { id: optId, name, color } : (name ? { id: null, name, color } : null);
+      // Prefer the pre-instantiated Field instance; if missing, try to create one from meta
+      let finst = viewMeta.fieldInstancesById ? viewMeta.fieldInstancesById[fid] : undefined;
+      if (!finst && viewMeta.fieldsById && viewMeta.fieldsById[fid]) {
+        try {
+          finst = FieldFactory.create(viewMeta.fieldsById[fid]);
+        } catch (e) {
+          finst = undefined;
         }
-          break;
-        case 'ProjectV2ItemFieldIterationValue':
-          value = fv.title ?? fv.id ?? null;
-          break;
-                case 'ProjectV2ItemFieldUserValue':
-                  // Store rich user objects (login, name, avatarUrl, url) instead of
-                  // plain logins so the webview can render avatars and labels.
-                  value = (fv.users?.nodes ?? []).map((u: any) => ({
-                    login: u?.login,
-                    name: u?.name ?? null,
-                    avatarUrl: u?.avatarUrl ?? null,
-                    url: u?.url ?? null,
-                  }));
-          break;
-                case 'ProjectV2ItemFieldPullRequestValue':
-                  // Normalize linked pull requests to simple objects for the webview
-                  // Include state and merged so the renderer can color pills by PR state
-                  value = (fv.pullRequests?.nodes ?? []).map((p: any) => ({
-                    number: p?.number ?? null,
-                    title: p?.title ?? null,
-                    url: p?.url ?? null,
-                    repo: p?.repository?.nameWithOwner ?? null,
-                    state: p?.state ?? null,
-                    merged: typeof p?.merged === 'boolean' ? p.merged : null,
-                    ownerAvatar: p?.repository?.owner?.avatarUrl ?? null,
-                  }));
-                  break;
-        case 'ProjectV2ItemFieldLabelValue':
-          // Labels: map to objects with id, name and color for the renderer
-          value = (fv.labels?.nodes ?? []).map((l: any) => ({ id: l?.id ?? null, name: l?.name ?? null, color: l?.color ?? null }));
-          break;
-        case 'ProjectV2ItemFieldRepositoryValue':
-          // Repository field: provide nameWithOwner, url and owner avatar for renderer
-          value = fv.repository
-            ? {
-                nameWithOwner: fv.repository.nameWithOwner ?? null,
-                url: fv.repository.url ?? null,
-                ownerAvatar: fv.repository.owner?.avatarUrl ?? null,
-              }
-            : null;
-          break;
-        default:
+      }
+      if (finst && typeof finst.parseValue === 'function') {
+        try {
+          value = finst.parseValue(fv);
+        } catch (e) {
           value = null;
+        }
+      } else {
+        // If parsing fails or no field helper, keep null; renderer can handle missing values.
+        value = null;
       }
       row.fieldValues[fid] = value;
     }

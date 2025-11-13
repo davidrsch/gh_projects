@@ -50,6 +50,24 @@ export function renderTable(container, meta, items){
     return null;
   }
 
+  // Try to find an option on a field whose name matches any of the provided
+  // candidate names (case-insensitive). Returns a parsed hex color or null.
+  function optionColorForNames(fieldMeta, candidates){
+    try {
+      if (!fieldMeta || !Array.isArray(fieldMeta.options) || !candidates || !candidates.length) return null;
+      const upper = candidates.map(s => String(s || '').toUpperCase());
+      for (const opt of fieldMeta.options) {
+        if (!opt || !opt.name) continue;
+        const name = String(opt.name || '').toUpperCase();
+        if (upper.includes(name) || upper.some(u => name.indexOf(u) >= 0 || u.indexOf(name) >= 0)) {
+          const resolved = parseColorToken(opt.color) || opt.color || null;
+          if (resolved) return resolved;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
   function contrastTextColor(hex){
     const rgb = hexToRgb(hex || '#ffffff');
     if (!rgb) return 'var(--vscode-foreground)';
@@ -57,9 +75,43 @@ export function renderTable(container, meta, items){
     return lum > 0.6 ? '#111827' : '#ffffff';
   }
 
+  // Format a date-like value as "Mon DD, YYYY" (e.g. "Nov 15, 2025").
+  function formatDateHuman(v){
+    if (v == null || v === '') return '';
+    try {
+      let d = null;
+      if (v instanceof Date) d = v;
+      else if (typeof v === 'number') d = new Date(v);
+      else if (typeof v === 'string') {
+        const s = v.trim();
+        // handle common GitHub-ish date-only YYYY-MM-DD or full ISO
+        const isoLike = /^\d{4}-\d{2}-\d{2}(?:[T\s].*)?$/.test(s);
+        if (isoLike) {
+          d = new Date(s);
+          if (isNaN(d)) {
+            // fallback: parse as local Y,M,D
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (m) d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+          }
+        } else {
+          const parsed = Date.parse(s);
+          if (!isNaN(parsed)) d = new Date(parsed);
+        }
+      } else if (typeof v === 'object') {
+        // sometimes values are objects like { date: '2025-11-15' } or { value: '2025-11-15' }
+        const cand = v.date ?? v.value ?? v.raw ?? v.iso ?? null;
+        if (cand) return formatDateHuman(cand);
+      }
+      if (!d || isNaN(d.getTime())) return String(v);
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+    } catch (e) {
+      return String(v);
+    }
+  }
+
   function normalizeToArray(v){
     if (Array.isArray(v)) return v;
-    if (v && typeof v === 'object' && Array.isArray(v.nodes)) return v.nodes;
     if (v == null || v === '') return [];
     return [v];
   }
@@ -94,6 +146,69 @@ export function renderTable(container, meta, items){
   // small avatar style used for user columns
   const avatarStyle = 'display:inline-block; width:20px; height:20px; border-radius:50%; vertical-align:middle; margin-right:6px; flex:0 0 20px;';
   const userNameStyle = 'display:inline-block; vertical-align:middle; max-width:96px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--vscode-foreground); font-size:12px;';
+    // Helper: render progress field cell HTML (returns full <td>..</td>)
+    function renderProgressCell(c, val, row) {
+      try { if (DEV_LOG) console.info('tables: progress-field', { field: c.name, value: val }); } catch (e) {}
+      // Expect normalized value: either an object { total, completed, percent } or an array of such objects
+      const parts = normalizeToArray(val).map(item => {
+        if (!item || typeof item !== 'object') return '';
+        const total = Number(item.total ?? 0);
+        if (!total) return '';
+        const completed = Math.max(0, Math.min(total, Number(item.completed ?? 0)));
+        const percent = item.percent !== undefined ? Math.round(Number(item.percent)) : Math.round((completed / total) * 100);
+        // Prefer a color defined on the field options (e.g. a single-select option named 'Done'/'Completed')
+        const purple = optionColorForNames(c, ['done', 'completed', 'complete']) || (GH_COLOR_HEX.PURPLE || '#8250df');
+        const segs = [];
+        for (let s = 0; s < total; s++) {
+          const isDone = s < completed;
+          if (isDone) segs.push('<div style="flex:1;height:12px;margin-right:4px;background:' + purple + ';border-radius:4px"></div>');
+          else segs.push('<div style="flex:1;height:12px;margin-right:4px;background:transparent;border:2px solid ' + purple + ';border-radius:4px;box-sizing:border-box"></div>');
+        }
+        const segHtml = '<div style="display:flex;align-items:center;gap:0;flex:1;min-width:80px;max-width:220px">' + segs.map((h, idx) => idx === segs.length - 1 ? h.replace(/margin-right:4px;/,'') : h).join('') + '</div>';
+        return '<div style="display:flex;align-items:center;gap:8px;min-width:84px;max-width:320px">' + segHtml + '<div style="width:48px;text-align:right;font-size:11px;color:var(--vscode-foreground);">' + esc(percent + '%') + '</div></div>';
+      });
+      const joined = parts.filter(Boolean).join('');
+      if (!joined) return '<td style="' + tdStyle + '">&nbsp;</td>';
+      return '<td style="' + tdStyle + '">' + joined + '</td>';
+    }
+
+    // Helper: render parent issue as a pill inside a <td>
+    function renderParentCell(c, val, row) {
+      const pv = val && Object.keys(val || {}).length ? val : (row && row.parent ? row.parent : null);
+      if (!pv) return '<td style="' + tdStyle + '">&nbsp;</td>';
+      const titleText = pv.title ? String(pv.title) : '';
+      const href = pv.url ?? null;
+      const state = pv.state ? String(pv.state).toUpperCase() : '';
+      // Default mapping by state; prefer any matching option color from field settings
+      let stateHex = GH_COLOR_HEX.GRAY || '#6e7781';
+      if (state === 'OPEN') stateHex = GH_COLOR_HEX.GREEN || '#1a7f37';
+      else if (state === 'DONE' || /\bdone\b/i.test(state)) stateHex = GH_COLOR_HEX.PURPLE || '#8250df';
+      else if (state === 'CLOSED') stateHex = GH_COLOR_HEX.GRAY || '#6e7781';
+      else if (/CANCEL|CANCE(L|D)/i.test(state)) stateHex = GH_COLOR_HEX.ORANGE || '#bc4c00';
+      else if (state === 'MERGED') stateHex = GH_COLOR_HEX.PURPLE || '#8250df';
+      // Prefer any option color that matches the state name (field-level configuration)
+      try {
+        const optColor = optionColorForNames(c, [state]);
+        if (optColor) stateHex = optColor;
+      } catch (e) {}
+      const pillBg = rgba(stateHex, 0.12);
+      const pillBorder = '1px solid ' + rgba(stateHex, 0.36);
+      const pillFg = stateHex;
+      const baseStyle = 'display:inline-flex;align-items:center;gap:8px;margin-right:6px;padding:0 8px;line-height:20px;height:20px;border-radius:999px;font-size:12px;text-decoration:none;box-sizing:border-box;';
+      const pillStyle = baseStyle + 'background:' + pillBg + ';border:' + pillBorder + ';color:' + pillFg + ';';
+      const iconColor = pillFg;
+      let icon = '';
+      if (state === 'OPEN' || state === '') icon = '<svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;"><circle cx="6" cy="6" r="5" fill="' + iconColor + '" /></svg>';
+      else if (state === 'DONE' || /\bdone\b/i.test(state) || state === 'MERGED') icon = '<svg width="12" height="12" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;"><path d="M4 8l3 3 6-6" stroke="' + iconColor + '" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      else if (state === 'CLOSED') icon = '<svg width="12" height="12" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;"><path d="M6 10.5L3.5 8l-1 1L6 13.5 13.5 6l-1-1L6 10.5z" fill="' + iconColor + '"/></svg>';
+      else if (/CANCEL|CANCE(L|D)/i.test(state)) icon = '<svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;"><rect x="2" y="5.5" width="8" height="1" fill="' + iconColor + '" rx="0.5"/></svg>';
+      else icon = '<svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;"><circle cx="6" cy="6" r="5" fill="' + iconColor + '" /></svg>';
+      const visible = esc(titleText || (pv.number ? ('#' + pv.number) : ''));
+      const inner = icon + '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;display:inline-block;vertical-align:middle;">' + visible + '</span>';
+      if (href) return '<td style="' + tdStyle + '"><a href="' + esc(href) + '" target="_blank" rel="noreferrer noopener" style="' + pillStyle + '">' + inner + '</a></td>';
+      return '<td style="' + tdStyle + '"><span style="' + pillStyle + '">' + inner + '</span></td>';
+    }
+
     return (Array.isArray(itemsArr) ? itemsArr : []).map((row, rowIdx) => {
       const emptyCell = '<td style="' + tdStyleEmptyLocal + '"></td>';
       const indexCell = '<td style="' + tdStyleIndexLocal + '">' + String(rowIdx + 1) + '</td>';
@@ -106,13 +221,9 @@ export function renderTable(container, meta, items){
           if (!u) return '';
           // u can be a string (login) or an object with avatarUrl/login/name
           if (typeof u === 'string') return esc(u);
-          // Unwrap common GraphQL edge wrappers
-          if (u.node) u = u.node;
-          if (u.user) u = u.user;
-          if (u.actor) u = u.actor;
-          // Try many common avatar property names
-          const avatar = u.avatarUrl || u.avatar_url || u.avatar || u.avatarURL || u.avatarUrlWithSize || (u.avatar_urls && u.avatar_urls[0]) || '';
-          const label = u.login || u.name || u.title || u.label || u.username || '';
+          // Expect normalized user object: { login, name, avatarUrl, url }
+          const avatar = u.avatarUrl || u.ownerAvatar || u.avatar || '';
+          const label = u.login || u.name || u.title || u.username || '';
           if (avatar) {
             // compute initials for SVG fallback if image fails to load
             const initials = (String(label || '') || '').split(/\s+/).filter(Boolean).slice(0,2).map(s=>s[0].toUpperCase()).join('').slice(0,2) || '';
@@ -140,28 +251,21 @@ export function renderTable(container, meta, items){
         // Render list of users (reviewers) or single user (assignee)
   const dt = (c.dataType || '').toUpperCase();
         // Unified user handling: some fields (Assignees, Reviewers) can contain multiple users
-        // Detect multivalued user fields by value shape (array or {nodes:[]}) or by explicit data type/name hints.
-        const isMultiUser = Array.isArray(val) || (val && typeof val === 'object' && Array.isArray(val.nodes)) || dt === 'USER_LIST' || dt === 'USERS' || /REVIEW|REVIEWER/.test((c.name || '').toUpperCase()) || /ASSIGN|ASSIGNEE/.test((c.name || '').toUpperCase());
+        // Detect multivalued user fields by value shape (array) or by explicit data type/name hints.
+        const isMultiUser = Array.isArray(val) || dt === 'USER_LIST' || dt === 'USERS' || /REVIEW|REVIEWER/.test((c.name || '').toUpperCase()) || /ASSIGN|ASSIGNEE/.test((c.name || '').toUpperCase());
         if (dt === 'USER' || /ASSIGN|ASSIGNEE/.test((c.name || '').toUpperCase()) || dt === 'USER_LIST' || dt === 'USERS' || /REVIEW|REVIEWER/.test((c.name || '').toUpperCase())){
-          if (isMultiUser) {
-            // Normalize to array
-            let arr = [];
-            if (Array.isArray(val)) arr = val;
-            else if (val && typeof val === 'object' && Array.isArray(val.nodes)) arr = val.nodes;
-            else if (val) arr = [val];
-            const max = 6;
-            const parts = arr.slice(0, max).map(u => renderUser(u, c.name) || (u && typeof u === 'object' ? esc(u.login || u.name || u.url || JSON.stringify(u).slice(0,80)) : esc(String(u ?? ''))));
-            if (arr.length > max) parts.push('<span style="opacity:0.6">…</span>');
-            const html = parts.join('');
-            return '<td style="' + tdStyle + '">' + (html || '&nbsp;') + '</td>';
-          } else {
-            // single user (or empty)
-            let single = val;
-            if (Array.isArray(val) && val.length) single = val[0];
-            else if (val && typeof val === 'object' && Array.isArray(val.nodes) && val.nodes.length) single = val.nodes[0];
-            const html = renderUser(single, c.name) || (single && typeof single === 'object' ? esc(single.login || single.name || single.url || JSON.stringify(single).slice(0,80)) : esc(String(single ?? '')));
-            return '<td style="' + tdStyle + '">' + (html || '&nbsp;') + '</td>';
-          }
+            if (isMultiUser) {
+              const arr = normalizeToArray(val);
+              const max = 6;
+              const parts = arr.slice(0, max).map(u => renderUser(u, c.name) || (u && typeof u === 'object' ? esc(u.login || u.name || u.url || JSON.stringify(u).slice(0,80)) : esc(String(u ?? ''))));
+              if (arr.length > max) parts.push('<span style="opacity:0.6">…</span>');
+              const html = parts.join('');
+              return '<td style="' + tdStyle + '">' + (html || '&nbsp;') + '</td>';
+            } else {
+              const single = normalizeToArray(val)[0] || null;
+              const html = renderUser(single, c.name) || (single && typeof single === 'object' ? esc(single.login || single.name || single.url || JSON.stringify(single).slice(0,80)) : esc(String(single ?? '')));
+              return '<td style="' + tdStyle + '">' + (html || '&nbsp;') + '</td>';
+            }
         }
 
   // Render LABEL fields (and fields whose name includes 'label') as pills too.
@@ -170,6 +274,8 @@ export function renderTable(container, meta, items){
   const isIterationField = (dt === 'ITERATION') || /iteration/.test((c.name || '').toLowerCase());
   // Render REPOSITORY fields as a single pill (avatar + repo name)
   const isRepositoryField = (dt === 'REPOSITORY') || /repository/.test((c.name || '').toLowerCase());
+  // Render MILESTONE fields specially
+  const isMilestoneField = (dt === 'MILESTONE') || /milestone/.test((c.name || '').toLowerCase());
   // Render Parent issue fields
   const isParentField = /parent/.test((c.name || '').toLowerCase());
   // Render progress-like fields (e.g. "Sub-issues progress") as inline progress bars
@@ -180,108 +286,54 @@ export function renderTable(container, meta, items){
   let isPullField = (dt === 'LINKED_PULL_REQUESTS') || /\bpull[s\s-]?request(s)?\b/.test((c.name || '').toLowerCase()) || /\bprs?\b/.test((c.name||'').toLowerCase());
 
   if (isLabelField) {
-            const parts = normalizeToArray(val).map(i => {
-            let item = i;
-            if (item && typeof item === 'object') {
-              if (item.node) item = item.node;
-            }
-            const rawName = item && typeof item === 'object' ? (item.name ?? item.label ?? item.title ?? item.id ?? null) : item;
-            let name;
-            if (typeof rawName === 'string') name = rawName;
-            else if (rawName != null) {
-              try { name = JSON.stringify(rawName); } catch (e) { name = String(rawName); }
-            } else {
-              name = String(item?.id ?? '');
-            }
-            const colorToken = item && (item.color || item.colour || item.hex || item.background || item.colorHex) || null;
-            const hex = parseColorToken(colorToken);
-            const pillBg = hex ? rgba(hex, 0.14) : 'transparent';
-            const pillBorder = hex ? ('1px solid ' + rgba(hex, 0.4)) : ('1px solid var(--vscode-editorWidget-border)');
-            const pillFg = hex ? hex : 'var(--vscode-foreground)';
-            const pillStyle = [
-              'display:inline-block',
-              'margin-right:6px',
-              'max-width:100%',
-              'white-space:nowrap',
-              'overflow:hidden',
-              'text-overflow:ellipsis',
-              'border-radius:999px',
-              'padding:0 8px',
-              'line-height:20px',
-              'height:20px',
-              'vertical-align:middle',
-              'font-size:12px',
-              'box-sizing:border-box',
-              'background:' + pillBg,
-              'border:' + pillBorder,
-              'color:' + pillFg
-            ].join(';');
-            return '<span title="' + esc(name) + '" style="' + pillStyle + '">' + esc(name) + '</span>';
-          });
-          return '<td style="' + tdStyle + '">' + (parts.length ? parts.join('') : '&nbsp;') + '</td>';
+            const parts = normalizeToArray(val).map(item => {
+              // Expect normalized label object: { id, name, color }
+              if (!item) return '';
+              const name = (typeof item === 'string') ? item : (item.name ?? item.label ?? String(item.id ?? ''));
+              const colorToken = item && (item.color || item.colour || item.hex || item.background || item.colorHex) || null;
+              const hex = parseColorToken(colorToken);
+              const pillBg = hex ? rgba(hex, 0.14) : 'transparent';
+              const pillBorder = hex ? ('1px solid ' + rgba(hex, 0.4)) : ('1px solid var(--vscode-editorWidget-border)');
+              const pillFg = hex ? hex : 'var(--vscode-foreground)';
+              const pillStyle = [
+                'display:inline-block','margin-right:6px','max-width:100%','white-space:nowrap','overflow:hidden','text-overflow:ellipsis','border-radius:999px','padding:0 8px','line-height:20px','height:20px','vertical-align:middle','font-size:12px','box-sizing:border-box','background:' + pillBg,'border:' + pillBorder,'color:' + pillFg
+              ].join(';');
+              return '<span title="' + esc(name) + '" style="' + pillStyle + '">' + esc(name) + '</span>';
+            });
+            return '<td style="' + tdStyle + '">' + (parts.length ? parts.join('') : '&nbsp;') + '</td>';
         }
 
         if (isIterationField) {
-          const parts = normalizeToArray(val).map(i => {
-            let item = i;
-            if (item && typeof item === 'object') {
-              if (item.node) item = item.node;
-            }
-            const rawName = item && typeof item === 'object' ? (item.title ?? item.name ?? item.id ?? null) : item;
-            let name;
-            if (typeof rawName === 'string') name = rawName;
-            else if (rawName != null) {
-              try { name = JSON.stringify(rawName); } catch (e) { name = String(rawName); }
-            } else {
-              name = String(item?.id ?? '');
-            }
-            // Neutral pill styling for iterations
-            const baseHex = GH_COLOR_HEX.GRAY || '#6e7781';
+          const parts = normalizeToArray(val).map(item => {
+            const rawName = (typeof item === 'string') ? item : (item && (item.title ?? item.name ?? item.id) ? (item.title ?? item.name ?? item.id) : '');
+            const name = rawName == null ? '' : String(rawName);
+            const baseHex = (Array.isArray(c.options) && c.options.length ? (parseColorToken(c.options[0].color) || c.options[0].color) : null) || GH_COLOR_HEX.GRAY || '#6e7781';
             const pillBg = rgba(baseHex, 0.06);
             const pillBorder = '1px solid ' + rgba(baseHex, 0.28);
             const pillFg = 'var(--vscode-foreground)';
-            const pillStyle = [
-              'display:inline-block',
-              'margin-right:6px',
-              'max-width:100%',
-              'white-space:nowrap',
-              'overflow:hidden',
-              'text-overflow:ellipsis',
-              'border-radius:999px',
-              'padding:0 8px',
-              'line-height:20px',
-              'height:20px',
-              'vertical-align:middle',
-              'font-size:12px',
-              'box-sizing:border-box',
-              'background:' + pillBg,
-              'border:' + pillBorder,
-              'color:' + pillFg
-            ].join(';');
+            const pillStyle = ['display:inline-block','margin-right:6px','max-width:100%','white-space:nowrap','overflow:hidden','text-overflow:ellipsis','border-radius:999px','padding:0 8px','line-height:20px','height:20px','vertical-align:middle','font-size:12px','box-sizing:border-box','background:' + pillBg,'border:' + pillBorder,'color:' + pillFg].join(';');
             return '<span title="' + esc(name) + '" style="' + pillStyle + '">' + esc(name) + '</span>';
           });
           return '<td style="' + tdStyle + '">' + (parts.length ? parts.join('') : '&nbsp;') + '</td>';
         }
 
+        // Date fields: format dates uniformly (e.g., "Nov 15, 2025")
+        const looksLikeDateField = (dt === 'DATE') || /date/.test((c.name || '').toLowerCase());
+        if (looksLikeDateField) {
+          const parts = normalizeToArray(val).map(item => {
+            const txt = formatDateHuman(item);
+            return '<span>' + esc(txt) + '</span>';
+          }).filter(Boolean);
+          return '<td style="' + tdStyle + '">' + (parts.length ? parts.join(', ') : '&nbsp;') + '</td>';
+        }
+
   if (isRepositoryField) {
-          const parts = normalizeToArray(val).map(i => {
-            let item = i;
-            if (item && typeof item === 'object') {
-              if (item.node) item = item.node;
-            }
-            // Expected shape from host: { nameWithOwner, url, ownerAvatar }
+          const parts = normalizeToArray(val).map(item => {
             const repoName = item && (item.nameWithOwner || item.repo || item.name) ? (item.nameWithOwner || item.repo || item.name) : '';
             const repoUrl = item && (item.url || item.repoUrl) ? (item.url || item.repoUrl) : null;
-
             const visible = esc(String(repoName || repoUrl || 'repository'));
-
-            // Inline repo icon + plain text (no pill). Clicking opens repo URL.
-            const repoIcon = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:6px;flex:0 0 12px;">'
-              + '<path d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11A1.5 1.5 0 0 1 12.5 15h-9A1.5 1.5 0 0 1 2 13.5v-11z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>'
-              + '<path d="M5 6h6M5 9h6" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-            const textStyle = ['display:inline-block', 'vertical-align:middle', 'max-width:220px', 'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis', 'color:var(--vscode-foreground)', 'font-size:12px'].join(';');
-
+            const repoIcon = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:6px;flex:0 0 12px;"><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11A1.5 1.5 0 0 1 12.5 15h-9A1.5 1.5 0 0 1 2 13.5v-11z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 6h6M5 9h6" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+            const textStyle = ['display:inline-block','vertical-align:middle','max-width:220px','white-space:nowrap','overflow:hidden','text-overflow:ellipsis','color:var(--vscode-foreground)','font-size:12px'].join(';');
             const inner = repoIcon + '<span style="' + textStyle + '">' + visible + '</span>';
             if (repoUrl) return '<a href="' + esc(repoUrl) + '" target="_blank" rel="noreferrer noopener" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:6px;">' + inner + '</a>';
             return '<span style="display:inline-flex;align-items:center;gap:6px;">' + inner + '</span>';
@@ -289,150 +341,33 @@ export function renderTable(container, meta, items){
           return '<td style="' + tdStyle + '">' + (parts.length ? parts.join('') : '&nbsp;') + '</td>';
         }
 
-        if (isProgressField) {
-          // Developer diagnostics: when enabled, log progress field raw values so we can
-          // inspect shapes returned from the host. To enable, set localStorage['ghp_tables_dev']='1'.
-          try { if (DEV_LOG) console.info('tables: progress-field', { field: c.name, value: val }); } catch (e) {}
-
-          // Render progress as segmented bar: number of segments = total sub-issues.
-          // Filled segments (completed) show solid purple, incomplete segments show only purple border.
-          const parts = normalizeToArray(val).map(i => {
-            let item = i;
-            if (item && typeof item === 'object') {
-              if (item.node) item = item.node;
-            }
-
-            // Determine total and completed counts from various shapes
-            let total = null;
-            let completed = null;
-            // shape: "n/m"
-            if (typeof item === 'string') {
-              const m = item.match(/(\d+)\s*\/\s*(\d+)/);
-              if (m) {
-                completed = Number(m[1]);
-                total = Number(m[2]);
-              }
-            }
-            // shape: object { complete, total } or { completed, total }
-            if (item && typeof item === 'object') {
-              if (typeof item.complete === 'number' && typeof item.total === 'number') {
-                completed = item.complete;
-                total = item.total;
-              } else if (typeof item.completed === 'number' && typeof item.total === 'number') {
-                completed = item.completed;
-                total = item.total;
-              } else if (Array.isArray(item.nodes) || Array.isArray(item)) {
-                const arr = Array.isArray(item) ? item : item.nodes;
-                total = arr.length;
-                // Treat items with state==='CLOSED' or done=true as completed
-                completed = arr.reduce((acc, it) => {
-                  const itObj = (it && typeof it === 'object') ? (it.node || it) : it;
-                  if (!itObj) return acc;
-                  if (itObj.state === 'CLOSED' || itObj.state === 'MERGED' || itObj.closed === true || itObj.done === true || itObj.completed === true) return acc + 1;
-                  // also consider a label or status field - if it has a property 'status' equal to 'Done' (case-insensitive)
-                  if (typeof itObj.status === 'string' && /done/i.test(itObj.status)) return acc + 1;
-                  return acc;
-                }, 0);
-              }
-            }
-
-            // If we couldn't infer from structured shapes, and there's no meaningful
-            // total (>0), don't render a progress visualization — keep the cell empty.
-            if (total == null || total === 0) {
-              // return empty piece — outer code wraps final cell in a <td>
-              return '';
-            }
-
-            // Normalize counts
-            total = Number(total || 0);
-            completed = Math.max(0, Math.min(total, Number(completed || 0)));
-            const percent = total ? Math.round((completed / total) * 100) : 0;
-
-            const purple = (GH_COLOR_HEX.PURPLE || '#8250df');
-            // Build segmented bar
-            const segs = [];
-            for (let s = 0; s < total; s++) {
-              const isDone = s < completed;
-              if (isDone) {
-                segs.push('<div style="flex:1;height:12px;margin-right:4px;background:' + purple + ';border-radius:4px"></div>');
-              } else {
-                segs.push('<div style="flex:1;height:12px;margin-right:4px;background:transparent;border:2px solid ' + purple + ';border-radius:4px;box-sizing:border-box"></div>');
-              }
-            }
-            // remove last margin-right
-            const segHtml = '<div style="display:flex;align-items:center;gap:0;flex:1;min-width:80px;max-width:220px">' + segs.map((h, idx) => idx === segs.length - 1 ? h.replace(/margin-right:4px;/,'') : h).join('') + '</div>';
-            // Show segmented bar with percentage label only (omit completed/total text per UX request)
-            const html = '<div style="display:flex;align-items:center;gap:8px;min-width:84px;max-width:320px">' + segHtml + '<div style="width:48px;text-align:right;font-size:11px;color:var(--vscode-foreground);">' + esc(percent + '%') + '</div></div>';
-            return html;
+        if (isMilestoneField) {
+          const parts = normalizeToArray(val).map(item => {
+            if (!item) return '';
+            const title = item.title || item.name || (item.id ? String(item.id) : '');
+            const due = item.dueOn ? formatDateHuman(item.dueOn) : null;
+            const state = item.state ? String(item.state).toUpperCase() : '';
+            // color: prefer option matching or fall back to gray
+            const stateColor = optionColorForNames(c, [state]) || (GH_COLOR_HEX.GRAY || '#6e7781');
+            const pillBg = rgba(stateColor, 0.10);
+            const pillBorder = '1px solid ' + rgba(stateColor, 0.36);
+            const pillFg = stateColor;
+            const baseStyle = 'display:inline-flex;align-items:center;gap:6px;margin-right:6px;padding:0 8px;line-height:20px;height:20px;border-radius:8px;font-size:12px;text-decoration:none;box-sizing:border-box;';
+            const style = baseStyle + 'background:' + pillBg + ';border:' + pillBorder + ';color:' + pillFg + ';';
+            const inner = esc(title) + (due ? (' <span style="opacity:0.7;margin-left:6px;font-size:11px;">' + esc(due) + '</span>') : '');
+            if (item.url) return '<a href="' + esc(item.url) + '" target="_blank" rel="noreferrer noopener" style="' + style + '">' + inner + '</a>';
+            return '<span style="' + style + '">' + inner + '</span>';
           });
-          // If there was no structured value to render, and developer mode is enabled,
-          // render the raw JSON so we can see what the server returned for this field.
-          if ((!parts || parts.length === 0) && DEV_LOG) {
-            const raw = esc(JSON.stringify(val === undefined ? null : val, null, 2));
-            const pre = '<pre style="white-space:pre-wrap;font-size:11px;color:var(--vscode-foreground);background:rgba(0,0,0,0.02);padding:6px;border-radius:6px;max-width:320px;overflow:auto;margin:0;">' + raw + '</pre>';
-            return '<td style="' + tdStyle + '">' + pre + '</td>';
-          }
           return '<td style="' + tdStyle + '">' + (parts.length ? parts.join('') : '&nbsp;') + '</td>';
         }
 
+        if (isProgressField) {
+          try { if (DEV_LOG) console.info('tables: progress-field', { field: c.name, value: val }); } catch (e) {}
+          return renderProgressCell(c, val, row);
+        }
+
         if (isParentField) {
-          // Parent field may be provided as an object in the field value or as row.parent
-          let pv = val;
-          if ((!pv || (typeof pv === 'object' && Object.keys(pv).length === 0)) && row && row.parent) pv = row.parent;
-          if (!pv) return '<td style="' + tdStyle + '">&nbsp;</td>';
-          // pv expected shape: { number, title, url, state }
-          const titleText = pv && pv.title ? String(pv.title) : '';
-          const href = pv && pv.url ? pv.url : null;
-          const state = (pv && (pv.state || pv.status)) ? String(pv.state || pv.status).toUpperCase() : '';
-          // Map state to color. Treat DONE as a completed/green state as well.
-          let stateHex = GH_COLOR_HEX.GRAY || '#6e7781';
-          if (state === 'OPEN') stateHex = GH_COLOR_HEX.GREEN || '#1a7f37';
-          else if (state === 'DONE' || /\bdone\b/i.test(state)) stateHex = GH_COLOR_HEX.PURPLE || '#8250df';
-          else if (state === 'CLOSED') stateHex = GH_COLOR_HEX.GRAY || '#6e7781';
-          else if (/CANCEL|CANCE(L|D)/i.test(state)) stateHex = GH_COLOR_HEX.ORANGE || '#bc4c00';
-          else if (state === 'MERGED') stateHex = GH_COLOR_HEX.PURPLE || '#8250df';
-
-          const pillBg = rgba(stateHex, 0.12);
-          const pillBorder = '1px solid ' + rgba(stateHex, 0.36);
-          const pillFg = stateHex;
-          const baseStyle = 'display:inline-flex;align-items:center;gap:8px;margin-right:6px;padding:0 8px;line-height:20px;height:20px;border-radius:999px;font-size:12px;text-decoration:none;box-sizing:border-box;';
-          const pillStyle = baseStyle + 'background:' + pillBg + ';border:' + pillBorder + ';color:' + pillFg + ';';
-
-          // Icon per state
-          let icon = '';
-          const iconColor = pillFg;
-          if (state === 'OPEN' || state === '') {
-            // filled circle for open
-            icon = '<svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;">'
-              + '<circle cx="6" cy="6" r="5" fill="' + iconColor + '" />'
-              + '</svg>';
-          } else if (state === 'DONE' || /\bdone\b/i.test(state) || state === 'MERGED') {
-            // use a checkmark for done/merged
-            icon = '<svg width="12" height="12" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;">'
-              + '<path d="M4 8l3 3 6-6" stroke="' + iconColor + '" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
-              + '</svg>';
-          } else if (state === 'CLOSED') {
-            // semi-filled check for closed (neutral)
-            icon = '<svg width="12" height="12" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;">'
-              + '<path d="M6 10.5L3.5 8l-1 1L6 13.5 13.5 6l-1-1L6 10.5z" fill="' + iconColor + '"/>'
-              + '</svg>';
-          } else if (/CANCEL|CANCE(L|D)/i.test(state)) {
-            // cross or dash for canceled
-            icon = '<svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;">'
-              + '<rect x="2" y="5.5" width="8" height="1" fill="' + iconColor + '" rx="0.5"/>'
-              + '</svg>';
-          } else {
-            icon = '<svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" style="flex:0 0 12px;vertical-align:middle;">'
-              + '<circle cx="6" cy="6" r="5" fill="' + iconColor + '" />'
-              + '</svg>';
-          }
-
-          const visible = esc(titleText || (pv.number ? ('#' + pv.number) : ''));
-          const inner = icon + '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;display:inline-block;vertical-align:middle;">' + visible + '</span>';
-          if (href) {
-            return '<td style="' + tdStyle + '"><a href="' + esc(href) + '" target="_blank" rel="noreferrer noopener" style="' + pillStyle + '">' + inner + '</a></td>';
-          }
-          return '<td style="' + tdStyle + '"><span style="' + pillStyle + '">' + inner + '</span></td>';
+          return renderParentCell(c, val, row);
         }
 
         // If the field name/type didn't flag it as a PR column, inspect the
@@ -441,7 +376,7 @@ export function renderTable(container, meta, items){
         try {
           const sampleArr = normalizeToArray(val);
           const looksLikePR = sampleArr.some(item => {
-            const it = (item && typeof item === 'object') ? (item.node || item) : null;
+            const it = (item && typeof item === 'object') ? item : null;
             return !!(it && (it.url || it.html_url || it.number || it.title));
           });
           if (!isPullField && looksLikePR) isPullField = true;
@@ -449,40 +384,31 @@ export function renderTable(container, meta, items){
 
         if (isPullField) {
           // PR pill: show icon + "#<number> in <repo>". Support multiple PRs per cell.
-          const parts = normalizeToArray(val).map(i => {
-            let item = i;
+          const parts = normalizeToArray(val).map(item => {
             if (!item) return '';
-            if (item && typeof item === 'object') {
-              if (item.node) item = item.node;
-            }
             const url = (item && (item.url || item.html_url || item.link)) || (typeof item === 'string' ? item : null);
             const number = item && (item.number || item.id || null);
-            // Display only as: "#<number>" (omit repo name)
             const display = number ? ('#' + number) : (url ? url : 'PR');
             const safe = esc(String(display).slice(0, 60));
-            // small PR icon (monochrome) - will inherit text color
-            const prIcon = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;flex:0 0 12px;">'
-              + '<path d="M5 3.25A1.75 1.75 0 1 0 5 6.75 1.75 1.75 0 0 0 5 3.25zM11 12.25A1.75 1.75 0 1 0 11 15.75 1.75 1.75 0 0 0 11 12.25zM11 3.25A1.75 1.75 0 1 0 11 6.75 1.75 1.75 0 0 0 11 3.25z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>'
-              + '<path d="M6.25 6.5h3.5v3" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-            // Decide color by PR state
+            const prIcon = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;flex:0 0 12px;"><path d="M5 3.25A1.75 1.75 0 1 0 5 6.75 1.75 1.75 0 0 0 5 3.25zM11 12.25A1.75 1.75 0 1 0 11 15.75 1.75 1.75 0 0 0 11 12.25zM11 3.25A1.75 1.75 0 1 0 11 6.75 1.75 1.75 0 0 0 11 3.25z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.25 6.5h3.5v3" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>';
             const prState = (item && item.state) || null;
             const prMerged = !!(item && item.merged);
-            // default to gray
+            // Resolve PR color: prefer a matching option color on the field, else fall back to defaults
             let stateHex = GH_COLOR_HEX.GRAY || '#6e7781';
             if (prMerged) stateHex = GH_COLOR_HEX.PURPLE || '#8250df';
             else if (prState === 'OPEN') stateHex = GH_COLOR_HEX.GREEN || '#1a7f37';
             else if (prState === 'CLOSED') stateHex = GH_COLOR_HEX.GRAY || '#6e7781';
-
+            try {
+              const candidates = prMerged ? ['merged','done','completed'] : [String(prState || '')];
+              const opt = optionColorForNames(c, candidates);
+              if (opt) stateHex = opt;
+            } catch (e) {}
             const pillBg = rgba(stateHex, 0.10);
             const pillBorder = '1px solid ' + rgba(stateHex, 0.4);
             const pillFg = stateHex;
             const baseStyle = 'display:inline-flex;align-items:center;gap:6px;margin-right:6px;padding:0 8px;line-height:20px;height:20px;border-radius:999px;font-size:12px;text-decoration:none;box-sizing:border-box;';
             const styleWithColor = baseStyle + 'background:' + pillBg + ';border:' + pillBorder + ';color:' + pillFg + ';';
-            const styleNoColor = baseStyle + 'background:transparent;border:1px solid var(--vscode-editorWidget-border);color:var(--vscode-foreground);';
-            if (url) {
-              return '<a href="' + esc(url) + '" target="_blank" rel="noreferrer noopener" style="' + styleWithColor + '">' + prIcon + '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;">' + safe + '</span></a>';
-            }
+            if (url) return '<a href="' + esc(url) + '" target="_blank" rel="noreferrer noopener" style="' + styleWithColor + '">' + prIcon + '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;">' + safe + '</span></a>';
             return '<span style="' + styleWithColor + '">' + prIcon + '<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;">' + safe + '</span></span>';
           });
           return '<td style="' + tdStyle + '">' + (parts.length ? parts.join('') : '&nbsp;') + '</td>';
@@ -496,40 +422,16 @@ export function renderTable(container, meta, items){
             // - val can be an array of any of the above
             // Also treat fields with names like 'label'/'labels' as multi-valued.
 
-            function normalizeToArray(v){
-              if (Array.isArray(v)) return v;
-              if (v && typeof v === 'object' && Array.isArray(v.nodes)) return v.nodes;
-              if (v == null || v === '') return [];
-              return [v];
-            }
-
-            function parseColorToken(color){
-              if (!color) return null;
-              // If color is enum name (BLUE, RED...), map via GH_COLOR_HEX
-              if (typeof color === 'string' && GH_COLOR_HEX[color.toUpperCase()]) return GH_COLOR_HEX[color.toUpperCase()];
-              // If color is a 6-hex without #, add #
-              if (typeof color === 'string' && /^([0-9a-f]{6})$/i.test(color)) return '#' + color;
-              if (typeof color === 'string' && /^#([0-9a-f]{6})$/i.test(color)) return color;
-              return null;
-            }
-
-            function contrastTextColor(hex){
-              const rgb = hexToRgb(hex || '#ffffff');
-              if (!rgb) return 'var(--vscode-foreground)';
-              // luminance formula
-              const lum = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
-              return lum > 0.6 ? '#111827' : '#ffffff';
-            }
+            // Use top-level helpers `normalizeToArray`, `parseColorToken`, and `contrastTextColor`
 
             function renderSinglePill(item){
               // item may be id, or option object, or value object
               let name = '';
               let color = null;
-              // unwrap common wrappers
+              // Expect normalized item: { id, name, color }
               if (item && typeof item === 'object'){
-                if (item.node) item = item.node;
-                if (item.optionId && !item.id) item = { id: item.optionId, name: item.name };
-                if (item.id && !item.name && item.name === undefined && item.label) item.name = item.label;
+                if (item.optionId && !item.id) item = { id: item.optionId, name: item.name, color: item.color };
+                if (item.id && !item.name && item.label) item.name = item.label;
               }
               // If options list present, try to resolve by id.
               // When `item` is an object, prefer comparing by `item.id`.
@@ -584,7 +486,7 @@ export function renderTable(container, meta, items){
               return '<span title="' + esc(name) + '" style="' + pillStyle + '">' + esc(name) + '</span>';
             }
 
-            const treatAsMulti = /label|labels/.test((c.name||'').toLowerCase()) || Array.isArray(val) || (val && typeof val === 'object' && Array.isArray(val.nodes));
+            const treatAsMulti = /label|labels/.test((c.name||'').toLowerCase()) || Array.isArray(val);
             const items = normalizeToArray(val);
             if (treatAsMulti){
               const parts = items.map(i => renderSinglePill(i));
