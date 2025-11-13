@@ -57,6 +57,8 @@ export interface TableItemRow {
   title: string;
   url?: string;
   number?: number;
+  subIssuesProgress?: { total: number; completed: number; percent: number } | null;
+  parent?: { number?: number; title?: string; url?: string; state?: string } | null;
   fieldValues: ItemFieldValueMap;
 }
 
@@ -198,7 +200,7 @@ export async function fetchTableItems(
               type
               content {
                 __typename
-                ... on Issue { title url number }
+                ... on Issue { title url number subIssuesSummary { total completed percentCompleted } parent { __typename ... on Issue { number title url state } } }
                 ... on PullRequest { title url number }
                 ... on DraftIssue { title }
               }
@@ -229,11 +231,15 @@ export async function fetchTableItems(
                   }
                   ... on ProjectV2ItemFieldUserValue {
                     field { ...FieldConf }
-                    users(first: 10) { nodes { login } }
+                    users(first: 10) { nodes { login name avatarUrl url } }
+                  }
+                  ... on ProjectV2ItemFieldPullRequestValue {
+                    field { ...FieldConf }
+                    pullRequests(first: 10) { nodes { number title url state merged repository { nameWithOwner owner { login avatarUrl } } } }
                   }
                   ... on ProjectV2ItemFieldLabelValue {
                     field { ...FieldConf }
-                    labels(first: 20) { nodes { name } }
+                    labels(first: 20) { nodes { id name color } }
                   }
                   ... on ProjectV2ItemFieldRepositoryValue {
                     field { ...FieldConf }
@@ -272,8 +278,42 @@ export async function fetchTableItems(
       title,
       url,
       number,
+        subIssuesProgress: null,
       fieldValues: {},
     };
+
+    // If the backing content is an Issue and it includes subIssuesSummary, copy into the normalized row
+    if (content?.__typename === 'Issue' && content?.subIssuesSummary) {
+      try {
+        const ss = content.subIssuesSummary;
+        row.subIssuesProgress = {
+          total: typeof ss.total === 'number' ? ss.total : Number(ss.total ?? 0),
+          completed: typeof ss.completed === 'number' ? ss.completed : Number(ss.completed ?? 0),
+          percent: typeof ss.percentCompleted === 'number' ? ss.percentCompleted : Number(ss.percentCompleted ?? 0),
+        };
+      } catch (e) {
+        row.subIssuesProgress = null;
+      }
+    }
+
+    // If the Issue exposes a parent issue, surface it on the normalized row so
+    // the renderer can display a "Parent issue" column.
+    if (content?.__typename === 'Issue' && content?.parent) {
+      try {
+        const p = content.parent;
+        if (p && p.__typename === 'Issue') {
+          row.parent = {
+            number: typeof p.number === 'number' ? p.number : (p.number ? Number(p.number) : undefined),
+            title: p.title ?? undefined,
+            url: p.url ?? undefined,
+            // include state if present (OPEN/CLOSED/etc.)
+            state: typeof p.state === 'string' ? p.state : undefined,
+          };
+        }
+      } catch (e) {
+        row.parent = null;
+      }
+    }
 
     for (const fv of it.fieldValues?.nodes ?? []) {
       const fid = fv?.field?.id;
@@ -289,20 +329,117 @@ export async function fetchTableItems(
         case 'ProjectV2ItemFieldDateValue':
           value = fv.date ?? null;
           break;
-        case 'ProjectV2ItemFieldSingleSelectValue':
-          value = fv.optionId ?? null;
+        case 'ProjectV2ItemFieldSingleSelectValue': {
+          // Provide richer single-select value to the webview: include id, name and color when available.
+          const optId = fv.optionId ?? null;
+          let name = fv.name ?? null;
+          let color: string | null = null;
+          try {
+            // Try to resolve option color/name from the view meta (fieldsById) if present
+            const fid = fv?.field?.id;
+            const fmeta = fid && viewMeta && viewMeta.fieldsById ? viewMeta.fieldsById[fid] : undefined;
+            if (fmeta && Array.isArray(fmeta.options) && optId) {
+              const found = fmeta.options.find((o: any) => String(o.id) === String(optId));
+              if (found) {
+                name = name || found.name || null;
+                color = found.color || null;
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+          value = optId ? { id: optId, name, color } : (name ? { id: null, name, color } : null);
+        }
           break;
         case 'ProjectV2ItemFieldIterationValue':
           value = fv.title ?? fv.id ?? null;
           break;
-        case 'ProjectV2ItemFieldUserValue':
-          value = (fv.users?.nodes ?? []).map((u: any) => u.login);
+                case 'ProjectV2ItemFieldUserValue':
+                  // Store rich user objects (login, name, avatarUrl, url) instead of
+                  // plain logins so the webview can render avatars and labels.
+                  value = (fv.users?.nodes ?? []).map((u: any) => ({
+                    login: u?.login,
+                    name: u?.name ?? null,
+                    avatarUrl: u?.avatarUrl ?? null,
+                    url: u?.url ?? null,
+                  }));
+          break;
+                case 'ProjectV2ItemFieldPullRequestValue':
+                  // Normalize linked pull requests to simple objects for the webview
+                  // Include state and merged so the renderer can color pills by PR state
+                  value = (fv.pullRequests?.nodes ?? []).map((p: any) => ({
+                    number: p?.number ?? null,
+                    title: p?.title ?? null,
+                    url: p?.url ?? null,
+                    repo: p?.repository?.nameWithOwner ?? null,
+                    state: p?.state ?? null,
+                    merged: typeof p?.merged === 'boolean' ? p.merged : null,
+                    ownerAvatar: p?.repository?.owner?.avatarUrl ?? null,
+                  }));
+                  break;
+        case 'ProjectV2ItemFieldLabelValue':
+          // Labels: map to objects with id, name and color for the renderer
+          value = (fv.labels?.nodes ?? []).map((l: any) => ({ id: l?.id ?? null, name: l?.name ?? null, color: l?.color ?? null }));
+          break;
+        case 'ProjectV2ItemFieldRepositoryValue':
+          // Repository field: provide nameWithOwner, url and owner avatar for renderer
+          value = fv.repository
+            ? {
+                nameWithOwner: fv.repository.nameWithOwner ?? null,
+                url: fv.repository.url ?? null,
+                ownerAvatar: fv.repository.owner?.avatarUrl ?? null,
+              }
+            : null;
           break;
         default:
           value = null;
       }
       row.fieldValues[fid] = value;
     }
+    // If the backing Issue has sub-issues progress, copy it into the specific
+    // visible Project field named "Sub-issues progress" (some projects use this
+    // exact field name / type). This ensures the renderer (which reads
+    // `row.fieldValues[fieldId]`) can display the segmented progress UI.
+    if (row.subIssuesProgress) {
+      try {
+        const nameRegex = /^\s*sub-?issues\s+progress\s*$/i;
+        const typoRegex = /^\s*sub-?issues\s+progres\s*$/i; // tolerate common typo
+        const typeRegex = /SUB[_-]?ISSUES/i;
+        for (const fid of viewMeta.visibleFieldIds || []) {
+          const fmeta = viewMeta.fieldsById ? viewMeta.fieldsById[fid] : undefined;
+          if (!fmeta || !fmeta.name) continue;
+          const name = String(fmeta.name || '');
+          const dtype = String(fmeta.dataType || '');
+          if (!(nameRegex.test(name) || typoRegex.test(name) || typeRegex.test(dtype))) continue;
+          const existing = row.fieldValues[fid];
+          const isEmpty = existing === null || existing === undefined || (Array.isArray(existing) && existing.length === 0) || (typeof existing === 'object' && Object.keys(existing).length === 0);
+          if (isEmpty) {
+            row.fieldValues[fid] = { total: row.subIssuesProgress.total, completed: row.subIssuesProgress.completed, percent: row.subIssuesProgress.percent };
+          }
+        }
+      } catch (e) {
+        // non-fatal; renderer can still fall back
+      }
+    }
+      // If there's a parent issue on the Issue content, copy it into any visible
+      // Project field named "Parent issue" so the renderer can show it.
+      if (row.parent) {
+        try {
+          const nameRegex = /^\s*parent(\s+issue)?\s*$/i;
+          for (const fid of viewMeta.visibleFieldIds || []) {
+            const fmeta = viewMeta.fieldsById ? viewMeta.fieldsById[fid] : undefined;
+            if (!fmeta || !fmeta.name) continue;
+            if (!nameRegex.test(String(fmeta.name))) continue;
+            const existing = row.fieldValues[fid];
+            const isEmpty = existing === null || existing === undefined || (Array.isArray(existing) && existing.length === 0) || (typeof existing === 'object' && Object.keys(existing).length === 0);
+            if (isEmpty) {
+              row.fieldValues[fid] = { number: row.parent.number, title: row.parent.title, url: row.parent.url, state: row.parent.state };
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
     items.push(row);
   }
 
