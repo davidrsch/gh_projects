@@ -1,7 +1,7 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import * as fs from "fs/promises";
+import * as path from "path";
 
-export type Repo = { name: string; path: string; gitType: 'folder' | 'file' };
+export type Repo = { name: string; path: string; gitType: "folder" | "file" };
 
 async function exists(p: string) {
   try {
@@ -12,18 +12,23 @@ async function exists(p: string) {
   }
 }
 
-export async function gitTypeOf(dir: string): Promise<'folder' | 'file' | null> {
-  const gitPath = path.join(dir, '.git');
+export async function gitTypeOf(
+  dir: string,
+): Promise<"folder" | "file" | null> {
+  const gitPath = path.join(dir, ".git");
   if (!(await exists(gitPath))) return null;
   try {
     const s = await fs.lstat(gitPath);
-    return s.isDirectory() ? 'folder' : 'file';
+    return s.isDirectory() ? "folder" : "file";
   } catch {
     return null;
   }
 }
 
-export async function findGitRepos(root: string, maxDepth = 6): Promise<Repo[]> {
+export async function findGitRepos(
+  root: string,
+  maxDepth = 6,
+): Promise<Repo[]> {
   const out: Repo[] = [];
 
   async function walk(cur: string, depth: number) {
@@ -43,7 +48,7 @@ export async function findGitRepos(root: string, maxDepth = 6): Promise<Repo[]> 
     }
 
     for (const e of entries) {
-      if (e === 'node_modules' || e === '.git') continue;
+      if (e === "node_modules" || e === ".git") continue;
       const full = path.join(cur, e);
       try {
         const st = await fs.lstat(full);

@@ -1,6 +1,6 @@
-import { FieldConfig } from '../types';
+import { FieldConfig, FieldNode, FieldOption } from "../types";
 
-export function normalizeFieldConfig(node: any): FieldConfig {
+export function normalizeFieldConfig(node: FieldNode): FieldConfig {
   const base: FieldConfig = {
     id: node.id,
     name: node.name,
@@ -11,7 +11,12 @@ export function normalizeFieldConfig(node: any): FieldConfig {
 
   // collect options for single select
   if (node.options && Array.isArray(node.options)) {
-    base.options = node.options.map((o: any) => ({ id: o.id, name: o.name, description: o.description, color: o.color }));
+    base.options = node.options.map((o: FieldOption) => ({
+      id: o.id,
+      name: o.name,
+      description: o.description,
+      color: o.color,
+    }));
   }
 
   if (node.configuration) base.configuration = node.configuration;

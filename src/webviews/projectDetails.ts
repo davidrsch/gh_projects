@@ -1,66 +1,303 @@
-import * as vscode from 'vscode';
-import { ProjectEntry } from '../treeViewProvider';
-import ghClient from '../github/ghClient';
-import { overviewFetcher as overviewFetcherStr } from './fetchers/overviewFetcher';
-import { tableViewFetcher as tableViewFetcherStr } from './fetchers/tableViewFetcher';
-import { boardViewFetcher as boardViewFetcherStr } from './fetchers/boardViewFetcher';
-import { roadmapViewFetcher as roadmapViewFetcherStr } from './fetchers/roadmapViewFetcher';
-import { contentFetcher as contentFetcherStr } from './fetchers/contentFetcher';
+import * as vscode from "vscode";
+import { ProjectEntry } from "../treeViewProvider";
+import ghClient from "../github/ghClient";
+import messages, { isGhNotFound } from "../lib/messages";
+import logger from "../lib/logger";
+import { wrapError } from "../lib/errors";
+import { ProjectSnapshot, ProjectView } from "../lib/types";
 
+// Panels map: panelKey -> WebviewPanel
 const panels = new Map<string, vscode.WebviewPanel>();
 
-export function openProjectWebview(context: vscode.ExtensionContext, project: ProjectEntry) {
-  const id = project.id ?? project.url ?? project.title ?? '<unknown>';
-
-  const existing = panels.get(id);
-  if (existing) {
-    existing.reveal(vscode.ViewColumn.One);
-    return;
+export async function openProjectWebview(
+  context: vscode.ExtensionContext,
+  project: ProjectEntry,
+  workspaceRoot?: string,
+) {
+  // Fetch project views to determine view number for stable panelKey
+  let views: ProjectView[] = Array.isArray(project.views) ? project.views : [];
+  if (!views.length && project.id) {
+    try {
+      views = await ghClient.fetchProjectViews(project.id);
+    } catch (e) {
+      logger.warn("Failed to fetch project views for panelKey: " + String(e));
+    }
   }
 
+  // Panels are keyed by workspaceRoot + project id/title for stability
+  const panelMapKey = `${workspaceRoot ?? "<no-workspace>"}::${
+    project.id
+      ? String(project.id)
+      : project.title
+        ? String(project.title)
+        : "<unknown>"
+  }`;
+
+  // Reuse panel if already open
+  if (panels.has(panelMapKey)) {
+    const panel = panels.get(panelMapKey)!;
+    panel.reveal(vscode.ViewColumn.One);
+    // Optionally update content if needed (post latest snapshot)
+    // No single viewKey for refresh; let webview handle refresh for all tabs
+    panel.webview.postMessage({ command: "refresh" });
+    return panel;
+  }
+
+  // Create new panel
   const panel = vscode.window.createWebviewPanel(
-    'ghProjects.projectDetails',
-    project.title ?? String(id),
+    "ghProjects.projectDetails",
+    project.title ?? String(project.id ?? "Project Details"),
     { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
-    { enableScripts: true, retainContextWhenHidden: true }
+    { enableScripts: true, retainContextWhenHidden: true },
+  );
+  panels.set(panelMapKey, panel);
+  panel.onDidDispose(
+    () => panels.delete(panelMapKey),
+    null,
+    context.subscriptions,
   );
 
-  panels.set(id, panel);
-  panel.onDidDispose(() => panels.delete(id), null, context.subscriptions);
-
+  // Use new path for vscode-elements.js
   const elementsUri = panel.webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, 'media', 'vscode-elements.js')
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "media",
+      "third-party",
+      "vscode-elements.js",
+    ),
   );
-  panel.webview.html = buildHtml(panel.webview, project, elementsUri.toString());
+  // compute fetcher URIs
+  const overviewUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "media",
+      "webviews",
+      "overviewFetcher.js",
+    ),
+  );
+  const tableUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "media",
+      "webviews",
+      "tableViewFetcher.js",
+    ),
+  );
+  const boardUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "media",
+      "webviews",
+      "boardViewFetcher.js",
+    ),
+  );
+  const roadmapUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "media",
+      "webviews",
+      "roadmapViewFetcher.js",
+    ),
+  );
+  const contentUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "media",
+      "webviews",
+      "contentFetcher.js",
+    ),
+  );
+
+  panel.webview.html = buildHtml(
+    panel.webview,
+    project,
+    elementsUri.toString(),
+    { overviewUri, tableUri, boardUri, roadmapUri, contentUri },
+    panelMapKey,
+  );
 
   panel.webview.onDidReceiveMessage(
-    async msg => {
-      if (msg?.command === 'openRepo' && msg.path) {
-        vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(msg.path), {
-          forceNewWindow: false,
-        });
+    async (msg) => {
+      // Only handle messages for this panel (ignore if no viewKey for this project)
+      if (!msg?.viewKey) return;
+
+      if (msg?.command === "openRepo" && msg.path) {
+        vscode.commands.executeCommand(
+          "vscode.openFolder",
+          vscode.Uri.file(msg.path),
+          {
+            forceNewWindow: false,
+          },
+        );
       }
-      if (msg?.command === 'openUrl' && msg.url) {
-        try{
+      if (msg?.command === "openUrl" && msg.url) {
+        try {
           const u = vscode.Uri.parse(String(msg.url));
           await vscode.env.openExternal(u);
-        }catch(e){ console.error('openUrl failed', e); }
-      }
-      if (msg?.command === 'requestFields') {
-        try {
-          const snapshot = await ghClient.fetchProjectFields(project.id as string, { first: 30 });
-          panel.webview.postMessage({ command: 'fields', payload: snapshot });
         } catch (e) {
-          panel.webview.postMessage({ command: 'fields', error: String(e) });
+          logger.error(
+            "webview.openUrl failed: " + String((e as any)?.message || e),
+          );
+          vscode.window.showErrorMessage(
+            "Failed to open URL: " + String((e as any)?.message || e),
+          );
+        }
+      }
+      if (msg?.command === "requestFields") {
+        const reqViewKey = msg.viewKey as string | undefined;
+        const _reqMsg = `webview.requestFields received viewKey=${String(reqViewKey)} projectId=${project.id}`;
+        logger.debug(_reqMsg);
+        try {
+          console.debug(_reqMsg);
+        } catch (e) {
+          logger.debug("console.debug failed: " + String(e));
+        }
+        try {
+          // Determine which view is being requested. viewKey can be composite like
+          // "<panelKey>:view-0" or "<panelKey>:overview" so extract suffix after last ':'
+          let localKey = reqViewKey
+            ? String(reqViewKey).split(":").pop()
+            : undefined;
+          let viewIdx = 0;
+          if (localKey && localKey.startsWith("view-")) {
+            const idx = Number(localKey.split("-")[1]);
+            if (!isNaN(idx)) viewIdx = idx;
+          }
+          const viewsArr: ProjectView[] = Array.isArray(project.views)
+            ? project.views
+            : [];
+          const view = viewsArr[viewIdx];
+          const first = vscode.workspace
+            .getConfiguration("ghProjects")
+            .get<number>("itemsFirst", 50);
+          logger.debug(
+            `[ghProjects] Fetching project fields for projectId=${project.id} viewIdx=${viewIdx} first=${first}`,
+          );
+          // If the view has a type, you could branch here for board/roadmap, etc.
+          // For now, always fetch fields (table/board/roadmap fetchers can use the same API or branch as needed)
+          // If needed, pass view-specific info to fetchProjectFields here (or filter after fetch)
+          const snapshot: ProjectSnapshot = await ghClient.fetchProjectFields(
+            project.id as string,
+            { first },
+          );
+          logger.debug(`[ghProjects] fetchProjectFields result:`, snapshot);
+          const itemsCount =
+            (snapshot &&
+              (snapshot as any).items &&
+              (snapshot as any).items.length) ||
+            0;
+          const _postMsg = `webview.postMessage fields viewKey=${String(reqViewKey)} items=${itemsCount}`;
+          logger.debug(_postMsg);
+          try {
+            console.debug(_postMsg, snapshot);
+          } catch (e) {
+            logger.debug("console.debug failed: " + String(e));
+          }
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: reqViewKey,
+            payload: snapshot,
+          });
+        } catch (e) {
+          const wrapped = wrapError(e, "requestFields failed");
+          const msgText = String(wrapped?.message || wrapped || "");
+          const _errMsg = "requestFields failed: " + msgText;
+          logger.error(_errMsg);
+          try {
+            console.error(_errMsg);
+          } catch (e) {
+            logger.debug("console.error failed: " + String(e));
+          }
+          if ((wrapped as any)?.code === "ENOENT" || isGhNotFound(wrapped)) {
+            vscode.window.showErrorMessage(messages.GH_NOT_FOUND);
+          }
+          const _errPost = `webview.postMessage fields error viewKey=${String(reqViewKey)} error=${msgText}`;
+          logger.debug(_errPost);
+          try {
+            console.debug(_errPost);
+          } catch (e) {
+            logger.debug("console.debug failed: " + String(e));
+          }
+          const isAuth = (wrapped as any)?.code === "ENOTAUTH";
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: reqViewKey,
+            error: msgText,
+            authRequired: isAuth,
+          });
+        }
+      }
+      // accept debug logs from webview fetchers and write them to the Output channel
+      if (msg?.command === "debugLog") {
+        try {
+          const level = (msg.level as string) || "debug";
+          const vk = msg.viewKey ? ` viewKey=${String(msg.viewKey)}` : "";
+          const text = String(msg.message || msg.msg || "");
+          const data = msg.data !== undefined ? msg.data : undefined;
+          const formatted =
+            `webview:${vk} ${text}` + (data ? ` ${JSON.stringify(data)}` : "");
+          if (level === "info") {
+            logger.info(formatted);
+            try {
+              console.info(formatted);
+            } catch (e) {
+              logger.debug("console.info failed: " + String(e));
+            }
+          } else if (level === "warn") {
+            logger.warn(formatted);
+            try {
+              console.warn(formatted);
+            } catch (e) {
+              logger.debug("console.warn failed: " + String(e));
+            }
+          } else if (level === "error") {
+            logger.error(formatted);
+            try {
+              console.error(formatted);
+            } catch (e) {
+              logger.debug("console.error failed: " + String(e));
+            }
+          } else {
+            logger.debug(formatted);
+            try {
+              console.debug(formatted);
+            } catch (e) {
+              logger.debug("console.debug failed: " + String(e));
+            }
+          }
+        } catch (e) {
+          try {
+            const fm = `webview.debugLog parse failed: ${String(e)}`;
+            logger.debug(fm);
+            try {
+              console.debug(fm);
+            } catch (e2) {
+              logger.debug("console.debug failed: " + String(e2));
+            }
+          } catch (e2) {
+            logger.debug("failed handling debugLog error: " + String(e2));
+          }
         }
       }
     },
     undefined,
-    context.subscriptions
+    context.subscriptions,
   );
 }
 
-function buildHtml(webview: vscode.Webview, project: ProjectEntry, elementsScriptUri?: string): string {
+function buildHtml(
+  webview: vscode.Webview,
+  project: ProjectEntry,
+  elementsScriptUri?: string,
+  fetcherUris?: {
+    overviewUri: vscode.Uri;
+    tableUri: vscode.Uri;
+    boardUri: vscode.Uri;
+    roadmapUri: vscode.Uri;
+    contentUri: vscode.Uri;
+  },
+  panelKey?: string,
+): string {
   const nonce = getNonce();
   const csp = webview.cspSource;
 
@@ -68,20 +305,25 @@ function buildHtml(webview: vscode.Webview, project: ProjectEntry, elementsScrip
     title: project.title,
     repos: project.repos ?? [],
     views: Array.isArray(project.views) ? project.views : [],
-    description: project.description ?? '',
+    description: project.description ?? "",
+    panelKey: panelKey ?? "<no-panel-key>",
   };
 
   const scriptTag = elementsScriptUri
     ? `<script nonce="${nonce}" type="module" src="${elementsScriptUri}"></script>`
-    : '';
+    : "";
 
-  const fetchersScript = [
-    overviewFetcherStr,
-    tableViewFetcherStr,
-    boardViewFetcherStr,
-    roadmapViewFetcherStr,
-    contentFetcherStr
-  ].join('\n\n');
+  // loader script tags for static fetcher files
+  // Use classic scripts (no type="module") so they execute synchronously
+  const fetcherScripts = fetcherUris
+    ? [
+        `<script nonce="${nonce}" src="${fetcherUris.overviewUri.toString()}"></script>`,
+        `<script nonce="${nonce}" src="${fetcherUris.tableUri.toString()}"></script>`,
+        `<script nonce="${nonce}" src="${fetcherUris.boardUri.toString()}"></script>`,
+        `<script nonce="${nonce}" src="${fetcherUris.roadmapUri.toString()}"></script>`,
+        `<script nonce="${nonce}" src="${fetcherUris.contentUri.toString()}"></script>`,
+      ].join("\n")
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -175,9 +417,16 @@ ${scriptTag}
   <div id="tabs-container"></div>
   <div id="tab-panels"></div>
 </div>
+${/* expose project data and vscodeApi for media scripts */ ""}
+<script nonce="${nonce}">
+  window.__project_data__ = ${JSON.stringify(projectData)};
+  try { window.vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null; } catch(e) { window.vscodeApi = null; }
+</script>
+
+${fetcherScripts}
 
 <script nonce="${nonce}" type="module">
-const vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+const vscodeApi = window.vscodeApi || (typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null);
 const project = ${JSON.stringify(projectData)};
 // Temporary debug: print views to the webview console to verify layout values
 console.log('project.views', project.views);
@@ -221,25 +470,47 @@ console.log('project.views', project.views);
         tabsContainer.scrollBy({ left: elRect.right - contRect.right + 8, behavior:'smooth' });
       }
     }
+    // activate fetcher for this tab (on-demand)
+    try {
+      activateTabFetcher(key);
+    } catch (e) {
+      try { console.debug('activateTabFetcher failed: ' + String(e)); } catch (_) {}
+    }
   }
-
-  ${fetchersScript}
 
   // Initialize first tab
   showTab('overview', tabsContainer.children[0]);
 
-  // Render overview into its panel
-  const ov = panelsMap['overview'];
-  if(ov){
-    // overviewFetcher is provided by the injected fetchers
-    if(typeof overviewFetcher === 'function') overviewFetcher(ov);
+  // We'll initialize fetchers only when a tab is activated (on demand).
+  // This avoids multiple fetchers racing or running for non-active tabs.
+  const initialized = {};
+
+  // helper to activate a given tab key and run its fetcher if needed
+  function activateTabFetcher(key){
+    if(key === 'overview'){
+      const ov = panelsMap['overview'];
+      if(ov && !initialized['overview']){
+        if(typeof window.overviewFetcher === 'function') window.overviewFetcher(ov, project.panelKey + ':overview');
+        initialized['overview'] = true;
+      }
+      return;
+    }
+    if(String(key).startsWith('view-')){
+      const idx = Number(String(key).split('-')[1]);
+      const view = (project.views ?? [])[idx];
+      const p = panelsMap['view-'+idx];
+      const vk = 'view-' + idx;
+      // Debug: print view and layout
+      try { console.log('[ghProjects] Tab', key, 'view:', view, 'layout:', view && view.layout); } catch(e){}
+      if(p && view && !initialized[vk]){
+        if(typeof window.contentFetcher === 'function') window.contentFetcher(view, p, project.panelKey + ':' + vk);
+        initialized[vk] = true;
+      }
+    }
   }
 
-  // Render each configured view via the contentFetcher (injected)
-  (project.views ?? []).forEach((v,i) => {
-    const p = panelsMap['view-'+i];
-    if(p && typeof contentFetcher === 'function') contentFetcher(v, p);
-  });
+  // Initialize only the overview on first render (showTab will call this too)
+  activateTabFetcher('overview');
 
   panelsContainer.addEventListener('click', e=>{
     const item = e.target?.closest('.repo-item');
@@ -257,9 +528,11 @@ console.log('project.views', project.views);
 }
 
 function getNonce(): string {
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let text = '';
-  for(let i=0;i<16;i++) text += possible.charAt(Math.floor(Math.random()*possible.length));
+  const possible =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let text = "";
+  for (let i = 0; i < 16; i++)
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
   return text;
 }
 

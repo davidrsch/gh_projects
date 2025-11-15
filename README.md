@@ -22,6 +22,21 @@ Browse GitHub Projects (Projects v2) linked to repositories in your current work
 Notes on scopes:
 - The GitHub CLI manual mentions a minimum token scope of “project” for gh project; in VS Code’s authentication provider the equivalent read scope is “read:project”, which is sufficient for reading Projects v2. The “repo” scope is needed for private repo access.
 
+## Signing in
+
+- The extension uses VS Code's Authentication API. You must sign in to GitHub through VS Code to enable authenticated features.
+- Use the Command Palette and run `ghProjects.signIn` or click the "Sign in to GitHub" action when prompted.
+- Required scopes: `repo`, `read:org`, `read:user`. The extension will request these when signing in.
+
+## Migration from PATs or GH CLI
+
+- This extension no longer reads `GH_TOKEN` or `ghProjects.ghToken` configuration and does not fall back to the GitHub CLI for authentication.
+- If you previously used a Personal Access Token or the `gh` CLI, switch to VS Code built-in GitHub sign-in:
+	1. Open the Command Palette (Ctrl+Shift+P) and run `Sign in to GitHub` (or `ghProjects.signIn`).
+	2. Complete the OAuth flow in the browser. If your organization uses SAML/SSO, follow the enterprise guidance presented by the sign-in flow.
+
+If you need to automate data access, consider using CI runners with appropriate environment tokens outside of this extension's interactive sign-in flow.
+
 ## How to use
 
 1. Open a folder or workspace that contains one or more Git repositories.
@@ -54,3 +69,12 @@ No data is stored. The extension reads local `.git` config to detect remotes and
 - Add owner-level browsing (User/Organization `projectsV2`).
 - Show more metadata (e.g., visibility, project number, owner).
 - Add basic filtering and caching.
+
+## Third-party assets
+
+Third-party assets used by webviews are placed under `media/third-party/`.
+
+Attribution:
+- `vscode-elements.js` (VS Code Elements) is included in `media/third-party/` with upstream attribution in `media/third-party/README.md`.
+
+See `media/third-party/README.md` for license and source details.
