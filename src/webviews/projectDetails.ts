@@ -40,6 +40,12 @@ export function openProjectWebview(context: vscode.ExtensionContext, project: Pr
           forceNewWindow: false,
         });
       }
+      if (msg?.command === 'openUrl' && msg.url) {
+        try{
+          const u = vscode.Uri.parse(String(msg.url));
+          await vscode.env.openExternal(u);
+        }catch(e){ console.error('openUrl failed', e); }
+      }
       if (msg?.command === 'requestFields') {
         try {
           const snapshot = await ghClient.fetchProjectFields(project.id as string, { first: 30 });

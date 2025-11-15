@@ -1,9 +1,9 @@
 import { execFile } from 'child_process';
-import { ghGraphQL } from '../lib/fields_base/graphql';
-import { normalizeFieldConfig } from '../lib/fields_base/parsers/fieldConfigParser';
-import { parseFieldValue } from '../lib/fields_base/parsers/valueParsers';
-import { makeLimits, buildCandidateFragments, buildRepoSelections, buildItemsQuery, buildFieldsQuery } from '../lib/fields_base/helpers';
-import { aggregateMaps, mergeOptions } from '../lib/fields_base/aggregation';
+import { ghGraphQL } from '../lib/graphql';
+import { normalizeFieldConfig } from '../lib/parsers/fieldConfigParser';
+import { parseFieldValue } from '../lib/parsers/valueParsers';
+import { makeLimits, buildCandidateFragments, buildRepoSelections, buildItemsQuery, buildFieldsQuery } from '../lib/helpers';
+import { aggregateMaps, mergeOptions } from '../lib/aggregation';
 
 export async function fetchProjectViews(projectId: string): Promise<any[]> {
   // Request `layout` and `number` for each view so the frontend can
@@ -207,7 +207,7 @@ export async function fetchProjectFields(projectId: string, opts?: { first?: num
     return { id: item.id, fieldValues: fv, content: item.content };
   });
 
-  const { labelMap, milestoneMap, repoMap, prMap, issueMap, repoNames } = aggregateMaps(items);
+  const { labelMap, milestoneMap, repoMap, prMap, issueMap, repoNames } = aggregateMaps(items) as any;
   const repoOptionsMap: Record<string, any> = {};
   if (repoNames.length > 0) {
     const repoSelections = buildRepoSelections(repoNames, LIMITS);
@@ -234,7 +234,7 @@ export async function fetchProjectFields(projectId: string, opts?: { first?: num
         f.repoOptions = {};
         for (const rn of Object.keys(repoOptionsMap)) f.repoOptions[rn] = repoOptionsMap[rn].labels;
       } else {
-        f.options = Array.from(labelMap.values()).map((l) => ({ id: l.id, name: l.name, color: (l as any).color }));
+        f.options = Array.from(labelMap.values()).map((l: any) => ({ id: l.id, name: l.name, color: (l as any).color }));
       }
     }
     if (f.dataType === 'MILESTONE') {
@@ -242,11 +242,11 @@ export async function fetchProjectFields(projectId: string, opts?: { first?: num
         f.repoOptions = {};
         for (const rn of Object.keys(repoOptionsMap)) f.repoOptions[rn] = repoOptionsMap[rn].milestones;
       } else {
-        f.options = Array.from(milestoneMap.values()).map((m) => ({ id: m.id, name: m.title }));
+        f.options = Array.from(milestoneMap.values()).map((m: any) => ({ id: m.id, name: m.title }));
       }
     }
     if (f.dataType === 'REPOSITORY') {
-      f.options = Array.from(repoMap.values()).map((r) => ({ id: r.nameWithOwner, name: r.nameWithOwner }));
+      f.options = Array.from(repoMap.values()).map((r: any) => ({ id: r.nameWithOwner, name: r.nameWithOwner }));
     }
     if (f.dataType === 'LINKED_PULL_REQUESTS') {
       f.options = Array.from(prMap.values());
@@ -258,11 +258,11 @@ export async function fetchProjectFields(projectId: string, opts?: { first?: num
 
   for (const f of fields) {
     if (f.dataType === 'LABELS') {
-      const inferred = Array.from(labelMap.values()).map((l) => ({ id: l.id, name: l.name, color: (l as any).color }));
+      const inferred = Array.from(labelMap.values()).map((l: any) => ({ id: l.id, name: l.name, color: (l as any).color }));
       f.options = mergeOptions(f.options, undefined, inferred);
     }
     if (f.dataType === 'MILESTONE') {
-      const inferred = Array.from(milestoneMap.values()).map((m) => ({ id: m.id, name: m.title }));
+      const inferred = Array.from(milestoneMap.values()).map((m: any) => ({ id: m.id, name: m.title }));
       f.options = mergeOptions(f.options, undefined, inferred);
     }
   }
