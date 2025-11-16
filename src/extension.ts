@@ -1,65 +1,13 @@
 import * as vscode from "vscode";
 import { ProjectsProvider, ProjectEntry } from "./treeViewProvider";
 import { openProjectWebview } from "./webviews/projectDetails";
-import ghAvailability from "./lib/ghAvailability";
 import logger from "./lib/logger";
 import messages from "./lib/messages";
 
 export async function activate(context: vscode.ExtensionContext) {
-  // Non-interactive check for GitHub authentication session.
-  try {
-    const scopes = ["repo", "read:org", "read:user"];
-    if ((vscode as any).authentication && typeof (vscode as any).authentication.getSession === "function") {
-      try {
-        const session = await (vscode as any).authentication.getSession("github", scopes, { createIfNone: false });
-        if (!session) {
-          // Offer a single non-blocking sign-in notification.
-          const action = "Sign in to GitHub";
-          const choice = await vscode.window.showInformationMessage(
-            "ghProjects: Sign in to GitHub to enable authenticated features",
-            action,
-          );
-          if (choice === action) {
-            await vscode.commands.executeCommand("ghProjects.signIn");
-          }
-        }
-      } catch (e) {
-        logger.debug("Non-interactive auth check failed: " + String(e));
-      }
-    }
-  } catch (e) {
-    logger.debug("Auth check outer failed: " + String(e));
-  }
-  // Register quick-fix command for GH install docs
-  context.subscriptions.push(
-    vscode.commands.registerCommand("ghProjects.openInstallDocs", () => {
-      vscode.env.openExternal(vscode.Uri.parse("https://cli.github.com/"));
-    }),
-  );
-  // Check gh availability once and cache result
-  try {
-    await ghAvailability.checkGhOnce();
-    const available = await ghAvailability.isGhAvailable();
-    const version = await ghAvailability.getGhVersion();
-    logger.info("activate", {
-      ghAvailable: available,
-      workspaceFoldersCount: (vscode.workspace.workspaceFolders || []).length,
-      ghVersion: version,
-    });
-    if (!available) {
-      logger.warn("gh not available at activation");
-      vscode.window
-        .showErrorMessage(messages.GH_NOT_FOUND, "Open install docs")
-        .then((sel) => {
-          if (sel === "Open install docs")
-            vscode.commands.executeCommand("ghProjects.openInstallDocs");
-        });
-    }
-  } catch (e: any) {
-    logger.error(
-      "gh availability check failed: " + String(e?.message || e || ""),
-    );
-  }
+  logger.info("activate", {
+    workspaceFoldersCount: (vscode.workspace.workspaceFolders || []).length,
+  });
 
   const folders = vscode.workspace.workspaceFolders || [];
   if (folders.length === 0) {
@@ -96,26 +44,38 @@ export async function activate(context: vscode.ExtensionContext) {
     treeView,
     vscode.commands.registerCommand("ghProjects.checkGh", async () => {
       try {
-        await ghAvailability.checkGhOnce();
-        const avail = await ghAvailability.isGhAvailable();
-        const ver = await ghAvailability.getGhVersion();
-        logger.info("checkGh", { available: avail, version: ver });
-        if (!avail) {
-          const sel = await vscode.window.showWarningMessage(
-            messages.GH_NOT_FOUND,
-            "Open install docs",
+        // Check for a VS Code GitHub authentication session
+        if (
+          !(
+            (vscode as any).authentication &&
+            typeof (vscode as any).authentication.getSession === "function"
+          )
+        ) {
+          vscode.window.showErrorMessage(
+            "GitHub authentication API is not available in this host.",
           );
-          if (sel === "Open install docs")
-            vscode.commands.executeCommand("ghProjects.openInstallDocs");
+          return;
+        }
+        const scopes = ["repo", "read:org", "read:user", "read:project"];
+        const session = await (vscode as any).authentication.getSession(
+          "github",
+          scopes,
+          { createIfNone: false },
+        );
+        if (!session) {
+          const action = "Sign in to GitHub";
+          const choice = await vscode.window.showInformationMessage(
+            "Not signed in to GitHub",
+            action,
+          );
+          if (choice === action) await vscode.commands.executeCommand("ghProjects.signIn");
         } else {
-          vscode.window.showInformationMessage(
-            `GitHub CLI available — ${ver || "unknown version"}`,
-          );
+          vscode.window.showInformationMessage("Signed in to GitHub");
         }
       } catch (e: any) {
         logger.error("checkGh failed: " + String(e?.message || e || ""));
         vscode.window.showErrorMessage(
-          "Failed to check GitHub CLI: " + String(e?.message || e || ""),
+          "Failed to check GitHub auth: " + String(e?.message || e || ""),
         );
       }
     }),
@@ -125,19 +85,36 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("ghProjects.signIn", async () => {
       const scopes = ["repo", "read:org", "read:user"];
       try {
-        if (!((vscode as any).authentication && typeof (vscode as any).authentication.getSession === "function")) {
-          vscode.window.showErrorMessage("GitHub authentication API is not available in this host.");
+        if (
+          !(
+            (vscode as any).authentication &&
+            typeof (vscode as any).authentication.getSession === "function"
+          )
+        ) {
+          vscode.window.showErrorMessage(
+            "GitHub authentication API is not available in this host.",
+          );
           return;
         }
-        const session = await (vscode as any).authentication.getSession("github", scopes, { createIfNone: true });
+        const session = await (vscode as any).authentication.getSession(
+          "github",
+          [...scopes, "read:project"],
+          { createIfNone: true },
+        );
         if (session && session.accessToken) {
           vscode.window.showInformationMessage("Signed in to GitHub");
         } else {
-          vscode.window.showErrorMessage("Failed to sign in to GitHub. Ensure you have the correct account access (SAML/Enterprise may require extra steps).");
+          vscode.window.showErrorMessage(
+            "Failed to sign in to GitHub. Ensure you have the correct account access (SAML/Enterprise may require extra steps).",
+          );
         }
       } catch (err: any) {
         const msg = String(err?.message || err || "");
-        vscode.window.showErrorMessage("Sign-in failed: " + msg + " — check enterprise SAML settings if applicable.");
+        vscode.window.showErrorMessage(
+          "Sign-in failed: " +
+            msg +
+            " — check enterprise SAML settings if applicable.",
+        );
       }
     }),
     vscode.commands.registerCommand(
@@ -182,6 +159,37 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   );
   context.subscriptions.push(workspaceFoldersChange);
+
+  // After commands are registered, do a non-interactive auth check and offer a single sign-in notification.
+  try {
+    const scopes = ["repo", "read:org", "read:user"];
+    if (
+      (vscode as any).authentication &&
+      typeof (vscode as any).authentication.getSession === "function"
+    ) {
+      try {
+        const session = await (vscode as any).authentication.getSession(
+          "github",
+          [...scopes, "read:project"],
+          { createIfNone: false },
+        );
+        if (!session) {
+          const action = "Sign in to GitHub";
+          const choice = await vscode.window.showInformationMessage(
+            "ghProjects: Sign in to GitHub to enable authenticated features",
+            action,
+          );
+          if (choice === action) {
+            await vscode.commands.executeCommand("ghProjects.signIn");
+          }
+        }
+      } catch (e) {
+        logger.debug("Non-interactive auth check failed: " + String(e));
+      }
+    }
+  } catch (e) {
+    logger.debug("Auth check outer failed: " + String(e));
+  }
 }
 
 // webview handling moved to `src/webviews/projectDetails.ts`

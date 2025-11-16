@@ -1,7 +1,7 @@
 export const GH_NOT_FOUND =
-  "GitHub CLI (gh) not found. Install and add to PATH.";
+  "GitHub authentication required — sign in to GitHub via VS Code.";
 export const GH_PERMISSION_ERROR_HINT =
-  'GitHub API permission error — try running "gh auth login" to re-authenticate.';
+  'GitHub API permission error — sign in via the extension (run the "Sign in to GitHub" command) or check your account/organization permissions (SAML/SSO).';
 
 function firstNonEmpty(...parts: Array<any>) {
   for (const p of parts) {

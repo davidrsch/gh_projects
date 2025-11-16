@@ -5,7 +5,6 @@ import getProjectsForReposArray from "./treeView/getProjects";
 import uniqueProjectsFromResults from "./treeView/getUniqueProjects";
 import ghClient from "./github/ghClient";
 import messages, { isGhNotFound } from "./lib/messages";
-import ghAvailability from "./lib/ghAvailability";
 import logger from "./lib/logger";
 import { ProjectView } from "./lib/types";
 import promisePool from "./lib/promisePool";
@@ -63,30 +62,6 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
   private async loadProjects(): Promise<void> {
     if (!this.workspaceRoot) return;
     try {
-      const preferHttp = vscode.workspace
-        .getConfiguration("ghProjects")
-        .get<boolean>("preferHttp", false);
-
-      // If gh CLI is missing and user did not opt into preferHttp, show a non-blocking tree indicator.
-      try {
-        const ghAvailable = await ghAvailability.isGhAvailable();
-        if (!ghAvailable && !preferHttp) {
-          const synth: ProjectEntry = {
-            id: "__gh_not_found__",
-            title: "GitHub CLI not found — click to install",
-            shortDescription: messages.GH_NOT_FOUND,
-            repos: [],
-            error: { code: "ENOENT" },
-          };
-          // place synthetic item at top
-          this.projects = [synth];
-          // do not return — continue loading to allow items to be appended
-        }
-      } catch (e) {
-        // ignore availability check failures
-        logger.debug("ghAvailability check failed: " + String(e));
-      }
-
       const maxDepth = vscode.workspace
         .getConfiguration("ghProjects")
         .get<number>("maxDepth", 4);
@@ -162,16 +137,7 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
         "[ghProjects] Projects with views: " + String(mapped.length),
       );
 
-      // If we had inserted a synthetic gh-not-found item, preserve it at the front.
-      if (
-        Array.isArray(this.projects) &&
-        this.projects.length > 0 &&
-        this.projects[0]?.id === "__gh_not_found__"
-      ) {
-        this.projects = [this.projects[0], ...mapped];
-      } else {
-        this.projects = mapped;
-      }
+      this.projects = mapped;
     } catch (e) {
       const msg = String(e || "");
       if (isGhNotFound(e)) {
@@ -216,22 +182,12 @@ export class ProjectItem extends vscode.TreeItem {
     super(label, collapsibleState);
     // Tooltip: show only the short description or label (no command title)
     this.tooltip = project.shortDescription || this.label;
-    // Special synthetic item when gh CLI is missing: open install docs
-    if (project && project.id === "__gh_not_found__") {
-      this.command = {
-        command: "ghProjects.openInstallDocs",
-        title: "Open install docs",
-        arguments: [],
-      };
-      this.contextValue = "ghNotFound";
-    } else {
-      // Clicking a project opens the details webview
-      this.command = {
-        command: "ghProjects.openProject",
-        title: "Open Project Details",
-        arguments: [project],
-      };
-      this.contextValue = "project";
-    }
+    // Clicking a project opens the details webview
+    this.command = {
+      command: "ghProjects.openProject",
+      title: "Open Project Details",
+      arguments: [project],
+    };
+    this.contextValue = "project";
   }
 }

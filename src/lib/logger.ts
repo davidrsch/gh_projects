@@ -44,6 +44,9 @@ export default {
   },
   debug(msg: string, ...args: any[]) {
     try {
+      const cfg = vscode.workspace.getConfiguration("ghProjects");
+      const enabled = Boolean(cfg.get("debug", false));
+      if (!enabled) return;
       getChannel().appendLine(
         formatPrefix("DEBUG") +
           msg +

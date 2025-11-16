@@ -13,7 +13,9 @@ export function wrapError(err: any, fallbackMessage?: string): CodeError {
     return e;
   }
   try {
-    return createCodeError(String(err.message || err || fallbackMessage || "Unknown error"));
+    return createCodeError(
+      String(err.message || err || fallbackMessage || "Unknown error"),
+    );
   } catch {
     return createCodeError(fallbackMessage || "Unknown error");
   }

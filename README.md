@@ -32,9 +32,13 @@ Notes on scopes:
 - Use the Command Palette and run `ghProjects.signIn` or click the "Sign in to GitHub" action when prompted.
 - Required scopes: `repo`, `read:org`, `read:user`. The extension will request these when signing in.
 
-## Migration from PATs or GH CLI
+**Authentication (No Fallback)**
 
-- This extension no longer reads `GH_TOKEN` or `ghProjects.ghToken` configuration and does not fall back to the GitHub CLI for authentication.
+- This extension uses ONLY the VS Code Authentication API (`vscode.authentication.getSession`) for authenticated requests. It will never read tokens from environment variables, local files, or the `gh` CLI. There is no fallback to `GH_TOKEN`, `gh`, or other non-interactive mechanisms. You must sign in via VS Code for authenticated features to work.
+
+## Migration from PATs or CLI-based workflows
+
+- This extension no longer reads `GH_TOKEN` or `ghProjects.ghToken` configuration and uses HTTP GraphQL via the VS Code Authentication API. The extension does not invoke the `gh` CLI.
 - If you previously used a Personal Access Token or the `gh` CLI, switch to VS Code built-in GitHub sign-in:
 	1. Open the Command Palette (Ctrl+Shift+P) and run `Sign in to GitHub` (or `ghProjects.signIn`).
 	2. Complete the OAuth flow in the browser. If your organization uses SAML/SSO, follow the enterprise guidance presented by the sign-in flow.
@@ -70,9 +74,11 @@ No data is stored. The extension reads local `.git` config to detect remotes and
 
 ## Configuration
 
-- `ghProjects.preferHttp` (boolean, default `false`): Prefer HTTP GraphQL using the VS Code GitHub authentication session. When `true`, the extension will NOT fall back to the `gh` CLI if authentication is missing; sign-in will be required. When `false` (default), the extension will attempt HTTP first and fall back to the GitHub CLI when appropriate.
+- `ghProjects.preferHttp` (boolean, default `true`): Prefer HTTP GraphQL using the VS Code GitHub authentication session. The extension uses HTTP GraphQL exclusively; sign-in will be required.
 
-- If the GitHub CLI (`gh`) is not available and `ghProjects.preferHttp` is `false`, a non-blocking indicator will appear at the top of the Projects tree: "GitHub CLI not found — click to install" with a one-click action to open install docs.
+Note: The extension no longer falls back to the GitHub CLI and does not rely on `gh` being installed.
+
+Status: these changes are implemented in the current code but have not yet been published in a release. If you are testing from source, sign in via VS Code to enable authenticated features.
 
 ## Potential next steps
 

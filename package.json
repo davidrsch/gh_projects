@@ -15,9 +15,8 @@
     "commands": [
       { "command": "ghProjects.refresh", "title": "GitHub: Refresh Projects" },
       { "command": "ghProjects.openProject", "title": "GitHub: Open Project" },
-      { "command": "ghProjects.openInstallDocs", "title": "GitHub: Open install docs" },
       { "command": "ghProjects.testTableQueries", "title": "GitHub: Test Project Table Queries" },
-      { "command": "ghProjects.checkGh", "title": "ghProjects: Check GitHub CLI" },
+      { "command": "ghProjects.checkGh", "title": "ghProjects: Check GitHub auth" },
       { "command": "ghProjects.signIn", "title": "Sign in to GitHub" }
     ],
     "menus": {},
@@ -31,11 +30,11 @@
         "ghProjects.maxDepth": { "type": "number", "default": 4, "description": "Scanning depth for findGitRepos (how many directory levels to traverse)." },
         "ghProjects.itemsFirst": { "type": "number", "default": 50, "description": "Default 'first' items to fetch when querying project fields." },
         "ghProjects.maxConcurrency": { "type": "number", "default": 4, "description": "Max concurrent operations for network/git IO." },
-        "ghProjects.useGhCli": { "type": "boolean", "default": true, "description": "When true, use the GitHub CLI (gh) for queries. Can be switched in future providers." },
         "ghProjects.queryTimeoutMs": { "type": "number", "default": 30000, "description": "Timeout for GitHub queries in milliseconds." },
         "ghProjects.useHttpApi": { "type": "boolean", "default": false, "description": "If true, use direct HTTP GraphQL requests. Requires signing in via VS Code GitHub authentication (no GH_TOKEN or ghToken fallback)." },
-        "ghProjects.preferHttp": { "type": "boolean", "default": false, "description": "Prefer HTTP GraphQL using the VS Code GitHub authentication session. When true, the extension will NOT fall back to the gh CLI if authentication is missing; sign-in will be required." },
+        "ghProjects.preferHttp": { "type": "boolean", "default": true, "description": "Prefer HTTP GraphQL using the VS Code GitHub authentication session. The extension uses HTTP GraphQL exclusively; sign-in will be required." },
         "ghProjects.useBundledWebviews": { "type": "boolean", "default": false, "description": "When true, load bundled webview scripts from media/dist instead of unbundled originals." },
+        "ghProjects.debug": { "type": "boolean", "default": false, "description": "Enable debug logging for ghProjects (writes DEBUG messages to the ghProjects output channel)." },
         "ghProjects.devMode": { "type": "boolean", "default": false, "description": "Enable developer mode (loads non-bundled webviews)." }
       }
     }

@@ -249,7 +249,9 @@ async function fetchRepoOptions(repoNames: string[], LIMITS: any) {
       repoOptionsMap[rn] = { labels, milestones };
     }
   } catch (e) {
-    // best-effort
+    logger.debug(
+      "fetchRepoOptions error: " + String((e as any)?.message || e || ""),
+    );
   }
   return repoOptionsMap;
 }
@@ -292,7 +294,11 @@ export async function fetchProjectFields(
     }
   }
 
-  if (!project) throw createCodeError("No project found or insufficient permissions", "ENOPROJECT");
+  if (!project)
+    throw createCodeError(
+      "No project found or insufficient permissions",
+      "ENOPROJECT",
+    );
 
   const fields = await fetchFields(project.id, LIMITS);
 
@@ -383,7 +389,10 @@ export async function fetchProjectFields(
             if (!parsed.content) parsed.content = item.content ?? null;
           }
         } catch (e) {
-          // ignore
+          logger.debug(
+            "parseFieldValue post-process error: " +
+              String((e as any)?.message || e || ""),
+          );
         }
         fv.push(parsed);
       } else {

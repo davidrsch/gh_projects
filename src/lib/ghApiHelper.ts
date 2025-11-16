@@ -41,14 +41,15 @@ export async function ghQueryWithErrors<T = any>(
         typeof (vscode as any).authentication.getSession === "function"
       ) {
         // Use a conservative scope set for repository and org read access.
-        const scopes = ["repo", "read:org", "read:user"];
+        const scopes = ["repo", "read:org", "read:user", "read:project"];
         try {
           const session = await (vscode as any).authentication.getSession(
             "github",
             scopes,
             { createIfNone: false },
           );
-          if (session && session.accessToken) sessionToken = String(session.accessToken).trim();
+          if (session && session.accessToken)
+            sessionToken = String(session.accessToken).trim();
         } catch (e) {
           // If auth lookup fails (e.g., enterprise SAML), continue to other fallbacks.
           logger.debug("authentication.getSession failed: " + String(e));
@@ -86,7 +87,9 @@ export async function ghQueryWithErrors<T = any>(
         try {
           await vscode.commands.executeCommand("ghProjects.signIn");
         } catch (cmdErr) {
-          logger.debug("executeCommand ghProjects.signIn failed: " + String(cmdErr));
+          logger.debug(
+            "executeCommand ghProjects.signIn failed: " + String(cmdErr),
+          );
         }
       }
     } catch (showErr) {
