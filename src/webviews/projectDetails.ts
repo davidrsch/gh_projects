@@ -118,10 +118,25 @@ export async function openProjectWebview(
 
   panel.webview.onDidReceiveMessage(
     async (msg) => {
+      // Basic validation of incoming message object and command
+      if (!msg || typeof msg !== "object" || typeof msg.command !== "string") {
+        panel.webview.postMessage({
+          command: "fields",
+          viewKey:
+            msg && (msg as any).viewKey ? String((msg as any).viewKey) : null,
+          error: "Invalid message format",
+          authRequired: false,
+        });
+        return;
+      }
+
       // Only handle messages for this panel (ignore if no viewKey for this project)
       if (!msg?.viewKey) return;
 
-      if (msg?.command === "openRepo" && msg.path) {
+      if (
+        msg?.command === "openRepo" &&
+        typeof (msg as any).path === "string"
+      ) {
         vscode.commands.executeCommand(
           "vscode.openFolder",
           vscode.Uri.file(msg.path),
@@ -130,28 +145,42 @@ export async function openProjectWebview(
           },
         );
       }
-      if (msg?.command === "openUrl" && msg.url) {
+      if (msg?.command === "openUrl" && typeof (msg as any).url === "string") {
         try {
-          const u = vscode.Uri.parse(String(msg.url));
+          const u = vscode.Uri.parse(String((msg as any).url));
           await vscode.env.openExternal(u);
         } catch (e) {
-          logger.error(
-            "webview.openUrl failed: " + String((e as any)?.message || e),
-          );
-          vscode.window.showErrorMessage(
-            "Failed to open URL: " + String((e as any)?.message || e),
-          );
+          const sanitized = String((e as any)?.message || e || "");
+          logger.error("webview.openUrl failed: " + sanitized);
+          vscode.window.showErrorMessage("Failed to open URL: " + sanitized);
         }
       }
       if (msg?.command === "requestFields") {
-        const reqViewKey = msg.viewKey as string | undefined;
+        const reqViewKey = (msg as any).viewKey as string | undefined;
+        // validate fields
+        if (reqViewKey !== undefined && typeof reqViewKey !== "string") {
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: null,
+            error: "Invalid requestFields: viewKey must be a string",
+            authRequired: false,
+          });
+          return;
+        }
+        if (
+          (msg as any).first !== undefined &&
+          typeof (msg as any).first !== "number"
+        ) {
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: reqViewKey ?? null,
+            error: "Invalid requestFields: first must be a number",
+            authRequired: false,
+          });
+          return;
+        }
         const _reqMsg = `webview.requestFields received viewKey=${String(reqViewKey)} projectId=${project.id}`;
         logger.debug(_reqMsg);
-        try {
-          console.debug(_reqMsg);
-        } catch (e) {
-          logger.debug("console.debug failed: " + String(e));
-        }
         try {
           // Determine which view is being requested. viewKey can be composite like
           // "<panelKey>:view-0" or "<panelKey>:overview" so extract suffix after last ':'
@@ -180,7 +209,7 @@ export async function openProjectWebview(
             project.id as string,
             { first },
           );
-          logger.debug(`[ghProjects] fetchProjectFields result:`, snapshot);
+          logger.debug(`[ghProjects] fetchProjectFields result`);
           const itemsCount =
             (snapshot &&
               (snapshot as any).items &&
@@ -188,11 +217,7 @@ export async function openProjectWebview(
             0;
           const _postMsg = `webview.postMessage fields viewKey=${String(reqViewKey)} items=${itemsCount}`;
           logger.debug(_postMsg);
-          try {
-            console.debug(_postMsg, snapshot);
-          } catch (e) {
-            logger.debug("console.debug failed: " + String(e));
-          }
+          // Do not post stack traces or full objects that may contain tokens.
           panel.webview.postMessage({
             command: "fields",
             viewKey: reqViewKey,
@@ -201,82 +226,44 @@ export async function openProjectWebview(
         } catch (e) {
           const wrapped = wrapError(e, "requestFields failed");
           const msgText = String(wrapped?.message || wrapped || "");
-          const _errMsg = "requestFields failed: " + msgText;
-          logger.error(_errMsg);
-          try {
-            console.error(_errMsg);
-          } catch (e) {
-            logger.debug("console.error failed: " + String(e));
-          }
+          logger.error("requestFields failed: " + msgText);
           if ((wrapped as any)?.code === "ENOENT" || isGhNotFound(wrapped)) {
             vscode.window.showErrorMessage(messages.GH_NOT_FOUND);
-          }
-          const _errPost = `webview.postMessage fields error viewKey=${String(reqViewKey)} error=${msgText}`;
-          logger.debug(_errPost);
-          try {
-            console.debug(_errPost);
-          } catch (e) {
-            logger.debug("console.debug failed: " + String(e));
           }
           const isAuth = (wrapped as any)?.code === "ENOTAUTH";
           panel.webview.postMessage({
             command: "fields",
             viewKey: reqViewKey,
             error: msgText,
-            authRequired: isAuth,
+            authRequired: Boolean(isAuth),
           });
         }
       }
       // accept debug logs from webview fetchers and write them to the Output channel
       if (msg?.command === "debugLog") {
         try {
-          const level = (msg.level as string) || "debug";
-          const vk = msg.viewKey ? ` viewKey=${String(msg.viewKey)}` : "";
-          const text = String(msg.message || msg.msg || "");
-          const data = msg.data !== undefined ? msg.data : undefined;
+          let level = (msg as any).level || "debug";
+          if (typeof level !== "string") level = "debug";
+          level = (["debug", "info", "warn", "error"] as string[]).includes(
+            level,
+          )
+            ? level
+            : "debug";
+          const vk = (msg as any).viewKey
+            ? ` viewKey=${String((msg as any).viewKey)}`
+            : "";
+          const text = String((msg as any).message || (msg as any).msg || "");
+          const data =
+            (msg as any).data !== undefined ? (msg as any).data : undefined;
           const formatted =
             `webview:${vk} ${text}` + (data ? ` ${JSON.stringify(data)}` : "");
-          if (level === "info") {
-            logger.info(formatted);
-            try {
-              console.info(formatted);
-            } catch (e) {
-              logger.debug("console.info failed: " + String(e));
-            }
-          } else if (level === "warn") {
-            logger.warn(formatted);
-            try {
-              console.warn(formatted);
-            } catch (e) {
-              logger.debug("console.warn failed: " + String(e));
-            }
-          } else if (level === "error") {
-            logger.error(formatted);
-            try {
-              console.error(formatted);
-            } catch (e) {
-              logger.debug("console.error failed: " + String(e));
-            }
-          } else {
-            logger.debug(formatted);
-            try {
-              console.debug(formatted);
-            } catch (e) {
-              logger.debug("console.debug failed: " + String(e));
-            }
-          }
+          if (level === "info") logger.info(formatted);
+          else if (level === "warn") logger.warn(formatted);
+          else if (level === "error") logger.error(formatted);
+          else logger.debug(formatted);
         } catch (e) {
-          try {
-            const fm = `webview.debugLog parse failed: ${String(e)}`;
-            logger.debug(fm);
-            try {
-              console.debug(fm);
-            } catch (e2) {
-              logger.debug("console.debug failed: " + String(e2));
-            }
-          } catch (e2) {
-            logger.debug("failed handling debugLog error: " + String(e2));
-          }
+          const fm = `webview.debugLog parse failed: ${String(e)}`;
+          logger.debug(fm);
         }
       }
     },
@@ -310,7 +297,7 @@ function buildHtml(
   };
 
   const scriptTag = elementsScriptUri
-    ? `<script nonce="${nonce}" type="module" src="${elementsScriptUri}"></script>`
+    ? `<script nonce="${nonce}" src="${elementsScriptUri}"></script>`
     : "";
 
   // loader script tags for static fetcher files
