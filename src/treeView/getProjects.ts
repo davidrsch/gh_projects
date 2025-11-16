@@ -1,5 +1,9 @@
+import * as vscode from "vscode";
 import { execFile } from "child_process";
 import promisePool from "../lib/promisePool";
+import logger from "../lib/logger";
+import { ghQueryWithErrors } from "../lib/ghApiHelper";
+import ghRunner from "../lib/ghRunner";
 
 type Repo = { name?: string; path?: string; gitType?: string };
 
@@ -22,7 +26,7 @@ export interface ParsedRepoEntry {
   error?: string;
 }
 
-function parseOwnerRepoFromUrl(
+export function parseOwnerRepoFromUrl(
   url: string,
 ): { owner: string; name: string } | null {
   if (!url) return null;
@@ -60,43 +64,69 @@ function runCmd(
 
 async function queryProjectsForOwnerRepo(owner: string, name: string) {
   const gql = `query($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ projectsV2(first:100){ nodes{ id title shortDescription url } } } }`;
-  const args = [
-    "api",
-    "graphql",
-    "-f",
-    `owner=${owner}`,
-    "-f",
-    `name=${name}`,
-    "-f",
-    `query=${gql}`,
-  ];
+
+  const preferHttp = vscode.workspace
+    .getConfiguration("ghProjects")
+    .get<boolean>("preferHttp", false);
+
+  // If preferHttp is enabled, enforce HTTP-only and bubble auth errors.
+  if (preferHttp) {
+    try {
+      const parsed = await ghQueryWithErrors(gql, { owner, name });
+      const nodes =
+        parsed &&
+        (parsed as any).data &&
+        (parsed as any).data.repository &&
+        (parsed as any).data.repository.projectsV2 &&
+        (parsed as any).data.repository.projectsV2.nodes;
+      return { owner, name, projects: nodes || [] };
+    } catch (err: any) {
+      // Bubble auth/perms as well as other normalized errors as a well-formed result
+      const msg = String(err?.message || err || "");
+      return { owner, name, error: msg };
+    }
+  }
+
+  // Default behavior: try HTTP first, then fall back to CLI on auth/availability errors.
   try {
-    const { stdout } = await new Promise<{ stdout: string; stderr: string }>(
-      (resolve, reject) => {
-        execFile(
-          "gh",
-          args,
-          { maxBuffer: 10 * 1024 * 1024 },
-          (err, stdout, stderr) => {
-            if (err) return reject({ err, stdout, stderr });
-            resolve({ stdout, stderr });
-          },
-        );
-      },
-    );
-    const parsed = JSON.parse(stdout);
+    const parsed = await ghQueryWithErrors(gql, { owner, name });
     const nodes =
       parsed &&
-      parsed.data &&
-      parsed.data.repository &&
-      parsed.data.repository.projectsV2 &&
-      parsed.data.repository.projectsV2.nodes;
+      (parsed as any).data &&
+      (parsed as any).data.repository &&
+      (parsed as any).data.repository.projectsV2 &&
+      (parsed as any).data.repository.projectsV2.nodes;
     return { owner, name, projects: nodes || [] };
-  } catch (e) {
-    const ee: any = e;
-    const stderr =
-      (ee && (ee.stderr || (ee.err && ee.err.message))) || String(ee);
-    return { owner, name, error: stderr };
+  } catch (err: any) {
+    const code = String(err?.code || "").toUpperCase();
+    const msg = String(err?.message || err || "");
+    const isAuthProblem =
+      code === "ENOTAUTH" || code === "EPERM" || /not authenticated/i.test(msg);
+    if (isAuthProblem) {
+      logger.debug(
+        `ghQueryWithErrors failed for ${owner}/${name}, falling back to gh CLI: ${msg}`,
+      );
+      // Fallback to gh CLI via ghRunner
+      try {
+        const res = await ghRunner.ghGraphQLQuery(gql, { owner, name });
+        const nodes =
+          res &&
+          (res as any).data &&
+          (res as any).data.repository &&
+          (res as any).data.repository.projectsV2 &&
+          (res as any).data.repository.projectsV2.nodes;
+        return { owner, name, projects: nodes || [] };
+      } catch (ghErr: any) {
+        const stderr = String(ghErr?.message || ghErr || "");
+        logger.error(`gh CLI fallback failed for ${owner}/${name}: ${stderr}`);
+        return { owner, name, error: stderr };
+      }
+    }
+
+    logger.error(
+      `queryProjectsForOwnerRepo error for ${owner}/${name}: ${msg}`,
+    );
+    return { owner, name, error: msg };
   }
 }
 
