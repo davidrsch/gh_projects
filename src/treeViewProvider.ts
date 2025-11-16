@@ -5,6 +5,8 @@ import getProjectsForReposArray from "./treeView/getProjects";
 import uniqueProjectsFromResults from "./treeView/getUniqueProjects";
 import ghClient from "./github/ghClient";
 import messages, { isGhNotFound } from "./lib/messages";
+import ghAvailability from "./lib/ghAvailability";
+import logger from "./lib/logger";
 import { ProjectView } from "./lib/types";
 import promisePool from "./lib/promisePool";
 
@@ -61,11 +63,37 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
   private async loadProjects(): Promise<void> {
     if (!this.workspaceRoot) return;
     try {
+      const preferHttp = vscode.workspace
+        .getConfiguration("ghProjects")
+        .get<boolean>("preferHttp", false);
+
+      // If gh CLI is missing and user did not opt into preferHttp, show a non-blocking tree indicator.
+      try {
+        const ghAvailable = await ghAvailability.isGhAvailable();
+        if (!ghAvailable && !preferHttp) {
+          const synth: ProjectEntry = {
+            id: "__gh_not_found__",
+            title: "GitHub CLI not found — click to install",
+            shortDescription: messages.GH_NOT_FOUND,
+            repos: [],
+            error: { code: "ENOENT" },
+          };
+          // place synthetic item at top
+          this.projects = [synth];
+          // do not return — continue loading to allow items to be appended
+        }
+      } catch (e) {
+        // ignore availability check failures
+        logger.debug("ghAvailability check failed: " + String(e));
+      }
+
       const maxDepth = vscode.workspace
         .getConfiguration("ghProjects")
         .get<number>("maxDepth", 4);
       const repos = await findGitRepos(this.workspaceRoot, maxDepth);
-      console.debug("[ghProjects] Found repos:", repos);
+      logger.debug(
+        "[ghProjects] Found repos: " + String(repos && repos.length),
+      );
       const items: any[] = [];
       const maxConcurrency = vscode.workspace
         .getConfiguration("ghProjects")
@@ -80,12 +108,16 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
       });
 
       await promisePool<void>(remoteTasks, maxConcurrency);
-      console.debug("[ghProjects] Repo items with remotes:", items);
+      logger.debug(
+        "[ghProjects] Repo items with remotes: " + String(items.length),
+      );
 
       const projectQueries = await getProjectsForReposArray(items);
-      console.debug("[ghProjects] Project queries result:", projectQueries);
+      logger.debug(
+        "[ghProjects] Project queries result: " + String(projectQueries.length),
+      );
       const unique = uniqueProjectsFromResults(projectQueries as any[]);
-      console.debug("[ghProjects] Unique projects:", unique);
+      logger.debug("[ghProjects] Unique projects: " + String(unique.length));
       // Preserve basic fields and then fetch `views` for each project by its id.
       interface RepoRef {
         owner?: string;
@@ -105,7 +137,7 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
         repos: p.repos as RepoRef[] | undefined,
         views: undefined as ProjectView[] | undefined,
       }));
-      console.debug("[ghProjects] Mapped projects:", mapped);
+      logger.debug("[ghProjects] Mapped projects: " + String(mapped.length));
 
       // Fetch views with a concurrency-limited pool to improve throughput
       const CONCURRENCY = 4;
@@ -126,9 +158,20 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
       for (let i = 0; i < mapped.length; i++) {
         mapped[i].views = Array.isArray(res[i]) ? res[i] : [];
       }
-      console.debug("[ghProjects] Projects with views:", mapped);
+      logger.debug(
+        "[ghProjects] Projects with views: " + String(mapped.length),
+      );
 
-      this.projects = mapped;
+      // If we had inserted a synthetic gh-not-found item, preserve it at the front.
+      if (
+        Array.isArray(this.projects) &&
+        this.projects.length > 0 &&
+        this.projects[0]?.id === "__gh_not_found__"
+      ) {
+        this.projects = [this.projects[0], ...mapped];
+      } else {
+        this.projects = mapped;
+      }
     } catch (e) {
       const msg = String(e || "");
       if (isGhNotFound(e)) {
@@ -173,12 +216,22 @@ export class ProjectItem extends vscode.TreeItem {
     super(label, collapsibleState);
     // Tooltip: show only the short description or label (no command title)
     this.tooltip = project.shortDescription || this.label;
-    // Clicking a project opens the details webview
-    this.command = {
-      command: "ghProjects.openProject",
-      title: "Open Project Details",
-      arguments: [project],
-    };
-    this.contextValue = "project";
+    // Special synthetic item when gh CLI is missing: open install docs
+    if (project && project.id === "__gh_not_found__") {
+      this.command = {
+        command: "ghProjects.openInstallDocs",
+        title: "Open install docs",
+        arguments: [],
+      };
+      this.contextValue = "ghNotFound";
+    } else {
+      // Clicking a project opens the details webview
+      this.command = {
+        command: "ghProjects.openProject",
+        title: "Open Project Details",
+        arguments: [project],
+      };
+      this.contextValue = "project";
+    }
   }
 }
