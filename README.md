@@ -16,8 +16,12 @@ Browse GitHub Projects (Projects v2) linked to repositories in your current work
 ## Requirements
 
 - Sign in to GitHub in VS Code when prompted. The extension requests these scopes:
+
+- Sign in to GitHub in VS Code when prompted. The extension requests these scopes:
 	- read:project – required to read Projects v2
 	- repo – required if you need to read projects linked to private repositories
+	- read:org – read organization membership and org-level data
+	- read:user – read basic user profile information
 
 Notes on scopes:
 - The GitHub CLI manual mentions a minimum token scope of “project” for gh project; in VS Code’s authentication provider the equivalent read scope is “read:project”, which is sufficient for reading Projects v2. The “repo” scope is needed for private repo access.
@@ -63,6 +67,12 @@ No data is stored. The extension reads local `.git` config to detect remotes and
 - Build once: npm run compile
 - Watch mode: npm run watch
 - Lint: npm run lint (if configured)
+
+## Configuration
+
+- `ghProjects.preferHttp` (boolean, default `false`): Prefer HTTP GraphQL using the VS Code GitHub authentication session. When `true`, the extension will NOT fall back to the `gh` CLI if authentication is missing; sign-in will be required. When `false` (default), the extension will attempt HTTP first and fall back to the GitHub CLI when appropriate.
+
+- If the GitHub CLI (`gh`) is not available and `ghProjects.preferHttp` is `false`, a non-blocking indicator will appear at the top of the Projects tree: "GitHub CLI not found — click to install" with a one-click action to open install docs.
 
 ## Potential next steps
 

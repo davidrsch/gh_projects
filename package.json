@@ -34,6 +34,7 @@
         "ghProjects.useGhCli": { "type": "boolean", "default": true, "description": "When true, use the GitHub CLI (gh) for queries. Can be switched in future providers." },
         "ghProjects.queryTimeoutMs": { "type": "number", "default": 30000, "description": "Timeout for GitHub queries in milliseconds." },
         "ghProjects.useHttpApi": { "type": "boolean", "default": false, "description": "If true, use direct HTTP GraphQL requests. Requires signing in via VS Code GitHub authentication (no GH_TOKEN or ghToken fallback)." },
+        "ghProjects.preferHttp": { "type": "boolean", "default": false, "description": "Prefer HTTP GraphQL using the VS Code GitHub authentication session. When true, the extension will NOT fall back to the gh CLI if authentication is missing; sign-in will be required." },
         "ghProjects.useBundledWebviews": { "type": "boolean", "default": false, "description": "When true, load bundled webview scripts from media/dist instead of unbundled originals." },
         "ghProjects.devMode": { "type": "boolean", "default": false, "description": "Enable developer mode (loads non-bundled webviews)." }
       }
