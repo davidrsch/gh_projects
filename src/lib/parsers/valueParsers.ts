@@ -11,6 +11,22 @@ import {
   LabelNode,
 } from "../types";
 
+export function getGhColor(state?: string): string {
+  if (!state) return "#6e7781";
+  switch (state) {
+    case "OPEN":
+      return "#1a7f37";
+    case "CLOSED":
+      return "#8250df";
+    case "MERGED":
+      return "#8250df";
+    case "DRAFT":
+      return "#6e7781";
+    default:
+      return "#6e7781";
+  }
+}
+
 function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
   const t: string = node.__typename || "";
 
@@ -63,6 +79,7 @@ function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
           state: p.state,
           merged: p.merged,
           mergedAt: p.mergedAt,
+          state_color: getGhColor(p.state ?? (p.merged ? "MERGED" : "OPEN")),
           repository: p.repository?.nameWithOwner
             ? { nameWithOwner: p.repository.nameWithOwner }
             : undefined,
@@ -129,6 +146,8 @@ function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
                   repository: iss.parent.repository?.nameWithOwner
                     ? { nameWithOwner: iss.parent.repository.nameWithOwner }
                     : undefined,
+                  state: iss.parent.state,
+                  state_color: getGhColor(iss.parent.state),
                 }
               : iss.parent
             : undefined,
@@ -149,6 +168,7 @@ function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
               title: (node as any).issue.title,
               url: (node as any).issue.url,
               state: (node as any).issue.state,
+              state_color: getGhColor((node as any).issue.state),
               repository: (node as any).issue.repository?.nameWithOwner
                 ? {
                     nameWithOwner: (node as any).issue.repository.nameWithOwner,

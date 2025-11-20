@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { ProjectsProvider, ProjectEntry } from "./treeViewProvider";
 import { openProjectWebview } from "./webviews/projectDetails";
+import findGitRepos from "./treeView/findRepos";
+import getRemotesForPath from "./treeView/getRemotes";
 import logger from "./lib/logger";
 import messages from "./lib/messages";
 
@@ -14,7 +16,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window
       .showWarningMessage(
         "No folder is open. Open a folder to use ghProjects.",
-        "Open Folder",
+        "Open Folder"
       )
       .then((sel) => {
         if (sel === "Open Folder")
@@ -29,7 +31,7 @@ export async function activate(context: vscode.ExtensionContext) {
   } else {
     const pick = await vscode.window.showQuickPick(
       folders.map((f) => f.uri.fsPath),
-      { placeHolder: "Select workspace folder for ghProjects" },
+      { placeHolder: "Select workspace folder for ghProjects" }
     );
     if (!pick) return;
     workspaceRoot = pick;
@@ -52,7 +54,7 @@ export async function activate(context: vscode.ExtensionContext) {
           )
         ) {
           vscode.window.showErrorMessage(
-            "GitHub authentication API is not available in this host.",
+            "GitHub authentication API is not available in this host."
           );
           return;
         }
@@ -60,27 +62,28 @@ export async function activate(context: vscode.ExtensionContext) {
         const session = await (vscode as any).authentication.getSession(
           "github",
           scopes,
-          { createIfNone: false },
+          { createIfNone: false }
         );
         if (!session) {
           const action = "Sign in to GitHub";
           const choice = await vscode.window.showInformationMessage(
             "Not signed in to GitHub",
-            action,
+            action
           );
-          if (choice === action) await vscode.commands.executeCommand("ghProjects.signIn");
+          if (choice === action)
+            await vscode.commands.executeCommand("ghProjects.signIn");
         } else {
           vscode.window.showInformationMessage("Signed in to GitHub");
         }
       } catch (e: any) {
         logger.error("checkGh failed: " + String(e?.message || e || ""));
         vscode.window.showErrorMessage(
-          "Failed to check GitHub auth: " + String(e?.message || e || ""),
+          "Failed to check GitHub auth: " + String(e?.message || e || "")
         );
       }
     }),
     vscode.commands.registerCommand("ghProjects.refresh", () =>
-      provider.refresh(),
+      provider.refresh()
     ),
     vscode.commands.registerCommand("ghProjects.signIn", async () => {
       const scopes = ["repo", "read:org", "read:user"];
@@ -92,20 +95,20 @@ export async function activate(context: vscode.ExtensionContext) {
           )
         ) {
           vscode.window.showErrorMessage(
-            "GitHub authentication API is not available in this host.",
+            "GitHub authentication API is not available in this host."
           );
           return;
         }
         const session = await (vscode as any).authentication.getSession(
           "github",
           [...scopes, "read:project"],
-          { createIfNone: true },
+          { createIfNone: true }
         );
         if (session && session.accessToken) {
           vscode.window.showInformationMessage("Signed in to GitHub");
         } else {
           vscode.window.showErrorMessage(
-            "Failed to sign in to GitHub. Ensure you have the correct account access (SAML/Enterprise may require extra steps).",
+            "Failed to sign in to GitHub. Ensure you have the correct account access (SAML/Enterprise may require extra steps)."
           );
         }
       } catch (err: any) {
@@ -113,22 +116,61 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage(
           "Sign-in failed: " +
             msg +
-            " — check enterprise SAML settings if applicable.",
+            " — check enterprise SAML settings if applicable."
+        );
+      }
+    }),
+    vscode.commands.registerCommand("ghProjects.debugDump", async () => {
+      try {
+        if (!workspaceRoot) {
+          vscode.window.showInformationMessage(
+            "ghProjects: no workspace folder selected"
+          );
+          return;
+        }
+        const maxDepth = vscode.workspace
+          .getConfiguration("ghProjects")
+          .get<number>("maxDepth", 4);
+        const repos = await findGitRepos(workspaceRoot, maxDepth);
+        logger.info("debugDump: found repos", {
+          count: repos.length,
+          sample: repos.slice(0, 20),
+        });
+        const items: any[] = [];
+        for (const r of repos.slice(0, 50)) {
+          try {
+            const remotes = await getRemotesForPath(r.path);
+            items.push({ path: r.path, remotes });
+          } catch (e) {
+            items.push({
+              path: r.path,
+              remotes: [{ name: "error", url: String(e) }],
+            });
+          }
+        }
+        logger.info("debugDump: remotes sample", items.slice(0, 20));
+        vscode.window.showInformationMessage(
+          `ghProjects: debugDump written ${repos.length} repos to the Output channel`
+        );
+      } catch (err: any) {
+        logger.error("debugDump failed: " + String(err));
+        vscode.window.showErrorMessage(
+          "ghProjects: debugDump failed — see Output channel"
         );
       }
     }),
     vscode.commands.registerCommand(
       "ghProjects.openProject",
       (project: ProjectEntry) =>
-        openProjectWebview(context, project, workspaceRoot),
+        openProjectWebview(context, project, workspaceRoot)
     ),
     vscode.commands.registerCommand(
       "ghProjects.testTableQueries",
       (project: ProjectEntry) => {
         // compatibility: open same details view
         openProjectWebview(context, project as any, workspaceRoot);
-      },
-    ),
+      }
+    )
   );
 
   // Listen for workspace folder changes and refresh provider as needed
@@ -149,14 +191,14 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       // If the previously selected workspaceRoot was removed, inform the user
       const stillPresent = (vscode.workspace.workspaceFolders || []).some(
-        (f) => f.uri.fsPath === workspaceRoot,
+        (f) => f.uri.fsPath === workspaceRoot
       );
       if (!stillPresent) {
         vscode.window.showWarningMessage(
-          'ghProjects: previously-selected workspace folder is no longer in the workspace. Run "ghProjects.refresh" or re-select a workspace.',
+          'ghProjects: previously-selected workspace folder is no longer in the workspace. Run "ghProjects.refresh" or re-select a workspace.'
         );
       }
-    },
+    }
   );
   context.subscriptions.push(workspaceFoldersChange);
 
@@ -171,13 +213,19 @@ export async function activate(context: vscode.ExtensionContext) {
         const session = await (vscode as any).authentication.getSession(
           "github",
           [...scopes, "read:project"],
-          { createIfNone: false },
+          { createIfNone: false }
         );
         if (!session) {
+          // Log to the ghProjects Output channel so users can quickly see why projects
+          // are not being fetched (no interactive session). Also show a single
+          // interactive notification offering to sign in.
+          logger.info(
+            "No GitHub authentication session present — run 'Sign in to GitHub' to enable authenticated features"
+          );
           const action = "Sign in to GitHub";
           const choice = await vscode.window.showInformationMessage(
             "ghProjects: Sign in to GitHub to enable authenticated features",
-            action,
+            action
           );
           if (choice === action) {
             await vscode.commands.executeCommand("ghProjects.signIn");

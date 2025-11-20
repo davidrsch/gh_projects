@@ -4,7 +4,7 @@ import logger from "../lib/logger";
 import { createCodeError } from "../lib/errors";
 import messages from "../lib/messages";
 import { normalizeFieldConfig } from "../lib/parsers/fieldConfigParser";
-import { parseFieldValue } from "../lib/parsers/valueParsers";
+import { parseFieldValue, getGhColor } from "../lib/parsers/valueParsers";
 import {
   makeLimits,
   buildCandidateFragments,
@@ -33,7 +33,7 @@ import {
 } from "../lib/types";
 
 export async function fetchProjectViews(
-  projectId: string,
+  projectId: string
 ): Promise<ProjectView[]> {
   // Request `layout` and `number` for each view so the frontend can
   // detect the view type reliably (ProjectV2View.layout -> BOARD_LAYOUT, ROADMAP_LAYOUT, TABLE_LAYOUT)
@@ -60,7 +60,7 @@ export async function fetchProjectViews(
         .then((sel) => {
           if (sel)
             vscode.env.openExternal(
-              vscode.Uri.parse("https://cli.github.com/"),
+              vscode.Uri.parse("https://cli.github.com/")
             );
         });
     }
@@ -70,7 +70,7 @@ export async function fetchProjectViews(
         .then((sel) => {
           if (sel === "Authenticate GH")
             vscode.env.openExternal(
-              vscode.Uri.parse("https://cli.github.com/manual/gh_auth_login"),
+              vscode.Uri.parse("https://cli.github.com/manual/gh_auth_login")
             );
         });
     }
@@ -80,9 +80,11 @@ export async function fetchProjectViews(
 
 // --- Helper functions split out for testability ---
 async function fetchMeta(
-  projectId: string,
+  projectId: string
 ): Promise<ProjectMetaNode | undefined> {
-  const metaQuery = `query{ node(id:${JSON.stringify(projectId)}){ __typename ... on ProjectV2 { id title } } }`;
+  const metaQuery = `query{ node(id:${JSON.stringify(
+    projectId
+  )}){ __typename ... on ProjectV2 { id title } } }`;
   try {
     const metaRes = (await ghQueryWithErrors(metaQuery)) as GHResponse<{
       node?: ProjectMetaNode;
@@ -96,25 +98,25 @@ async function fetchMeta(
 
 async function fetchFields(
   projectId: string,
-  LIMITS: any,
+  LIMITS: any
 ): Promise<FieldConfig[]> {
   const fieldsQuery = buildFieldsQuery(projectId, LIMITS);
   const fieldsRes = (await ghQueryWithErrors(fieldsQuery).catch((e: any) => {
     logger.error(
-      "GraphQL error fetching fields: " + String((e as any).message || e || ""),
+      "GraphQL error fetching fields: " + String((e as any).message || e || "")
     );
     return {} as GHResponse<FieldsQueryData>;
   })) as GHResponse<FieldsQueryData>;
   const rawFields = fieldsRes?.data?.node?.fields?.nodes || [];
   const fields: FieldConfig[] = (rawFields || []).map((n: any) =>
-    normalizeFieldConfig(n),
+    normalizeFieldConfig(n)
   );
   return fields;
 }
 
 async function fetchFieldDetails(
   fields: FieldConfig[],
-  presentConfigTypes: Set<string>,
+  presentConfigTypes: Set<string>
 ) {
   const fieldNodeSelections: string[] = [];
   for (const f of fields) {
@@ -126,7 +128,7 @@ async function fetchFieldDetails(
       presentConfigTypes.has("ProjectV2SingleSelectField")
     ) {
       selParts.push(
-        "... on ProjectV2SingleSelectField{ options{ id name description color } }",
+        "... on ProjectV2SingleSelectField{ options{ id name description color } }"
       );
     }
     if (
@@ -134,12 +136,14 @@ async function fetchFieldDetails(
       presentConfigTypes.has("ProjectV2IterationField")
     ) {
       selParts.push(
-        "... on ProjectV2IterationField{ configuration{ iterations{ id title startDate } } }",
+        "... on ProjectV2IterationField{ configuration{ iterations{ id title startDate } } }"
       );
     }
     if (selParts.length > 1) {
       fieldNodeSelections.push(
-        `n_${fid.replace(/[^a-zA-Z0-9_]/g, "_")}: node(id:${JSON.stringify(fid)}){ ${selParts.join(" ")} }`,
+        `n_${fid.replace(/[^a-zA-Z0-9_]/g, "_")}: node(id:${JSON.stringify(
+          fid
+        )}){ ${selParts.join(" ")} }`
       );
     }
   }
@@ -149,7 +153,7 @@ async function fetchFieldDetails(
   const fieldsDetailQuery = `query{\n  ${fieldNodeSelections.join("\n  ")}\n}`;
   try {
     const detailRes = (await ghQueryWithErrors(
-      fieldsDetailQuery,
+      fieldsDetailQuery
     )) as GHResponse<Record<string, any>>;
     for (const f of fields) {
       const key = `n_${f.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
@@ -173,8 +177,7 @@ async function fetchFieldDetails(
     }
   } catch (e) {
     logger.debug(
-      "per-field detail fetch failed: " +
-        String((e as any)?.message || e || ""),
+      "per-field detail fetch failed: " + String((e as any)?.message || e || "")
     );
     // best-effort; swallow errors
   }
@@ -184,14 +187,14 @@ async function introspectItemFieldTypes(): Promise<string[]> {
   const introspectQuery = `query { __type(name: "ProjectV2ItemFieldValue") { possibleTypes { name } } }`;
   try {
     const introRes = (await ghQueryWithErrors(
-      introspectQuery,
+      introspectQuery
     )) as GHResponse<any>;
     return (introRes?.data?.__type?.possibleTypes || []).map(
-      (p: any) => p.name,
+      (p: any) => p.name
     );
   } catch (e) {
     logger.debug(
-      "introspect query failed: " + String((e as any)?.message || e || ""),
+      "introspect query failed: " + String((e as any)?.message || e || "")
     );
     return [];
   }
@@ -200,13 +203,13 @@ async function introspectItemFieldTypes(): Promise<string[]> {
 async function fetchItems(
   projectId: string,
   aliasSelections: string,
-  LIMITS: any,
+  LIMITS: any
 ): Promise<Item[]> {
   const itemsQuery = buildItemsQuery(projectId, aliasSelections, LIMITS);
   const itemsRes = (await ghQueryWithErrors(itemsQuery).catch((e: any) => {
     logger.error(
       "GraphQL error fetching items (by-name): " +
-        String((e as any).message || e || ""),
+        String((e as any).message || e || "")
     );
     return {} as GHResponse<ItemsQueryData>;
   })) as GHResponse<ItemsQueryData>;
@@ -225,7 +228,7 @@ async function fetchRepoOptions(repoNames: string[], LIMITS: any) {
   const repoQuery = `query{\n    ${repoSelections}\n  }`;
   try {
     const repoRes = (await ghQueryWithErrors(
-      repoQuery,
+      repoQuery
     )) as GHResponse<RepoQueryData>;
     for (let i = 0; i < repoNames.length; i++) {
       const rn = repoNames[i];
@@ -244,13 +247,13 @@ async function fetchRepoOptions(repoNames: string[], LIMITS: any) {
           title: m.title,
           description: m.description,
           dueOn: m.dueOn,
-        }),
+        })
       );
       repoOptionsMap[rn] = { labels, milestones };
     }
   } catch (e) {
     logger.debug(
-      "fetchRepoOptions error: " + String((e as any)?.message || e || ""),
+      "fetchRepoOptions error: " + String((e as any)?.message || e || "")
     );
   }
   return repoOptionsMap;
@@ -258,7 +261,7 @@ async function fetchRepoOptions(repoNames: string[], LIMITS: any) {
 
 export async function fetchProjectFields(
   projectId: string,
-  opts?: { first?: number },
+  opts?: { first?: number }
 ): Promise<ProjectSnapshot> {
   const first = opts?.first ?? 50;
   const LIMITS = makeLimits(first);
@@ -270,7 +273,7 @@ export async function fetchProjectFields(
   } catch (e: any) {
     logger.error(
       "GraphQL error fetching project metadata: " +
-        String(e?.message || e || ""),
+        String(e?.message || e || "")
     );
     if ((e as any).code === "ENOENT") {
       vscode.window
@@ -278,7 +281,7 @@ export async function fetchProjectFields(
         .then((sel) => {
           if (sel)
             vscode.env.openExternal(
-              vscode.Uri.parse("https://cli.github.com/"),
+              vscode.Uri.parse("https://cli.github.com/")
             );
         });
     }
@@ -288,7 +291,7 @@ export async function fetchProjectFields(
         .then((sel) => {
           if (sel)
             vscode.env.openExternal(
-              vscode.Uri.parse("https://cli.github.com/manual/gh_auth_login"),
+              vscode.Uri.parse("https://cli.github.com/manual/gh_auth_login")
             );
         });
     }
@@ -297,7 +300,7 @@ export async function fetchProjectFields(
   if (!project)
     throw createCodeError(
       "No project found or insufficient permissions",
-      "ENOPROJECT",
+      "ENOPROJECT"
     );
 
   const fields = await fetchFields(project.id, LIMITS);
@@ -307,11 +310,13 @@ export async function fetchProjectFields(
     "ProjectV2SingleSelectField",
     "ProjectV2IterationField",
   ];
-  const configIntroQuery = `query{\n${configTypeNames.map((n, i) => `t${i}: __type(name:${JSON.stringify(n)}){ name }`).join("\n")}\n}`;
+  const configIntroQuery = `query{\n${configTypeNames
+    .map((n, i) => `t${i}: __type(name:${JSON.stringify(n)}){ name }`)
+    .join("\n")}\n}`;
   let presentConfigTypes = new Set<string>();
   try {
     const cIntro = await ghQueryWithErrors(configIntroQuery).catch(
-      () => ({}) as any,
+      () => ({} as any)
     );
     for (let i = 0; i < configTypeNames.length; i++) {
       const key = `t${i}`;
@@ -336,11 +341,13 @@ export async function fetchProjectFields(
     fieldAliases.push({ alias, name: f.name });
     const fragments = candidateFragments
       .filter(
-        (c) => possibleTypes.length === 0 || possibleTypes.includes(c.typename),
+        (c) => possibleTypes.length === 0 || possibleTypes.includes(c.typename)
       )
       .map((c) => c.selection)
       .join("\n              ");
-    const sel = `${alias}: fieldValueByName(name:${JSON.stringify(f.name)}){ __typename\n              ${fragments}\n            }`;
+    const sel = `${alias}: fieldValueByName(name:${JSON.stringify(
+      f.name
+    )}){ __typename\n              ${fragments}\n            }`;
     aliasSelections.push(sel);
   }
 
@@ -349,23 +356,23 @@ export async function fetchProjectFields(
     const itemsQuery = buildItemsQuery(
       project.id,
       aliasSelections.join("\n          "),
-      LIMITS,
+      LIMITS
     );
     const itemsRes = (await ghQueryWithErrors(itemsQuery).catch((e: any) => {
       logger.error(
         "GraphQL error fetching items (by-name): " +
-          String((e as any).message || e || ""),
+          String((e as any).message || e || "")
       );
       if ((e as any).code === "EPERM") {
         vscode.window
           .showErrorMessage(
             messages.GH_PERMISSION_ERROR_HINT,
-            "Authenticate GH",
+            "Authenticate GH"
           )
           .then((sel) => {
             if (sel)
               vscode.env.openExternal(
-                vscode.Uri.parse("https://cli.github.com/manual/gh_auth_login"),
+                vscode.Uri.parse("https://cli.github.com/manual/gh_auth_login")
               );
           });
       }
@@ -391,7 +398,7 @@ export async function fetchProjectFields(
         } catch (e) {
           logger.debug(
             "parseFieldValue post-process error: " +
-              String((e as any)?.message || e || ""),
+              String((e as any)?.message || e || "")
           );
         }
         fv.push(parsed);
@@ -406,27 +413,29 @@ export async function fetchProjectFields(
         ) {
           const p = content.parent;
           const inferred: any = {
-            type: "issue",
+            type: "parent_issue",
             fieldId: fconf.id,
-            issues: [
-              {
-                id: p.id,
-                number: p.number,
-                title: p.title,
-                url: p.url,
-                repository: p.repository
-                  ? { nameWithOwner: p.repository.nameWithOwner }
-                  : undefined,
-                parent: p.parent
-                  ? {
-                      id: p.parent.id,
-                      number: p.parent.number,
-                      url: p.parent.url,
-                      title: p.parent.title,
-                    }
-                  : undefined,
-              },
-            ],
+            parent: {
+              id: p.id,
+              number: p.number,
+              title: p.title,
+              url: p.url,
+              repository: p.repository
+                ? { nameWithOwner: p.repository.nameWithOwner }
+                : undefined,
+              parent: p.parent
+                ? {
+                    id: p.parent.id,
+                    number: p.parent.number,
+                    url: p.parent.url,
+                    title: p.parent.title,
+                    state: p.parent.state,
+                    state_color: getGhColor(p.parent.state),
+                  }
+                : undefined,
+              state: p.state,
+              state_color: getGhColor(p.state),
+            },
             raw: { issue: p },
             content: content,
           };

@@ -12,7 +12,7 @@ const panels = new Map<string, vscode.WebviewPanel>();
 export async function openProjectWebview(
   context: vscode.ExtensionContext,
   project: ProjectEntry,
-  workspaceRoot?: string,
+  workspaceRoot?: string
 ) {
   // Fetch project views to determine view number for stable panelKey
   let views: ProjectView[] = Array.isArray(project.views) ? project.views : [];
@@ -29,8 +29,8 @@ export async function openProjectWebview(
     project.id
       ? String(project.id)
       : project.title
-        ? String(project.title)
-        : "<unknown>"
+      ? String(project.title)
+      : "<unknown>"
   }`;
 
   // Reuse panel if already open
@@ -48,13 +48,13 @@ export async function openProjectWebview(
     "ghProjects.projectDetails",
     project.title ?? String(project.id ?? "Project Details"),
     { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
-    { enableScripts: true, retainContextWhenHidden: true },
+    { enableScripts: true, retainContextWhenHidden: true }
   );
   panels.set(panelMapKey, panel);
   panel.onDidDispose(
     () => panels.delete(panelMapKey),
     null,
-    context.subscriptions,
+    context.subscriptions
   );
 
   // Use new path for vscode-elements.js
@@ -63,57 +63,90 @@ export async function openProjectWebview(
       context.extensionUri,
       "media",
       "third-party",
-      "vscode-elements.js",
-    ),
+      "vscode-elements.js"
+    )
   );
-  // compute fetcher URIs
+  // compute fetcher URIs - prefer bundled (dist) scripts when available
+  const useBundledSetting = vscode.workspace
+    .getConfiguration("ghProjects")
+    .get<boolean>("useBundledWebviews", false);
+  let webviewFolder = useBundledSetting ? "dist" : "webviews";
+  // If user hasn't explicitly enabled bundled webviews, prefer `dist` when it exists
+  if (!useBundledSetting) {
+    try {
+      const distUri = vscode.Uri.joinPath(
+        context.extensionUri,
+        "media",
+        "dist"
+      );
+      // workspace.fs.stat will throw if path does not exist
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      await vscode.workspace.fs.stat(distUri);
+      webviewFolder = "dist";
+    } catch (e) {
+      // dist not present, keep 'webviews'
+    }
+  }
+
   const overviewUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
-      "webviews",
-      "overviewFetcher.js",
-    ),
+      webviewFolder,
+      "overviewFetcher.js"
+    )
   );
   const tableUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
-      "webviews",
-      "tableViewFetcher.js",
-    ),
+      webviewFolder,
+      "tableViewFetcher.js"
+    )
   );
   const boardUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
-      "webviews",
-      "boardViewFetcher.js",
-    ),
+      webviewFolder,
+      "boardViewFetcher.js"
+    )
   );
   const roadmapUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
-      "webviews",
-      "roadmapViewFetcher.js",
-    ),
+      webviewFolder,
+      "roadmapViewFetcher.js"
+    )
   );
   const contentUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
-      "webviews",
-      "contentFetcher.js",
-    ),
+      webviewFolder,
+      "contentFetcher.js"
+    )
   );
+  // optional patch script (applies DOM fixes to bundled fetchers)
+  const patchUri =
+    webviewFolder === "dist"
+      ? panel.webview.asWebviewUri(
+          vscode.Uri.joinPath(
+            context.extensionUri,
+            "media",
+            "dist",
+            "tableViewFetcher.patch.js"
+          )
+        )
+      : undefined;
 
   panel.webview.html = buildHtml(
     panel.webview,
     project,
     elementsUri.toString(),
-    { overviewUri, tableUri, boardUri, roadmapUri, contentUri },
-    panelMapKey,
+    { overviewUri, tableUri, boardUri, roadmapUri, contentUri, patchUri },
+    panelMapKey
   );
 
   panel.webview.onDidReceiveMessage(
@@ -142,7 +175,7 @@ export async function openProjectWebview(
           vscode.Uri.file(msg.path),
           {
             forceNewWindow: false,
-          },
+          }
         );
       }
       if (msg?.command === "openUrl" && typeof (msg as any).url === "string") {
@@ -179,7 +212,9 @@ export async function openProjectWebview(
           });
           return;
         }
-        const _reqMsg = `webview.requestFields received viewKey=${String(reqViewKey)} projectId=${project.id}`;
+        const _reqMsg = `webview.requestFields received viewKey=${String(
+          reqViewKey
+        )} projectId=${project.id}`;
         logger.debug(_reqMsg);
         try {
           // Determine which view is being requested. viewKey can be composite like
@@ -200,14 +235,14 @@ export async function openProjectWebview(
             .getConfiguration("ghProjects")
             .get<number>("itemsFirst", 50);
           logger.debug(
-            `[ghProjects] Fetching project fields for projectId=${project.id} viewIdx=${viewIdx} first=${first}`,
+            `[ghProjects] Fetching project fields for projectId=${project.id} viewIdx=${viewIdx} first=${first}`
           );
           // If the view has a type, you could branch here for board/roadmap, etc.
           // For now, always fetch fields (table/board/roadmap fetchers can use the same API or branch as needed)
           // If needed, pass view-specific info to fetchProjectFields here (or filter after fetch)
           const snapshot: ProjectSnapshot = await ghClient.fetchProjectFields(
             project.id as string,
-            { first },
+            { first }
           );
           logger.debug(`[ghProjects] fetchProjectFields result`);
           const itemsCount =
@@ -215,7 +250,9 @@ export async function openProjectWebview(
               (snapshot as any).items &&
               (snapshot as any).items.length) ||
             0;
-          const _postMsg = `webview.postMessage fields viewKey=${String(reqViewKey)} items=${itemsCount}`;
+          const _postMsg = `webview.postMessage fields viewKey=${String(
+            reqViewKey
+          )} items=${itemsCount}`;
           logger.debug(_postMsg);
           // Do not post stack traces or full objects that may contain tokens.
           panel.webview.postMessage({
@@ -245,7 +282,7 @@ export async function openProjectWebview(
           let level = (msg as any).level || "debug";
           if (typeof level !== "string") level = "debug";
           level = (["debug", "info", "warn", "error"] as string[]).includes(
-            level,
+            level
           )
             ? level
             : "debug";
@@ -268,7 +305,7 @@ export async function openProjectWebview(
       }
     },
     undefined,
-    context.subscriptions,
+    context.subscriptions
   );
 }
 
@@ -282,8 +319,9 @@ function buildHtml(
     boardUri: vscode.Uri;
     roadmapUri: vscode.Uri;
     contentUri: vscode.Uri;
+    patchUri?: vscode.Uri;
   },
-  panelKey?: string,
+  panelKey?: string
 ): string {
   const nonce = getNonce();
   const csp = webview.cspSource;
@@ -309,6 +347,11 @@ function buildHtml(
         `<script nonce="${nonce}" src="${fetcherUris.boardUri.toString()}"></script>`,
         `<script nonce="${nonce}" src="${fetcherUris.roadmapUri.toString()}"></script>`,
         `<script nonce="${nonce}" src="${fetcherUris.contentUri.toString()}"></script>`,
+        ...(fetcherUris.patchUri
+          ? [
+              `<script nonce="${nonce}" src="${fetcherUris.patchUri.toString()}"></script>`,
+            ]
+          : []),
       ].join("\n")
     : "";
 

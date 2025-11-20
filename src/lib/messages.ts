@@ -1,5 +1,5 @@
 export const GH_NOT_FOUND =
-  "GitHub authentication required — sign in to GitHub via VS Code.";
+  "GitHub authentication required — sign in via VS Code Accounts (Sign in to GitHub) or run the 'Sign in to GitHub' command.";
 export const GH_PERMISSION_ERROR_HINT =
   'GitHub API permission error — sign in via the extension (run the "Sign in to GitHub" command) or check your account/organization permissions (SAML/SSO).';
 

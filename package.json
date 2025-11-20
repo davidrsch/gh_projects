@@ -13,38 +13,110 @@
   "main": "./out/src/extension.js",
   "contributes": {
     "commands": [
-      { "command": "ghProjects.refresh", "title": "GitHub: Refresh Projects" },
-      { "command": "ghProjects.openProject", "title": "GitHub: Open Project" },
-      { "command": "ghProjects.testTableQueries", "title": "GitHub: Test Project Table Queries" },
-      { "command": "ghProjects.checkGh", "title": "ghProjects: Check GitHub auth" },
-      { "command": "ghProjects.signIn", "title": "Sign in to GitHub" }
+      {
+        "command": "ghProjects.refresh",
+        "title": "GitHub: Refresh Projects"
+      },
+      {
+        "command": "ghProjects.openProject",
+        "title": "GitHub: Open Project"
+      },
+      {
+        "command": "ghProjects.testTableQueries",
+        "title": "GitHub: Test Project Table Queries"
+      },
+      {
+        "command": "ghProjects.checkGh",
+        "title": "ghProjects: Check GitHub auth"
+      },
+      {
+        "command": "ghProjects.signIn",
+        "title": "Sign in to GitHub"
+      },
+      {
+        "command": "ghProjects.debugDump",
+        "title": "GitHub: Debug Dump"
+      }
     ],
     "menus": {},
     "viewsContainers": {
-      "activitybar": [ { "id": "projects", "title": "projects", "icon": "./media/projects.svg" } ]
+      "activitybar": [
+        {
+          "id": "projects",
+          "title": "projects",
+          "icon": "./media/projects.svg"
+        }
+      ]
     },
-    "views": { "projects": [ { "id": "projects", "name": "projects", "icon": "./media/projects.svg" } ] },
+    "views": {
+      "projects": [
+        {
+          "id": "projects",
+          "name": "projects",
+          "icon": "./media/projects.svg"
+        }
+      ]
+    },
     "configuration": {
       "title": "GitHub Projects",
       "properties": {
-        "ghProjects.maxDepth": { "type": "number", "default": 4, "description": "Scanning depth for findGitRepos (how many directory levels to traverse)." },
-        "ghProjects.itemsFirst": { "type": "number", "default": 50, "description": "Default 'first' items to fetch when querying project fields." },
-        "ghProjects.maxConcurrency": { "type": "number", "default": 4, "description": "Max concurrent operations for network/git IO." },
-        "ghProjects.queryTimeoutMs": { "type": "number", "default": 30000, "description": "Timeout for GitHub queries in milliseconds." },
-        "ghProjects.useHttpApi": { "type": "boolean", "default": false, "description": "If true, use direct HTTP GraphQL requests. Requires signing in via VS Code GitHub authentication (no GH_TOKEN or ghToken fallback)." },
-        "ghProjects.preferHttp": { "type": "boolean", "default": true, "description": "Prefer HTTP GraphQL using the VS Code GitHub authentication session. The extension uses HTTP GraphQL exclusively; sign-in will be required." },
-        "ghProjects.useBundledWebviews": { "type": "boolean", "default": false, "description": "When true, load bundled webview scripts from media/dist instead of unbundled originals." },
-        "ghProjects.debug": { "type": "boolean", "default": false, "description": "Enable debug logging for ghProjects (writes DEBUG messages to the ghProjects output channel)." },
-        "ghProjects.devMode": { "type": "boolean", "default": false, "description": "Enable developer mode (loads non-bundled webviews)." }
+        "ghProjects.maxDepth": {
+          "type": "number",
+          "default": 4,
+          "description": "Scanning depth for findGitRepos (how many directory levels to traverse)."
+        },
+        "ghProjects.itemsFirst": {
+          "type": "number",
+          "default": 50,
+          "description": "Default 'first' items to fetch when querying project fields."
+        },
+        "ghProjects.maxConcurrency": {
+          "type": "number",
+          "default": 4,
+          "description": "Max concurrent operations for network/git IO."
+        },
+        "ghProjects.queryTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "description": "Timeout for GitHub queries in milliseconds."
+        },
+        "ghProjects.useHttpApi": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, use direct HTTP GraphQL requests. Requires signing in via VS Code GitHub authentication (no GH_TOKEN or ghToken fallback)."
+        },
+        "ghProjects.preferHttp": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefer HTTP GraphQL using the VS Code GitHub authentication session. The extension uses HTTP GraphQL exclusively; sign-in will be required."
+        },
+        "ghProjects.useBundledWebviews": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, load bundled webview scripts from media/dist instead of unbundled originals."
+        },
+        "ghProjects.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging for ghProjects (writes DEBUG messages to the ghProjects output channel)."
+        },
+        "ghProjects.devMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable developer mode (loads non-bundled webviews)."
+        }
       }
     }
   },
+  "activationEvents": [
+    "*"
+  ],
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "postinstall": "node ./scripts/copy-vscode-elements.js",
-    "build:webviews": "esbuild media/webviews/*.js --bundle --minify --outdir=media/dist --format=esm --target=es2019",
+    "build:webviews": "node ./scripts/build-webviews.js",
     "lint": "npx eslint 'src/**/*.{ts,js}' --fix || npx prettier --write 'src/**/*.{ts,js,json,md}'",
     "test": "jest --runInBand",
     "fetch-sample": "npx ts-node src/scripts/fetchSample.ts"
@@ -59,8 +131,7 @@
     "@typescript-eslint/parser": "^8.46.4",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
-    "typescript": "^5.3.3"
-    ,
+    "typescript": "^5.3.3",
     "esbuild": "^0.19.0"
   },
   "dependencies": {

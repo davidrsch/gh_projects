@@ -34,7 +34,7 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
   refresh(): void {
     // Show progress while loading projects to give user feedback.
     this.loadProjectsWithProgress().then(() =>
-      this._onDidChangeTreeData.fire(),
+      this._onDidChangeTreeData.fire()
     );
   }
 
@@ -50,8 +50,8 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
       return this.loadProjectsWithProgress().then(() =>
         this.projects.map(
           (p) =>
-            new ProjectItem(p, undefined, vscode.TreeItemCollapsibleState.None),
-        ),
+            new ProjectItem(p, undefined, vscode.TreeItemCollapsibleState.None)
+        )
       );
     }
 
@@ -62,12 +62,54 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
   private async loadProjects(): Promise<void> {
     if (!this.workspaceRoot) return;
     try {
+      logger.info(
+        `loadProjects: starting for workspaceRoot=${this.workspaceRoot}`
+      );
+      // Additional info logs to aid debugging when users report no projects
+      logger.info("loadProjects: beginning scan for git repos");
+      try {
+        vscode.window.showInformationMessage(
+          "ghProjects: scanning workspace for GitHub projects..."
+        );
+      } catch {}
       const maxDepth = vscode.workspace
         .getConfiguration("ghProjects")
         .get<number>("maxDepth", 4);
-      const repos = await findGitRepos(this.workspaceRoot, maxDepth);
+      let repos: any[] = [];
+      try {
+        repos = await findGitRepos(this.workspaceRoot, maxDepth);
+        logger.info(
+          `loadProjects: findGitRepos returned ${repos?.length ?? 0} repos`
+        );
+      } catch (e) {
+        logger.error("loadProjects: findGitRepos threw: " + String(e));
+        throw e;
+      }
+      try {
+        console.debug &&
+          console.debug(
+            `ghProjects: loadProjects: findGitRepos returned ${
+              repos?.length ?? 0
+            } repos`
+          );
+      } catch {}
+      if (!repos || repos.length === 0) {
+        // Helpful feedback when no local git repositories were discovered
+        logger.info("No git repos found", {
+          workspaceRoot: this.workspaceRoot,
+        });
+        vscode.window.showInformationMessage(
+          `ghProjects: No Git repositories found under ${this.workspaceRoot}`
+        );
+        this.projects = [];
+        return;
+      }
+      logger.info("Found git repos", {
+        count: repos.length,
+        sample: repos.slice(0, 10),
+      });
       logger.debug(
-        "[ghProjects] Found repos: " + String(repos && repos.length),
+        "[ghProjects] Found repos: " + String(repos && repos.length)
       );
       const items: any[] = [];
       const maxConcurrency = vscode.workspace
@@ -83,16 +125,87 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
       });
 
       await promisePool<void>(remoteTasks, maxConcurrency);
-      logger.debug(
-        "[ghProjects] Repo items with remotes: " + String(items.length),
+      logger.info(
+        `[ghProjects] Repo items with remotes: ${String(items.length)}`
       );
+      try {
+        console.debug &&
+          console.debug(
+            `[ghProjects] Repo items with remotes: ${String(items.length)}`
+          );
+      } catch {}
+      try {
+        logger.debug(
+          `loadProjects: sample items count=${items.slice(0, 20).length}`
+        );
+        try {
+          console.debug &&
+            console.debug(
+              `ghProjects: loadProjects: sample items count=${
+                items.slice(0, 20).length
+              }`
+            );
+        } catch {}
+      } catch {}
+      // Log sample of repo paths and remotes for debugging
+      try {
+        const sample = items
+          .slice(0, 20)
+          .map((it) => ({ path: it.path, remotes: it.remotes }));
+        logger.debug("Repo -> remotes sample", sample);
+      } catch (e) {
+        logger.debug("Failed to log repo remotes sample: " + String(e));
+      }
 
-      const projectQueries = await getProjectsForReposArray(items);
-      logger.debug(
-        "[ghProjects] Project queries result: " + String(projectQueries.length),
-      );
+      let projectQueries: any[] = [];
+      try {
+        projectQueries = await getProjectsForReposArray(items);
+        logger.info(
+          `[ghProjects] Project queries result: ${String(
+            projectQueries?.length ?? 0
+          )}`
+        );
+      } catch (e) {
+        logger.error("getProjectsForReposArray threw: " + String(e));
+        projectQueries = [];
+      }
+      try {
+        console.debug &&
+          console.debug(
+            `[ghProjects] Project queries result: ${String(
+              projectQueries?.length ?? 0
+            )}`
+          );
+      } catch {}
+      // If no project queries returned, surface a helpful message
+      if (!projectQueries || projectQueries.length === 0) {
+        logger.info("No project query results for discovered repos", {
+          reposCount: items.length,
+        });
+        vscode.window.showInformationMessage(
+          "ghProjects: No GitHub Projects found for scanned repositories."
+        );
+      } else {
+        // log owners/names we queried
+        try {
+          const owners = projectQueries.map((p) => ({
+            owner: p.owner,
+            name: p.name,
+            projects: (p.projects || []).length,
+          }));
+          logger.debug("Queried owners", owners.slice(0, 50));
+        } catch (e) {
+          logger.debug("Failed to log queried owners: " + String(e));
+        }
+      }
       const unique = uniqueProjectsFromResults(projectQueries as any[]);
-      logger.debug("[ghProjects] Unique projects: " + String(unique.length));
+      logger.info(`[ghProjects] Unique projects: ${String(unique.length)}`);
+      try {
+        console.debug &&
+          console.debug(
+            `[ghProjects] Unique projects: ${String(unique.length)}`
+          );
+      } catch {}
       // Preserve basic fields and then fetch `views` for each project by its id.
       interface RepoRef {
         owner?: string;
@@ -112,7 +225,13 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
         repos: p.repos as RepoRef[] | undefined,
         views: undefined as ProjectView[] | undefined,
       }));
-      logger.debug("[ghProjects] Mapped projects: " + String(mapped.length));
+      logger.info(`[ghProjects] Mapped projects: ${String(mapped.length)}`);
+      try {
+        console.debug &&
+          console.debug(
+            `[ghProjects] Mapped projects: ${String(mapped.length)}`
+          );
+      } catch {}
 
       // Fetch views with a concurrency-limited pool to improve throughput
       const CONCURRENCY = 4;
@@ -133,13 +252,16 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
       for (let i = 0; i < mapped.length; i++) {
         mapped[i].views = Array.isArray(res[i]) ? res[i] : [];
       }
-      logger.debug(
-        "[ghProjects] Projects with views: " + String(mapped.length),
-      );
+      logger.info("[ghProjects] Projects with views: " + String(mapped.length));
 
       this.projects = mapped;
     } catch (e) {
       const msg = String(e || "");
+      try {
+        vscode.window.showErrorMessage(
+          `ghProjects: Failed to load projects: ${msg}`
+        );
+      } catch {}
       if (isGhNotFound(e)) {
         vscode.window.showErrorMessage(messages.GH_NOT_FOUND);
       } else {
@@ -161,7 +283,7 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
           progress.report({ increment: 0 });
           await this.loadProjects();
           progress.report({ increment: 100 });
-        },
+        }
       );
     } catch (e) {
       // loadProjects handles errors and sets this.projects, so nothing more needed here.
@@ -173,11 +295,11 @@ export class ProjectItem extends vscode.TreeItem {
   constructor(
     public readonly project: ProjectEntry,
     public readonly label: string = ((project) => project.title || project.id)(
-      project,
+      project
     ),
     // projects are not collapsible and do not expose a click command (no hover command title)
     public readonly collapsibleState: vscode.TreeItemCollapsibleState = vscode
-      .TreeItemCollapsibleState.None,
+      .TreeItemCollapsibleState.None
   ) {
     super(label, collapsibleState);
     // Tooltip: show only the short description or label (no command title)

@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import * as path from "path";
+import logger from "../lib/logger";
 
 export type Remote = { name: string; url: string; push?: boolean };
 
@@ -9,6 +10,11 @@ export function getRemotesForPath(cwd: string): Promise<Remote[]> {
       if (err) {
         const msg =
           (stderr && stderr.toString()) || (err && err.message) || String(err);
+        try {
+          logger.debug(
+            `getRemotesForPath git error for ${cwd}: ${String(msg)}`
+          );
+        } catch {}
         return resolve([{ name: "error", url: msg, push: false }]);
       }
 
@@ -19,7 +25,7 @@ export function getRemotesForPath(cwd: string): Promise<Remote[]> {
         if (m) {
           const [, name, url, type] = m;
           const existing = remotes.find(
-            (x) => x.name === name && x.url === url,
+            (x) => x.name === name && x.url === url
           );
           if (existing) {
             if (type === "push") existing.push = true;
@@ -28,6 +34,11 @@ export function getRemotesForPath(cwd: string): Promise<Remote[]> {
           }
         }
       }
+      try {
+        logger.debug(
+          `getRemotesForPath ${cwd} parsed remotes: ${JSON.stringify(remotes)}`
+        );
+      } catch {}
       resolve(remotes);
     });
   });

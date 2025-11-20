@@ -124,6 +124,7 @@ export interface PRSummary {
   title?: string;
   url?: string;
   state?: string;
+  state_color?: string;
   merged?: boolean;
   mergedAt?: string | null;
   repository?: RepoSummary | null;
@@ -137,6 +138,7 @@ export interface IssueSummary {
   title?: string;
   url?: string;
   state?: string;
+  state_color?: string;
   repository?: RepoSummary | null;
   author?: UserSummary | null;
   labels?: Label[];
