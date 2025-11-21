@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { ProjectEntry } from "../treeViewProvider";
-import ghClient from "../github/ghClient";
+import ghClient, { fetchViewDetails } from "../github/ghClient";
 import messages, { isGhNotFound } from "../lib/messages";
 import logger from "../lib/logger";
 import { wrapError } from "../lib/errors";
@@ -21,6 +21,49 @@ export async function openProjectWebview(
       views = await ghClient.fetchProjectViews(project.id);
     } catch (e) {
       logger.warn("Failed to fetch project views for panelKey: " + String(e));
+    }
+  }
+
+  // Attempt to fetch richer view details (fields, grouping, sorting) for each view
+  // so the webview can present more accurate layout and field metadata.
+  if (project.id && Array.isArray(views) && views.length > 0) {
+    try {
+      const detailed: Array<any> = [];
+      for (let i = 0; i < views.length; i++) {
+        const v = views[i];
+        if (v && typeof v.number === "number") {
+          try {
+            const det = await fetchViewDetails(project.id, v.number as number);
+            if (det) {
+              // attach details onto the view object
+              (v as any).details = det;
+              // If there's a saved filter in workspaceState for this view, prefer it
+              try {
+                const storageKey = `viewFilter:${project.id}:${v.number}`;
+                const saved = await context.workspaceState.get<string>(
+                  storageKey
+                );
+                if (typeof saved === "string") {
+                  (v as any).details.filter = saved;
+                }
+              } catch (e) {
+                // ignore workspace storage errors
+              }
+            }
+          } catch (err) {
+            logger.debug(
+              `fetchViewDetails failed for project ${project.id} view ${String(
+                v.number
+              )}: ${String((err as any)?.message || err || "")}`
+            );
+          }
+        }
+      }
+    } catch (e) {
+      logger.debug(
+        "fetchViewDetails loop failed: " +
+          String((e as any)?.message || e || "")
+      );
     }
   }
 
@@ -104,6 +147,14 @@ export async function openProjectWebview(
       "tableViewFetcher.js"
     )
   );
+  const helperUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "media",
+      webviewFolder,
+      "filterBarHelper.js"
+    )
+  );
   const boardUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
@@ -145,7 +196,15 @@ export async function openProjectWebview(
     panel.webview,
     project,
     elementsUri.toString(),
-    { overviewUri, tableUri, boardUri, roadmapUri, contentUri, patchUri },
+    {
+      overviewUri,
+      tableUri,
+      boardUri,
+      roadmapUri,
+      contentUri,
+      patchUri,
+      helperUri,
+    },
     panelMapKey
   );
 
@@ -240,9 +299,13 @@ export async function openProjectWebview(
           // If the view has a type, you could branch here for board/roadmap, etc.
           // For now, always fetch fields (table/board/roadmap fetchers can use the same API or branch as needed)
           // If needed, pass view-specific info to fetchProjectFields here (or filter after fetch)
+          // If the view has a filter expression, pass it along so GH items() honors the view filter
+          const viewFilter =
+            (view && (view as any).details && (view as any).details.filter) ||
+            undefined;
           const snapshot: ProjectSnapshot = await ghClient.fetchProjectFields(
             project.id as string,
-            { first }
+            { first, viewFilter }
           );
           logger.debug(`[ghProjects] fetchProjectFields result`);
           const itemsCount =
@@ -254,12 +317,115 @@ export async function openProjectWebview(
             reqViewKey
           )} items=${itemsCount}`;
           logger.debug(_postMsg);
-          // Do not post stack traces or full objects that may contain tokens.
-          panel.webview.postMessage({
-            command: "fields",
-            viewKey: reqViewKey,
-            payload: snapshot,
-          });
+          // Restrict fields to those visible in the selected view (if view details available)
+          try {
+            let effectiveSnapshot = snapshot;
+            if (
+              view &&
+              (view as any).details &&
+              Array.isArray(effectiveSnapshot.fields)
+            ) {
+              const vd = (view as any).details;
+              const nodeFields =
+                vd && vd.fields && Array.isArray(vd.fields.nodes)
+                  ? vd.fields.nodes
+                  : undefined;
+              if (nodeFields && nodeFields.length > 0) {
+                const allowedIds = nodeFields.map((nf: any) => String(nf.id));
+                // Preserve ordering from the view definition
+                const ordered: any[] = [];
+                for (const nf of nodeFields) {
+                  const fid = String(nf.id);
+                  const found = (effectiveSnapshot.fields as any[]).find(
+                    (f: any) =>
+                      String(f.id) === fid || String(f.name) === String(nf.name)
+                  );
+                  if (found) ordered.push(found);
+                }
+                // If matches were found, reorder fields and also reorder each item's fieldValues
+                if (ordered.length > 0) {
+                  const orderedFieldIds = ordered.map((f: any) =>
+                    String(f.id ?? f.name ?? "")
+                  );
+                  // Rebuild items' fieldValues to match orderedFieldIds
+                  const newItems = (effectiveSnapshot.items || []).map(
+                    (it: any) => {
+                      const fv = Array.isArray(it.fieldValues)
+                        ? it.fieldValues
+                        : [];
+                      const mapped = orderedFieldIds.map((fid: string) => {
+                        // Prefer match by fieldId
+                        const found = fv.find(
+                          (v: any) =>
+                            v &&
+                            (String(v.fieldId) === fid ||
+                              String(v.fieldName || "") === fid)
+                        );
+                        if (found) return found;
+                        // Fallback: attempt to match using raw metadata
+                        const foundAlt = fv.find((v: any) => {
+                          try {
+                            return (
+                              (v &&
+                                v.raw &&
+                                v.raw.field &&
+                                String(v.raw.field.id) === fid) ||
+                              (v &&
+                                v.raw &&
+                                v.raw.field &&
+                                String(v.raw.field.name) === fid)
+                            );
+                          } catch {
+                            return false;
+                          }
+                        });
+                        // If still not found, return a missing placeholder for that field
+                        return (
+                          foundAlt || {
+                            type: "missing",
+                            fieldId: fid,
+                            raw: null,
+                          }
+                        );
+                      });
+                      return { ...it, fieldValues: mapped };
+                    }
+                  );
+
+                  effectiveSnapshot = {
+                    ...effectiveSnapshot,
+                    fields: ordered,
+                    items: newItems,
+                  } as ProjectSnapshot;
+                }
+              }
+            }
+            // Do not post stack traces or full objects that may contain tokens.
+            const effectiveFilterVal =
+              view && (view as any).details && (view as any).details.filter
+                ? (view as any).details.filter
+                : undefined;
+            panel.webview.postMessage({
+              command: "fields",
+              viewKey: reqViewKey,
+              payload: effectiveSnapshot,
+              effectiveFilter: effectiveFilterVal,
+              itemsCount: itemsCount,
+            });
+          } catch (e) {
+            // If any error during filtering, fall back to original snapshot
+            const effectiveFilterVal2 =
+              view && (view as any).details && (view as any).details.filter
+                ? (view as any).details.filter
+                : undefined;
+            panel.webview.postMessage({
+              command: "fields",
+              viewKey: reqViewKey,
+              payload: snapshot,
+              effectiveFilter: effectiveFilterVal2,
+              itemsCount: itemsCount,
+            });
+          }
         } catch (e) {
           const wrapped = wrapError(e, "requestFields failed");
           const msgText = String(wrapped?.message || wrapped || "");
@@ -303,6 +469,130 @@ export async function openProjectWebview(
           logger.debug(fm);
         }
       }
+      // Set a view-level filter (Save). Update in-memory view details and refresh snapshot
+      if (msg?.command === "setViewFilter") {
+        try {
+          const reqViewKey = (msg as any).viewKey as string | undefined;
+          const newFilter = (msg as any).filter;
+          if (!reqViewKey) return;
+          let localKey = String(reqViewKey).split(":").pop();
+          let viewIdx = 0;
+          if (localKey && localKey.startsWith("view-")) {
+            const idx = Number(localKey.split("-")[1]);
+            if (!isNaN(idx)) viewIdx = idx;
+          }
+          const viewsArr: ProjectView[] = Array.isArray(project.views)
+            ? project.views
+            : [];
+          const view = viewsArr[viewIdx];
+          // Update in-memory details.filter
+          if (view) {
+            if (!(view as any).details) (view as any).details = {};
+            (view as any).details.filter =
+              typeof newFilter === "string" ? newFilter : undefined;
+          }
+          // Persist saved filter to workspaceState so it survives reloads
+          try {
+            const storageKey = `viewFilter:${project.id}:${
+              view && view.number
+            }`;
+            await context.workspaceState.update(
+              storageKey,
+              (view && (view as any).details && (view as any).details.filter) ||
+                undefined
+            );
+          } catch (e) {
+            logger.debug("workspaceState.update failed: " + String(e));
+          }
+          const first = vscode.workspace
+            .getConfiguration("ghProjects")
+            .get<number>("itemsFirst", 50);
+          const snapshot: ProjectSnapshot = await ghClient.fetchProjectFields(
+            project.id as string,
+            {
+              first,
+              viewFilter:
+                (view &&
+                  (view as any).details &&
+                  (view as any).details.filter) ||
+                undefined,
+            }
+          );
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: reqViewKey,
+            payload: snapshot,
+            effectiveFilter:
+              (view && (view as any).details && (view as any).details.filter) ||
+              undefined,
+          });
+        } catch (e) {
+          const wrapped = wrapError(e, "setViewFilter failed");
+          const msgText = String(wrapped?.message || wrapped || "");
+          logger.error("setViewFilter failed: " + msgText);
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: (msg as any).viewKey || null,
+            error: msgText,
+          });
+        }
+      }
+      // Discard edits to the view filter: re-fetch using the current stored filter value and refresh
+      if (msg?.command === "discardViewFilter") {
+        try {
+          const reqViewKey = (msg as any).viewKey as string | undefined;
+          if (!reqViewKey) return;
+          let localKey = String(reqViewKey).split(":").pop();
+          let viewIdx = 0;
+          if (localKey && localKey.startsWith("view-")) {
+            const idx = Number(localKey.split("-")[1]);
+            if (!isNaN(idx)) viewIdx = idx;
+          }
+          const viewsArr: ProjectView[] = Array.isArray(project.views)
+            ? project.views
+            : [];
+          const view = viewsArr[viewIdx];
+          const first = vscode.workspace
+            .getConfiguration("ghProjects")
+            .get<number>("itemsFirst", 50);
+          // Restore the saved filter from workspaceState (if any), otherwise keep existing
+          try {
+            const storageKey = `viewFilter:${project.id}:${
+              view && view.number
+            }`;
+            const saved = await context.workspaceState.get<string>(storageKey);
+            if (typeof saved === "string") {
+              if (!view) (view as any) = {};
+              if (!(view as any).details) (view as any).details = {};
+              (view as any).details.filter = saved;
+            }
+          } catch (e) {
+            // ignore
+          }
+          const viewFilter =
+            (view && (view as any).details && (view as any).details.filter) ||
+            undefined;
+          const snapshot: ProjectSnapshot = await ghClient.fetchProjectFields(
+            project.id as string,
+            { first, viewFilter }
+          );
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: reqViewKey,
+            payload: snapshot,
+            effectiveFilter: viewFilter,
+          });
+        } catch (e) {
+          const wrapped = wrapError(e, "discardViewFilter failed");
+          const msgText = String(wrapped?.message || wrapped || "");
+          logger.error("discardViewFilter failed: " + msgText);
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: (msg as any).viewKey || null,
+            error: msgText,
+          });
+        }
+      }
     },
     undefined,
     context.subscriptions
@@ -320,6 +610,7 @@ function buildHtml(
     roadmapUri: vscode.Uri;
     contentUri: vscode.Uri;
     patchUri?: vscode.Uri;
+    helperUri?: vscode.Uri;
   },
   panelKey?: string
 ): string {
@@ -342,6 +633,11 @@ function buildHtml(
   // Use classic scripts (no type="module") so they execute synchronously
   const fetcherScripts = fetcherUris
     ? [
+        ...(fetcherUris.helperUri
+          ? [
+              `<script nonce="${nonce}" src="${fetcherUris.helperUri.toString()}"></script>`,
+            ]
+          : []),
         `<script nonce="${nonce}" src="${fetcherUris.overviewUri.toString()}"></script>`,
         `<script nonce="${nonce}" src="${fetcherUris.tableUri.toString()}"></script>`,
         `<script nonce="${nonce}" src="${fetcherUris.boardUri.toString()}"></script>`,
@@ -478,6 +774,7 @@ console.log('project.views', project.views);
 
     const panel = document.createElement('div');
     panel.style.display = 'none';
+
     panelsContainer.appendChild(panel);
     panelsMap[tab.key] = panel;
 
@@ -541,6 +838,38 @@ console.log('project.views', project.views);
 
   // Initialize only the overview on first render (showTab will call this too)
   activateTabFetcher('overview');
+
+  // Listen for fields payloads posted back from the extension and update filter count UI
+  window.addEventListener('message', (ev) => {
+    try {
+      const n = ev && ev.data ? ev.data : ev;
+      if (!n || n.command !== 'fields') return;
+      const vk = n.viewKey ? String(n.viewKey) : null;
+      if (!vk) return;
+      // viewKey is like '<panelKey>:view-X' — we only care about suffix
+      const suffix = String(vk).split(':').pop();
+      if (!suffix) return;
+      const countEl = document.querySelector('[data-filter-count="' + suffix + '"]');
+      // Determine item count from payload
+      const payload = n.payload || (n.payload && n.payload.data) || null;
+      let itemsCount = null;
+      try {
+        itemsCount = payload && payload.items ? (payload.items.length || 0) : null;
+        if (itemsCount === null && payload && payload.data && payload.data.items) itemsCount = payload.data.items.length || 0;
+        if (itemsCount === null && n.items) itemsCount = n.items;
+      } catch (e) {}
+      if (countEl && itemsCount !== null) {
+        try { countEl.textContent = String(itemsCount) + ' items'; } catch (e) {}
+      }
+      // Also update input value to reflect the effective filter (if extension provided it)
+      try {
+        const inputEl = document.querySelector('[data-filter-input="' + suffix + '"]');
+        if (inputEl && n.effectiveFilter !== undefined) {
+          try { inputEl.value = String(n.effectiveFilter || ''); } catch (e) {}
+        }
+      } catch (e) {}
+    } catch (e) {}
+  });
 
   panelsContainer.addEventListener('click', e=>{
     const item = e.target?.closest('.repo-item');

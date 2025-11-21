@@ -78,6 +78,28 @@ export async function fetchProjectViews(
   }
 }
 
+export async function fetchViewDetails(
+  projectId: string,
+  viewNumber: number
+): Promise<any> {
+  // Build a query to fetch fields, sort/group info for a specific view
+  const gql = `query($projectId: ID!, $viewNumber: Int!) { node(id: $projectId) { __typename ... on ProjectV2 { view(number: $viewNumber) { id name number layout filter fields(first: 100) { nodes { ... on ProjectV2FieldCommon { id name dataType } } } sortByFields(first: 20) { nodes { direction field { ... on ProjectV2FieldCommon { name } } } } groupByFields(first: 10) { nodes { ... on ProjectV2FieldCommon { name } } } verticalGroupByFields(first: 10) { nodes { ... on ProjectV2FieldCommon { name } } } } } } }`;
+  try {
+    const res = (await ghQueryWithErrors(gql, {
+      projectId,
+      viewNumber,
+    })) as GhApiResponse<any>;
+    return res?.data?.node?.view;
+  } catch (e) {
+    logger.debug(
+      `fetchViewDetails failed for projectId=${projectId} viewNumber=${viewNumber}: ${String(
+        (e as any)?.message || e || ""
+      )}`
+    );
+    return undefined;
+  }
+}
+
 // --- Helper functions split out for testability ---
 async function fetchMeta(
   projectId: string
@@ -261,9 +283,10 @@ async function fetchRepoOptions(repoNames: string[], LIMITS: any) {
 
 export async function fetchProjectFields(
   projectId: string,
-  opts?: { first?: number }
+  opts?: { first?: number; viewFilter?: string }
 ): Promise<ProjectSnapshot> {
   const first = opts?.first ?? 50;
+  const viewFilter = opts?.viewFilter;
   const LIMITS = makeLimits(first);
 
   // Fetch project metadata
@@ -356,7 +379,8 @@ export async function fetchProjectFields(
     const itemsQuery = buildItemsQuery(
       project.id,
       aliasSelections.join("\n          "),
-      LIMITS
+      LIMITS,
+      viewFilter
     );
     const itemsRes = (await ghQueryWithErrors(itemsQuery).catch((e: any) => {
       logger.error(
@@ -559,4 +583,4 @@ export async function fetchProjectFields(
   return result;
 }
 
-export default { fetchProjectViews, fetchProjectFields };
+export default { fetchProjectViews, fetchProjectFields, fetchViewDetails };

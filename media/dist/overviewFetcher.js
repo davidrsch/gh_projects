@@ -1,1 +1,26 @@
-(function(){window.overviewFetcher=function(o,n){let e=window.__project_data__||window.project||{},t=e.repos&&e.repos.length?e.repos.map(i=>'<div class="repo-item" data-path="'+(i.path||"")+'">'+((i.owner?i.owner+"/":"")+(i.name||i.path||""))+"</div>").join(""):"<div>(no repos)</div>";o.innerHTML='<div class="title">'+(e.title||"")+"</div><div>"+(e.description||"")+'</div><h4>Repositories</h4><div class="repo-list">'+t+"</div>"}})();
+(function () {
+  window.overviewFetcher = function (o, n) {
+    let e = window.__project_data__ || window.project || {},
+      t =
+        e.repos && e.repos.length
+          ? e.repos
+              .map(
+                (i) =>
+                  '<div class="repo-item" data-path="' +
+                  (i.path || "") +
+                  '">' +
+                  ((i.owner ? i.owner + "/" : "") + (i.name || i.path || "")) +
+                  "</div>"
+              )
+              .join("")
+          : "<div>(no repos)</div>";
+    o.innerHTML =
+      '<div class="title">' +
+      (e.title || "") +
+      "</div><div>" +
+      (e.description || "") +
+      '</div><h4>Repositories</h4><div class="repo-list">' +
+      t +
+      "</div>";
+  };
+})();

@@ -1,1 +1,248 @@
-function w(i,a,d){a.innerHTML='<div class="title">'+(i.name||i.id||"Roadmap View")+'</div><div class="loading"><em>Loading roadmap\u2026</em></div>';let r=50;function p(t){return t?String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"):""}function l(t){try{let e=t&&t.items||[];a.innerHTML='<div class="title">'+(i.name||i.id||"Roadmap View")+"</div><div><strong>Items:</strong> "+e.length+"</div>";let n=document.createElement("ol");n.style.marginTop="8px";for(let s=0;s<e.length;s++){let o=e[s],c=document.createElement("li");c.style.marginBottom="6px";let f=o&&o.content&&(o.content.title||o.content.name)||o&&o.title||o&&o.raw&&o.raw.title||"#"+(s+1);c.innerHTML='<div style="font-weight:600">'+p(String(f||""))+"</div>",n.appendChild(c)}a.appendChild(n)}catch{a.innerHTML='<div class="title">'+(i.name||i.id||"Roadmap View")+"</div><div>Error rendering snapshot</div>"}}function m(t){var n;let e=t&&t.data?t.data:t;try{window.vscodeApi&&typeof window.vscodeApi.postMessage=="function"&&window.vscodeApi.postMessage({command:"debugLog",level:"debug",viewKey:d,message:"roadmapViewFetcher.onMessage",data:{command:e&&e.command,eventViewKey:e&&e.viewKey}})}catch{}try{console.log("roadmapViewFetcher.onMessage",{cmd:e&&e.command,viewKey:e&&e.viewKey})}catch{}if(e&&e.command==="fields"){if(e.viewKey&&d&&String(e.viewKey)!==String(d))return;e.error?a.innerHTML='<div class="title">'+(i.name||i.id||"Roadmap View")+'</div><div style="color:var(--vscode-editor-foreground)">'+String(e.error)+"</div>":l(e.payload||((n=e.payload)==null?void 0:n.data)||e.payload)}}function g(){try{try{window.vscodeApi&&typeof window.vscodeApi.postMessage=="function"&&window.vscodeApi.postMessage({command:"debugLog",level:"debug",viewKey:d,message:"roadmapViewFetcher.requestFields",data:{first:r}})}catch{}try{console.log("roadmapViewFetcher.requestFields",{viewKey:d,first:r})}catch{}if(typeof acquireVsCodeApi=="function"||window.vscodeApi&&typeof window.vscodeApi.postMessage=="function")try{window.vscodeApi&&typeof window.vscodeApi.postMessage=="function"?window.vscodeApi.postMessage({command:"requestFields",first:r,viewKey:d}):typeof acquireVsCodeApi=="function"&&acquireVsCodeApi().postMessage({command:"requestFields",first:r,viewKey:d})}catch{}}catch{}}window.addEventListener("message",m),g()}try{window.roadmapViewFetcher=w}catch{}
+// Roadmap view fetcher — minimal, robust implementation
+// Exposes: window.roadmapViewFetcher(view, container, viewKey)
+// Strict: no retry or fallback to other fetchers. If missing or failing, contentFetcher will render an explicit error.
+(function () {
+  function createRoadmapFetcher() {
+    return function (view, container, viewKey) {
+      try {
+        if (!container) return;
+        container.innerHTML =
+          '<div class="title">' +
+          (view && (view.name || view.id)
+            ? view.name || view.id
+            : "Roadmap View") +
+          '</div><div class="loading"><em>Loading roadmap…</em></div>';
+      } catch (e) {}
+
+      var first = 50;
+
+      function esc(s) {
+        return s
+          ? String(s)
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+          : "";
+      }
+
+      function render(payload, effFilter) {
+        try {
+          var items = (payload && payload.items) || [];
+          container.innerHTML = "";
+
+          var barApi = null;
+          if (
+            window.filterBarHelper &&
+            typeof window.filterBarHelper.create === "function"
+          ) {
+            try {
+              barApi = window.filterBarHelper.create({
+                parent: container,
+                suffix: viewKey,
+                effFilter: effFilter,
+                viewKey: viewKey,
+                step: first,
+                onLoadMore: function () {
+                  first += 50;
+                  requestFields();
+                },
+              });
+            } catch (e) {
+              barApi = null;
+            }
+          }
+
+          if (!barApi) {
+            var header = document.createElement("div");
+            header.style.display = "flex";
+            header.style.justifyContent = "space-between";
+            header.style.alignItems = "center";
+            header.style.marginBottom = "8px";
+            var left = document.createElement("div");
+            left.style.display = "flex";
+            left.style.alignItems = "center";
+            left.style.gap = "8px";
+            left.style.flex = "1 1 auto";
+            left.style.minWidth = "0";
+
+            var input = document.createElement("input");
+            input.type = "text";
+            input.style.padding = "6px";
+            input.style.border = "1px solid var(--vscode-editorWidget-border)";
+            input.style.borderRadius = "0px";
+            input.style.background = "var(--vscode-input-background)";
+            input.style.color = "var(--vscode-input-foreground)";
+            input.style.outline = "none";
+            input.style.boxSizing = "border-box";
+            input.placeholder = "Filter items...";
+            input.setAttribute(
+              "data-filter-input",
+              viewKey ? String(viewKey).split(":").pop() : ""
+            );
+
+            var right = document.createElement("div");
+            var loadBtn = document.createElement("button");
+            loadBtn.textContent = "Load more";
+            loadBtn.style.marginLeft = "8px";
+            loadBtn.style.border =
+              "1px solid var(--vscode-editorWidget-border)";
+            loadBtn.style.borderRadius = "0px";
+            loadBtn.style.background = "transparent";
+            loadBtn.style.color = "var(--vscode-button-foreground)";
+            loadBtn.addEventListener("click", function () {
+              first += 50;
+              requestFields();
+            });
+
+            left.appendChild(input);
+            header.appendChild(left);
+            header.appendChild(right);
+            right.appendChild(loadBtn);
+            container.appendChild(header);
+
+            input.addEventListener("input", function () {
+              /* local UI only when helper absent */
+            });
+          }
+
+          var list = document.createElement("ol");
+          list.style.marginTop = "8px";
+          for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            var li = document.createElement("li");
+            li.style.marginBottom = "6px";
+            var title =
+              (it && it.content && (it.content.title || it.content.name)) ||
+              (it && it.title) ||
+              (it && it.raw && it.raw.title) ||
+              "#" + (i + 1);
+            li.innerHTML =
+              '<div style="font-weight:600">' +
+              esc(String(title || "")) +
+              "</div>";
+            list.appendChild(li);
+          }
+          container.appendChild(list);
+
+          try {
+            if (barApi && typeof barApi.setCount === "function")
+              barApi.setCount(items.length);
+            if (barApi && typeof barApi.setLoadState === "function")
+              barApi.setLoadState(
+                items.length < first,
+                items.length >= first ? "Load more" : "All loaded"
+              );
+          } catch (e) {}
+
+          if (barApi && typeof barApi.setEffectiveFilter === "function") {
+            try {
+              barApi.setEffectiveFilter(effFilter);
+            } catch (e) {}
+          } else {
+            try {
+              if (typeof input !== "undefined")
+                input.value =
+                  typeof effFilter === "string"
+                    ? effFilter
+                    : effFilter === undefined
+                    ? ""
+                    : String(effFilter || "");
+            } catch (e) {}
+          }
+        } catch (err) {
+          try {
+            if (
+              window.vscodeApi &&
+              typeof window.vscodeApi.postMessage === "function"
+            )
+              window.vscodeApi.postMessage({
+                command: "debugLog",
+                level: "error",
+                viewKey: viewKey,
+                message: "roadmapViewFetcher.render.error",
+                data: {
+                  message: String(err && err.message),
+                  stack: err && err.stack,
+                },
+              });
+          } catch (e) {}
+          try {
+            container.innerHTML =
+              '<div class="title">' +
+              (view && (view.name || view.id)
+                ? view.name || view.id
+                : "Roadmap View") +
+              '</div><div style="color:var(--vscode-editor-foreground)">Error rendering roadmap view: ' +
+              String(err && err.message) +
+              "</div>";
+          } catch (e) {}
+        }
+      }
+
+      function onMessage(ev) {
+        var msg = ev && ev.data ? ev.data : ev;
+        try {
+          if (msg && msg.command === "fields") {
+            if (
+              msg.viewKey &&
+              viewKey &&
+              String(msg.viewKey) !== String(viewKey)
+            )
+              return;
+            if (msg.error) {
+              try {
+                container.innerHTML =
+                  '<div class="title">' +
+                  (view && (view.name || view.id)
+                    ? view.name || view.id
+                    : "Roadmap View") +
+                  '</div><div style="color:var(--vscode-editor-foreground)">' +
+                  String(msg.error) +
+                  "</div>";
+              } catch (e) {}
+            } else {
+              render(
+                msg.payload || (msg.payload && msg.payload.data) || msg.payload,
+                msg.effectiveFilter
+              );
+            }
+          }
+        } catch (e) {}
+      }
+
+      function requestFields() {
+        try {
+          if (
+            typeof window.vscodeApi === "object" &&
+            window.vscodeApi &&
+            typeof window.vscodeApi.postMessage === "function"
+          ) {
+            window.vscodeApi.postMessage({
+              command: "requestFields",
+              first: first,
+              viewKey: viewKey,
+            });
+          }
+        } catch (e) {}
+      }
+
+      window.addEventListener("message", onMessage);
+      requestFields();
+    };
+  }
+
+  try {
+    window.roadmapViewFetcher = createRoadmapFetcher();
+    if (
+      typeof window !== "undefined" &&
+      window.vscodeApi &&
+      typeof window.vscodeApi.postMessage === "function"
+    ) {
+      window.vscodeApi.postMessage({
+        command: "debugLog",
+        level: "debug",
+        message: "roadmapViewFetcher.loaded",
+      });
+    }
+  } catch (e) {}
+})();
