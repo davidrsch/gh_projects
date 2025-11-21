@@ -600,15 +600,46 @@
               "</div>"
             );
           case "sub_issues_progress":
-            return (
-              "<div>" +
-              (e.percent !== void 0 && e.percent !== null
-                ? m(String(e.percent) + "%")
-                : e.done != null && e.total != null
-                ? m(e.done + "/" + e.total)
-                : "") +
-              "</div>"
-            );
+            try {
+              // Only render when there is a meaningful total (> 0)
+              if (!e || e.total == null || Number(e.total) <= 0) return "";
+              const totalCount = Math.max(0, Math.floor(Number(e.total) || 0));
+              const doneCount = Math.max(0, Math.floor(Number(e.done || 0)));
+              if (totalCount === 0) return "";
+              // percentage for text
+              let pct = null;
+              if (e.percent !== void 0 && e.percent !== null)
+                pct = Number(e.percent);
+              else pct = Math.round((doneCount / totalCount) * 100);
+              if (pct == null || !isFinite(pct)) return "";
+              pct = Math.max(0, Math.min(100, pct));
+              // Build segmented bar: one segment per total; filled segments show full color,
+              // remaining segments show only border using the active theme color.
+              let segs = [];
+              for (let si = 0; si < totalCount; si++) {
+                if (si < doneCount) {
+                  segs.push(
+                    '<div style="flex:1;height:12px;border-radius:4px;background:var(--vscode-focusBorder)"></div>'
+                  );
+                } else {
+                  segs.push(
+                    '<div style="flex:1;height:12px;border-radius:4px;border:1px solid var(--vscode-focusBorder);background:transparent"></div>'
+                  );
+                }
+              }
+              return (
+                '<div style="display:flex;align-items:center;gap:8px">' +
+                '<div style="flex:1;min-width:0;display:flex;gap:4px;align-items:center">' +
+                segs.join("") +
+                "</div>" +
+                '<div style="min-width:44px;text-align:right;font-variant-numeric:tabular-nums;color:var(--vscode-descriptionForeground)">' +
+                m(String(pct) + "%") +
+                "</div>" +
+                "</div>"
+              );
+            } catch {
+              return "";
+            }
           case "missing":
             return "";
           default:
