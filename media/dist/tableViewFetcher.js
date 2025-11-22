@@ -719,6 +719,37 @@
                   helperInput.style.width = "100%";
                   helperInput.style.minWidth = "0";
                 }
+                try {
+                  // Provide autocomplete candidates based on fields and their options
+                  if (
+                    Array.isArray(n) &&
+                    typeof barApi.setCandidates === "function"
+                  ) {
+                    const cand = [];
+                    try {
+                      for (let fi = 0; fi < n.length; fi++) {
+                        const fld = n[fi];
+                        if (!fld) continue;
+                        if (fld.name) cand.push(String(fld.name) + ":");
+                        if (Array.isArray(fld.options)) {
+                          for (let oi = 0; oi < fld.options.length; oi++) {
+                            const opt = fld.options[oi];
+                            try {
+                              if (opt && opt.name && fld.name)
+                                cand.push(
+                                  String(fld.name) + ":" + String(opt.name)
+                                );
+                            } catch (e) {}
+                          }
+                        }
+                      }
+                    } catch (e) {}
+                    // Do not inject hard-coded default qualifiers here; keep candidates derived from fields only.
+                    try {
+                      barApi.setCandidates(cand);
+                    } catch (e) {}
+                  }
+                } catch (e) {}
               } catch (e) {}
             }
           } catch (e) {
@@ -750,6 +781,69 @@
       }
 
       z.appendChild(u);
+      // Attach local filter handler by registering items with the centralized helper
+      try {
+        if (barApi && barApi.inputEl) {
+          try {
+            if (typeof barApi.registerItems === "function") {
+              try {
+                barApi.registerItems(s, { fields: n });
+              } catch (e) {}
+            }
+            if (typeof barApi.onFilterChange === "function") {
+              barApi.onFilterChange(function (matchedIds, rawFilter) {
+                try {
+                  const rows = Array.from(
+                    document.querySelectorAll("tr[data-gh-item-id]")
+                  );
+                  for (let r = 0; r < rows.length; r++) {
+                    try {
+                      const el = rows[r];
+                      const id = el.getAttribute("data-gh-item-id");
+                      el.style.display = matchedIds.has(String(id))
+                        ? "table-row"
+                        : "none";
+                    } catch (e) {}
+                  }
+                } catch (e) {}
+                try {
+                  const groupHeaders = Array.from(
+                    document.querySelectorAll("tr[data-group-index]")
+                  );
+                  for (let ghI = 0; ghI < groupHeaders.length; ghI++) {
+                    try {
+                      const ghEl = groupHeaders[ghI];
+                      const gidx = ghEl.getAttribute("data-group-index");
+                      const groupRows = Array.from(
+                        document.getElementsByClassName("group-rows-" + gidx)
+                      );
+                      let visibleCount = 0;
+                      for (let gi = 0; gi < groupRows.length; gi++) {
+                        try {
+                          const rEl = groupRows[gi];
+                          if (rEl.style.display !== "none") visibleCount++;
+                        } catch (e) {}
+                      }
+                      try {
+                        const badge = ghEl.querySelector("[data-group-count]");
+                        if (badge) badge.textContent = String(visibleCount);
+                      } catch (e) {}
+                      try {
+                        ghEl.style.display =
+                          visibleCount > 0 ? "table-row" : "none";
+                      } catch (e) {}
+                    } catch (e) {}
+                  }
+                } catch (e) {}
+                try {
+                  if (barApi && typeof barApi.setCount === "function")
+                    barApi.setCount(matchedIds.size);
+                } catch (e) {}
+              });
+            }
+          } catch (e) {}
+        }
+      } catch (e) {}
       let C = document.createElement("div");
       (C.style.overflowX = "auto"),
         (C.style.overflowY = "auto"),
@@ -856,6 +950,9 @@
           let i = s[c],
             t = document.createElement("tr"),
             o = document.createElement("td");
+          try {
+            t.setAttribute("data-gh-item-id", String(i && i.id));
+          } catch (e) {}
           (o.textContent = String(c + 1)),
             (o.style.padding = "6px"),
             (o.style.whiteSpace = "nowrap"),
@@ -1187,6 +1284,13 @@
 
           headerTd.appendChild(headerInner);
 
+          try {
+            gh.setAttribute("data-group-index", String(gi));
+          } catch (e) {}
+          try {
+            countBadge.setAttribute("data-group-count", "");
+          } catch (e) {}
+
           gh.appendChild(headerTd);
           j.appendChild(gh);
 
@@ -1195,6 +1299,9 @@
           for (let ii = 0; ii < itemsForOpt.length; ii++) {
             const { item, index } = itemsForOpt[ii];
             let tr = document.createElement("tr");
+            try {
+              tr.setAttribute("data-gh-item-id", String(item && item.id));
+            } catch (e) {}
             tr.className = groupRowClass;
             let tdIndex = document.createElement("td");
             tdIndex.textContent = String(index + 1);

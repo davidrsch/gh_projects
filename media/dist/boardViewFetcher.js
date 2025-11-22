@@ -96,6 +96,9 @@
           for (var i = 0; i < items.length; i++) {
             var it = items[i];
             var card = document.createElement("div");
+            try {
+              card.setAttribute("data-gh-item-id", String(it && it.id));
+            } catch (e) {}
             card.style.padding = "8px";
             card.style.border = "1px solid var(--vscode-editorWidget-border)";
             card.style.marginBottom = "8px";
@@ -125,6 +128,59 @@
                 items.length < first,
                 items.length >= first ? "Load more" : "All loaded"
               );
+            // Wire local preview filtering via centralized helper: register items and subscribe
+            try {
+              if (barApi && barApi.inputEl) {
+                try {
+                  if (typeof barApi.registerItems === "function") {
+                    try {
+                      const fields = (payload && payload.fields) || [];
+                      barApi.registerItems(items, { fields: fields });
+                    } catch (e) {}
+                  }
+                  if (typeof barApi.onFilterChange === "function") {
+                    barApi.onFilterChange(function (matchedIds, rawFilter) {
+                      try {
+                        const cards = Array.from(
+                          container.querySelectorAll("[data-gh-item-id]")
+                        );
+                        for (let r = 0; r < cards.length; r++) {
+                          try {
+                            const el = cards[r];
+                            const id = el.getAttribute("data-gh-item-id");
+                            el.style.display = matchedIds.has(String(id))
+                              ? "block"
+                              : "none";
+                          } catch (e) {}
+                        }
+                      } catch (e) {}
+                      try {
+                        if (barApi && typeof barApi.setCount === "function")
+                          barApi.setCount(matchedIds.size);
+                      } catch (e) {}
+                      try {
+                        if (
+                          typeof vscodeApi == "object" &&
+                          vscodeApi &&
+                          typeof vscodeApi.postMessage == "function"
+                        )
+                          vscodeApi.postMessage({
+                            command: "debugLog",
+                            level: "debug",
+                            viewKey: viewKey,
+                            message: "filterInput",
+                            data: {
+                              filter: rawFilter,
+                              matched: matchedIds.size,
+                              original: items.length,
+                            },
+                          });
+                      } catch (e) {}
+                    });
+                  }
+                } catch (e) {}
+              }
+            } catch (e) {}
           } catch (e) {}
         } catch (err) {
           try {
