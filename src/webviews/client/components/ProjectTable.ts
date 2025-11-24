@@ -97,6 +97,8 @@ export class ProjectTable {
         th.style.top = "0";
         th.style.zIndex = "11";
         th.style.background = "var(--vscode-editor-background)";
+        th.style.height = "32px"; // Enforce fixed height
+        th.style.boxSizing = "border-box";
     }
 
     private renderBody(table: HTMLTableElement) {
@@ -143,10 +145,14 @@ export class ProjectTable {
             const tdHeader = document.createElement("td");
             tdHeader.colSpan = this.fields.length + 1;
             tdHeader.style.padding = "8px";
-            tdHeader.style.background = "var(--vscode-sideBar-background)";
+            tdHeader.style.background = "var(--vscode-editor-background)"; // Ensure opaque background
             tdHeader.style.fontWeight = "600";
             tdHeader.style.borderTop = "1px solid var(--vscode-editorGroup-border)";
             tdHeader.style.borderBottom = "1px solid var(--vscode-editorGroup-border)";
+            tdHeader.style.position = "sticky";
+            tdHeader.style.top = "32px"; // Matches fixed header height
+            tdHeader.style.zIndex = "9";
+            tdHeader.style.boxShadow = "0 1px 2px rgba(0,0,0,0.1)"; // Add shadow for better separation
 
             // Group Header Content
             const headerContent = document.createElement("div");
@@ -160,6 +166,7 @@ export class ProjectTable {
             toggleBtn.textContent = "-"; // Use icon if available
             toggleBtn.style.width = "20px";
             toggleBtn.style.height = "20px";
+            toggleBtn.style.cursor = "pointer";
 
             // Group Name & Color
             const colorDot = document.createElement("div");
