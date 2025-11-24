@@ -49,11 +49,11 @@ function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
     case "ProjectV2ItemFieldSingleSelectValue": {
       const opt: Label | undefined = node
         ? {
-            id: (node as any).optionId ?? (node as any).id,
-            name: (node as any).name ?? undefined,
-            color: ((node as any).color as string) ?? undefined,
-            description: ((node as any).description as string) ?? undefined,
-          }
+          id: (node as any).optionId ?? (node as any).id,
+          name: (node as any).name ?? undefined,
+          color: ((node as any).color as string) ?? undefined,
+          description: ((node as any).description as string) ?? undefined,
+        }
         : undefined;
       return { type: "single_select", fieldId: node.field?.id, option: opt };
     }
@@ -63,10 +63,10 @@ function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
         fieldId: node.field?.id,
         repository: node.repository
           ? {
-              nameWithOwner:
-                node.repository.nameWithOwner ?? node.repository.name,
-              url: node.repository.url,
-            }
+            nameWithOwner:
+              node.repository.nameWithOwner ?? node.repository.name,
+            url: node.repository.url,
+          }
           : undefined,
       };
     case "ProjectV2ItemFieldPullRequestValue": {
@@ -85,10 +85,10 @@ function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
             : undefined,
           author: p.author
             ? {
-                login: p.author.login,
-                avatarUrl: p.author.avatarUrl,
-                url: p.author.url,
-              }
+              login: p.author.login,
+              avatarUrl: p.author.avatarUrl,
+              url: p.author.url,
+            }
             : undefined,
           labels: (p.labels?.nodes || []).map((l: LabelNode) => ({
             id: l.id,
@@ -126,10 +126,10 @@ function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
             : undefined,
           author: iss.author
             ? {
-                login: iss.author.login,
-                avatarUrl: iss.author.avatarUrl,
-                url: iss.author.url,
-              }
+              login: iss.author.login,
+              avatarUrl: iss.author.avatarUrl,
+              url: iss.author.url,
+            }
             : undefined,
           labels: (iss.labels?.nodes || []).map((l: LabelNode) => ({
             id: l.id,
@@ -139,54 +139,28 @@ function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
           parent: iss.parent
             ? iss.parent.id
               ? {
-                  id: iss.parent.id,
-                  number: iss.parent.number,
-                  url: iss.parent.url,
-                  title: iss.parent.title,
-                  repository: iss.parent.repository?.nameWithOwner
-                    ? { nameWithOwner: iss.parent.repository.nameWithOwner }
-                    : undefined,
-                  state: iss.parent.state,
-                  state_color: getGhColor(iss.parent.state),
-                }
+                id: iss.parent.id,
+                number: iss.parent.number,
+                url: iss.parent.url,
+                title: iss.parent.title,
+                repository: iss.parent.repository?.nameWithOwner
+                  ? { nameWithOwner: iss.parent.repository.nameWithOwner }
+                  : undefined,
+                state: iss.parent.state,
+                state_color: getGhColor(iss.parent.state),
+              }
               : iss.parent
             : undefined,
           subIssuesSummary: iss.subIssuesSummary
             ? {
-                total: iss.subIssuesSummary.total,
-                percentCompleted: iss.subIssuesSummary.percentCompleted,
-                completed: iss.subIssuesSummary.completed,
-              }
+              total: iss.subIssuesSummary.total,
+              percentCompleted: iss.subIssuesSummary.percentCompleted,
+              completed: iss.subIssuesSummary.completed,
+            }
             : undefined,
         }),
       );
-      const extraIssues: IssueSummary[] = (node as any).issue
-        ? [
-            {
-              id: (node as any).issue.id,
-              number: (node as any).issue.number,
-              title: (node as any).issue.title,
-              url: (node as any).issue.url,
-              state: (node as any).issue.state,
-              state_color: getGhColor((node as any).issue.state),
-              repository: (node as any).issue.repository?.nameWithOwner
-                ? {
-                    nameWithOwner: (node as any).issue.repository.nameWithOwner,
-                  }
-                : undefined,
-              author: (node as any).issue.author
-                ? {
-                    login: (node as any).issue.author.login,
-                    avatarUrl: (node as any).issue.author.avatarUrl,
-                    url: (node as any).issue.author.url,
-                  }
-                : undefined,
-              labels: ((node as any).issue.labels?.nodes || []).map(
-                (l: LabelNode) => ({ id: l.id, name: l.name, color: l.color }),
-              ),
-            },
-          ]
-        : [];
+      const extraIssues: IssueSummary[] = [];
       return {
         type: "issue",
         fieldId: node.field?.id,

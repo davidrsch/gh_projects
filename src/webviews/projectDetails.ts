@@ -1,10 +1,11 @@
 import * as vscode from "vscode";
-import { ProjectEntry } from "../treeViewProvider";
-import ghClient, { fetchViewDetails } from "../github/ghClient";
+import { ProjectEntry } from "../lib/types";
+import { GitHubRepository } from "../services/GitHubRepository";
 import messages, { isGhNotFound } from "../lib/messages";
 import logger from "../lib/logger";
 import { wrapError } from "../lib/errors";
 import { ProjectSnapshot, ProjectView } from "../lib/types";
+import { buildHtml } from "./htmlBuilder";
 
 // Panels map: panelKey -> WebviewPanel
 const panels = new Map<string, vscode.WebviewPanel>();
@@ -18,10 +19,14 @@ export async function openProjectWebview(
   let views: ProjectView[] = Array.isArray(project.views) ? project.views : [];
   if (!views.length && project.id) {
     try {
-      views = await ghClient.fetchProjectViews(project.id);
+      views = await GitHubRepository.getInstance().fetchProjectViews(project.id);
+      project.views = views;
+      logger.debug(`[ghProjects] Assigned ${views.length} views to project ${project.id}`);
     } catch (e) {
       logger.warn("Failed to fetch project views for panelKey: " + String(e));
     }
+  } else {
+    logger.debug(`[ghProjects] Project ${project.id} already has ${views.length} views`);
   }
 
   // Attempt to fetch richer view details (fields, grouping, sorting) for each view
@@ -33,7 +38,7 @@ export async function openProjectWebview(
         const v = views[i];
         if (v && typeof v.number === "number") {
           try {
-            const det = await fetchViewDetails(project.id, v.number as number);
+            const det = await GitHubRepository.getInstance().getProjectViewDetails(project.id, v.number as number);
             if (det) {
               // attach details onto the view object
               (v as any).details = det;
@@ -62,19 +67,18 @@ export async function openProjectWebview(
     } catch (e) {
       logger.debug(
         "fetchViewDetails loop failed: " +
-          String((e as any)?.message || e || "")
+        String((e as any)?.message || e || "")
       );
     }
   }
 
   // Panels are keyed by workspaceRoot + project id/title for stability
-  const panelMapKey = `${workspaceRoot ?? "<no-workspace>"}::${
-    project.id
-      ? String(project.id)
-      : project.title
+  const panelMapKey = `${workspaceRoot ?? "<no-workspace>"}::${project.id
+    ? String(project.id)
+    : project.title
       ? String(project.title)
       : "<unknown>"
-  }`;
+    }`;
 
   // Reuse panel if already open
   if (panels.has(panelMapKey)) {
@@ -183,13 +187,13 @@ export async function openProjectWebview(
   const patchUri =
     webviewFolder === "dist"
       ? panel.webview.asWebviewUri(
-          vscode.Uri.joinPath(
-            context.extensionUri,
-            "media",
-            "dist",
-            "tableViewFetcher.patch.js"
-          )
+        vscode.Uri.joinPath(
+          context.extensionUri,
+          "media",
+          "dist",
+          "tableViewFetcher.patch.js"
         )
+      )
       : undefined;
 
   panel.webview.html = buildHtml(
@@ -303,7 +307,7 @@ export async function openProjectWebview(
           const viewFilter =
             (view && (view as any).details && (view as any).details.filter) ||
             undefined;
-          const snapshot: ProjectSnapshot = await ghClient.fetchProjectFields(
+          const snapshot: ProjectSnapshot = await GitHubRepository.getInstance().fetchProjectFields(
             project.id as string,
             { first, viewFilter }
           );
@@ -493,13 +497,12 @@ export async function openProjectWebview(
           }
           // Persist saved filter to workspaceState so it survives reloads
           try {
-            const storageKey = `viewFilter:${project.id}:${
-              view && view.number
-            }`;
+            const storageKey = `viewFilter:${project.id}:${view && view.number
+              }`;
             await context.workspaceState.update(
               storageKey,
               (view && (view as any).details && (view as any).details.filter) ||
-                undefined
+              undefined
             );
           } catch (e) {
             logger.debug("workspaceState.update failed: " + String(e));
@@ -507,7 +510,7 @@ export async function openProjectWebview(
           const first = vscode.workspace
             .getConfiguration("ghProjects")
             .get<number>("itemsFirst", 50);
-          const snapshot: ProjectSnapshot = await ghClient.fetchProjectFields(
+          const snapshot: ProjectSnapshot = await GitHubRepository.getInstance().fetchProjectFields(
             project.id as string,
             {
               first,
@@ -557,9 +560,8 @@ export async function openProjectWebview(
             .get<number>("itemsFirst", 50);
           // Restore the saved filter from workspaceState (if any), otherwise keep existing
           try {
-            const storageKey = `viewFilter:${project.id}:${
-              view && view.number
-            }`;
+            const storageKey = `viewFilter:${project.id}:${view && view.number
+              }`;
             const saved = await context.workspaceState.get<string>(storageKey);
             if (typeof saved === "string") {
               if (!view) (view as any) = {};
@@ -572,7 +574,7 @@ export async function openProjectWebview(
           const viewFilter =
             (view && (view as any).details && (view as any).details.filter) ||
             undefined;
-          const snapshot: ProjectSnapshot = await ghClient.fetchProjectFields(
+          const snapshot: ProjectSnapshot = await GitHubRepository.getInstance().fetchProjectFields(
             project.id as string,
             { first, viewFilter }
           );
@@ -599,300 +601,6 @@ export async function openProjectWebview(
   );
 }
 
-function buildHtml(
-  webview: vscode.Webview,
-  project: ProjectEntry,
-  elementsScriptUri?: string,
-  fetcherUris?: {
-    overviewUri: vscode.Uri;
-    tableUri: vscode.Uri;
-    boardUri: vscode.Uri;
-    roadmapUri: vscode.Uri;
-    contentUri: vscode.Uri;
-    patchUri?: vscode.Uri;
-    helperUri?: vscode.Uri;
-  },
-  panelKey?: string
-): string {
-  const nonce = getNonce();
-  const csp = webview.cspSource;
 
-  const projectData = {
-    title: project.title,
-    repos: project.repos ?? [],
-    views: Array.isArray(project.views) ? project.views : [],
-    description: project.description ?? "",
-    panelKey: panelKey ?? "<no-panel-key>",
-  };
-
-  const scriptTag = elementsScriptUri
-    ? `<script nonce="${nonce}" src="${elementsScriptUri}"></script>`
-    : "";
-
-  // loader script tags for static fetcher files
-  // Use classic scripts (no type="module") so they execute synchronously
-  const fetcherScripts = fetcherUris
-    ? [
-        ...(fetcherUris.helperUri
-          ? [
-              `<script nonce="${nonce}" src="${fetcherUris.helperUri.toString()}"></script>`,
-            ]
-          : []),
-        `<script nonce="${nonce}" src="${fetcherUris.overviewUri.toString()}"></script>`,
-        `<script nonce="${nonce}" src="${fetcherUris.tableUri.toString()}"></script>`,
-        `<script nonce="${nonce}" src="${fetcherUris.boardUri.toString()}"></script>`,
-        `<script nonce="${nonce}" src="${fetcherUris.roadmapUri.toString()}"></script>`,
-        `<script nonce="${nonce}" src="${fetcherUris.contentUri.toString()}"></script>`,
-        ...(fetcherUris.patchUri
-          ? [
-              `<script nonce="${nonce}" src="${fetcherUris.patchUri.toString()}"></script>`,
-            ]
-          : []),
-      ].join("\n")
-    : "";
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src ${csp} https: data:; style-src ${csp} 'unsafe-inline' https:; script-src 'nonce-${nonce}' ${csp} https:;">
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>${projectData.title}</title>
-
-<style>
-html, body {
-  margin: 0; padding: 0; width: 100%; height: 100%;
-  font-family: var(--vscode-font-family);
-  background: var(--vscode-editor-background);
-  color: var(--vscode-editor-foreground);
-}
-
-#root {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-/* Scrollable tabs container */
-#tabs-container {
-  width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
-  border-bottom: 1px solid var(--vscode-editorWidget-border);
-
-  scrollbar-width: thin;
-  scrollbar-color: var(--vscode-scrollbarSlider-background) var(--vscode-scrollbar-background);
-}
-
-/* Chromium / WebKit */
-#tabs-container::-webkit-scrollbar {
-  height: 8px;
-}
-#tabs-container::-webkit-scrollbar-track {
-  background: var(--vscode-scrollbar-background);
-}
-#tabs-container::-webkit-scrollbar-thumb {
-  background-color: var(--vscode-scrollbarSlider-background);
-  border-radius: 0px; /* square thumb */
-}
-#tabs-container::-webkit-scrollbar-button {
-  display: none; /* hide arrows */
-  width: 0;
-  height: 0;
-}
-
-/* Tab headers size similar to VS Code default */
-.tab {
-  display: inline-block;
-  padding: 10px 16px; /* VS Code default size */
-  cursor: pointer;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.tab:hover {
-  background: var(--vscode-list-hoverBackground);
-  color: var(--vscode-list-hoverForeground);
-}
-
-.tab.active {
-  font-weight: 600;
-  border-bottom: 2px solid var(--vscode-focusBorder);
-  color: var(--vscode-list-activeSelectionForeground);
-}
-
-#tab-panels {
-  flex: 1;
-  overflow: auto;
-  padding: 12px;
-  box-sizing: border-box;
-}
-
-.repo-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.repo-item { padding: 6px 8px; border: 1px solid var(--vscode-editorWidget-border); border-radius: 4px; cursor: pointer; }
-.repo-item:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-list-hoverForeground); }
-.title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
-</style>
-
-${scriptTag}
-</head>
-<body>
-<div id="root">
-  <div id="tabs-container"></div>
-  <div id="tab-panels"></div>
-</div>
-${/* expose project data and vscodeApi for media scripts */ ""}
-<script nonce="${nonce}">
-  window.__project_data__ = ${JSON.stringify(projectData)};
-  try { window.vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null; } catch(e) { window.vscodeApi = null; }
-</script>
-
-${fetcherScripts}
-
-<script nonce="${nonce}" type="module">
-const vscodeApi = window.vscodeApi || (typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null);
-const project = ${JSON.stringify(projectData)};
-// Temporary debug: print views to the webview console to verify layout values
-console.log('project.views', project.views);
-
-  document.addEventListener('DOMContentLoaded', () => {
-  const tabsContainer = document.getElementById('tabs-container');
-  const panelsContainer = document.getElementById('tab-panels');
-
-  const allTabs = [{key:'overview', label:'Overview'}]
-    .concat((project.views ?? []).map((v,i) => ({key:'view-'+i, label:v.name ?? v.id ?? ('View '+(i+1))})));
-
-  const panelsMap = {};
-
-  allTabs.forEach(tab => {
-    const tabEl = document.createElement('div');
-    tabEl.className = 'tab';
-    tabEl.textContent = tab.label;
-    tabsContainer.appendChild(tabEl);
-
-    const panel = document.createElement('div');
-    panel.style.display = 'none';
-
-    panelsContainer.appendChild(panel);
-    panelsMap[tab.key] = panel;
-
-    tabEl.addEventListener('click', () => showTab(tab.key, tabEl));
-  });
-
-  function showTab(key, tabEl) {
-    Object.values(panelsMap).forEach(p => p.style.display = 'none');
-    if (panelsMap[key]) panelsMap[key].style.display = 'block';
-
-    Array.from(tabsContainer.children).forEach(el => el.classList.toggle('active', el === tabEl));
-
-    // Scroll active tab into view
-    if(tabEl){
-      const contRect = tabsContainer.getBoundingClientRect();
-      const elRect = tabEl.getBoundingClientRect();
-      if(elRect.left < contRect.left){
-        tabsContainer.scrollBy({ left: elRect.left - contRect.left - 8, behavior:'smooth' });
-      } else if(elRect.right > contRect.right){
-        tabsContainer.scrollBy({ left: elRect.right - contRect.right + 8, behavior:'smooth' });
-      }
-    }
-    // activate fetcher for this tab (on-demand)
-    try {
-      activateTabFetcher(key);
-    } catch (e) {
-      try { console.debug('activateTabFetcher failed: ' + String(e)); } catch (_) {}
-    }
-  }
-
-  // Initialize first tab
-  showTab('overview', tabsContainer.children[0]);
-
-  // We'll initialize fetchers only when a tab is activated (on demand).
-  // This avoids multiple fetchers racing or running for non-active tabs.
-  const initialized = {};
-
-  // helper to activate a given tab key and run its fetcher if needed
-  function activateTabFetcher(key){
-    if(key === 'overview'){
-      const ov = panelsMap['overview'];
-      if(ov && !initialized['overview']){
-        if(typeof window.overviewFetcher === 'function') window.overviewFetcher(ov, project.panelKey + ':overview');
-        initialized['overview'] = true;
-      }
-      return;
-    }
-    if(String(key).startsWith('view-')){
-      const idx = Number(String(key).split('-')[1]);
-      const view = (project.views ?? [])[idx];
-      const p = panelsMap['view-'+idx];
-      const vk = 'view-' + idx;
-      // Debug: print view and layout
-      try { console.log('[ghProjects] Tab', key, 'view:', view, 'layout:', view && view.layout); } catch(e){}
-      if(p && view && !initialized[vk]){
-        if(typeof window.contentFetcher === 'function') window.contentFetcher(view, p, project.panelKey + ':' + vk);
-        initialized[vk] = true;
-      }
-    }
-  }
-
-  // Initialize only the overview on first render (showTab will call this too)
-  activateTabFetcher('overview');
-
-  // Listen for fields payloads posted back from the extension and update filter count UI
-  window.addEventListener('message', (ev) => {
-    try {
-      const n = ev && ev.data ? ev.data : ev;
-      if (!n || n.command !== 'fields') return;
-      const vk = n.viewKey ? String(n.viewKey) : null;
-      if (!vk) return;
-      // viewKey is like '<panelKey>:view-X' — we only care about suffix
-      const suffix = String(vk).split(':').pop();
-      if (!suffix) return;
-      const countEl = document.querySelector('[data-filter-count="' + suffix + '"]');
-      // Determine item count from payload
-      const payload = n.payload || (n.payload && n.payload.data) || null;
-      let itemsCount = null;
-      try {
-        itemsCount = payload && payload.items ? (payload.items.length || 0) : null;
-        if (itemsCount === null && payload && payload.data && payload.data.items) itemsCount = payload.data.items.length || 0;
-        if (itemsCount === null && n.items) itemsCount = n.items;
-      } catch (e) {}
-      if (countEl && itemsCount !== null) {
-        try { countEl.textContent = String(itemsCount) + ' items'; } catch (e) {}
-      }
-      // Also update input value to reflect the effective filter (if extension provided it)
-      try {
-        const inputEl = document.querySelector('[data-filter-input="' + suffix + '"]');
-        if (inputEl && n.effectiveFilter !== undefined) {
-          try { inputEl.value = String(n.effectiveFilter || ''); } catch (e) {}
-        }
-      } catch (e) {}
-    } catch (e) {}
-  });
-
-  panelsContainer.addEventListener('click', e=>{
-    const item = e.target?.closest('.repo-item');
-    if(item && vscodeApi) vscodeApi.postMessage({command:'openRepo', path:item.dataset.path});
-  });
-
-  tabsContainer.addEventListener('wheel', e=>{
-    e.preventDefault();
-    tabsContainer.scrollBy({ left: e.deltaY, behavior:'smooth' });
-  });
-});
-</script>
-</body>
-</html>`;
-}
-
-function getNonce(): string {
-  const possible =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let text = "";
-  for (let i = 0; i < 16; i++)
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  return text;
-}
 
 export default { openProjectWebview };

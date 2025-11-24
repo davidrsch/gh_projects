@@ -1,4 +1,4 @@
-# GitHub Projects Lister
+# GitHub Projects
 
 Browse GitHub Projects (Projects v2) linked to repositories in your current workspace. The extension scans for local Git repositories, detects GitHub remotes, fetches repository-linked projects via GitHub GraphQL, and lists them in a dedicated Activity Bar view. Click a project to open it in your browser.
 
@@ -77,8 +77,6 @@ No data is stored. The extension reads local `.git` config to detect remotes and
 - `ghProjects.preferHttp` (boolean, default `true`): Prefer HTTP GraphQL using the VS Code GitHub authentication session. The extension uses HTTP GraphQL exclusively; sign-in will be required.
 
 Note: The extension no longer falls back to the GitHub CLI and does not rely on `gh` being installed.
-
-Status: these changes are implemented in the current code but have not yet been published in a release. If you are testing from source, sign in via VS Code to enable authenticated features.
 
 ## Potential next steps
 

@@ -1,4 +1,4 @@
-import { parseOwnerRepoFromUrl } from '../src/treeView/getProjects';
+import { parseOwnerRepoFromUrl } from '../src/lib/projectUtils';
 
 test('parseOwnerRepoFromUrl parses common forms', () => {
   expect(parseOwnerRepoFromUrl('git@github.com:owner/repo.git')).toEqual({ owner: 'owner', name: 'repo' });

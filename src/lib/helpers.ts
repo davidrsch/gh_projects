@@ -80,7 +80,6 @@ export function buildCandidateFragments(
                 subIssues(first:${LIMITS.subIssuesFirst}){ nodes{ id number url title repository{ nameWithOwner } } }
                 labels(first:${LIMITS.labelsFirst}){ nodes{ id name color } }
               } }
-              issue { id number url title repository{ nameWithOwner } }
             }`,
     },
   ];
@@ -95,11 +94,9 @@ export function buildRepoSelections(
       const [owner, name] = rn.split("/");
       return `r${idx}: repository(owner:${JSON.stringify(
         owner
-      )}, name:${JSON.stringify(name)}){ labels(first:${
-        LIMITS.repoLabelsFirst
-      }){ nodes{ id name color description } } milestones(first:${
-        LIMITS.repoMilestonesFirst
-      }){ nodes{ id title description dueOn } } }`;
+      )}, name:${JSON.stringify(name)}){ labels(first:${LIMITS.repoLabelsFirst
+        }){ nodes{ id name color description } } milestones(first:${LIMITS.repoMilestonesFirst
+        }){ nodes{ id title description dueOn } } }`;
     })
     .join("\n    ");
 }
@@ -114,11 +111,9 @@ export function buildItemsQuery(
     query && String(query).trim() ? `, query: ${JSON.stringify(query)}` : "";
   return `query{\n  node(id:${JSON.stringify(
     projectId
-  )}){\n    ... on ProjectV2{\n      items(first:${
-    LIMITS.itemsFirst
-  }${qArg}){\n        nodes{\n          id\n          content{ __typename\n            ... on Issue{ \n              id\n              number\n              url\n              title\n              repository{ nameWithOwner }\n              parent { id number url title repository{ nameWithOwner } }\n              subIssuesSummary { total percentCompleted completed }\n              subIssues(first:${
-    LIMITS.subIssuesFirst
-  }){ nodes{ id number url title repository{ nameWithOwner } } }\n            }\n            ... on PullRequest{ id number url title repository{ nameWithOwner } }\n          }\n          ${aliasSelections}\n        }\n      }\n    }\n  }\n}`;
+  )}){\n    ... on ProjectV2{\n      items(first:${LIMITS.itemsFirst
+    }${qArg}){\n        nodes{\n          id\n          content{ __typename\n            ... on Issue{ \n              id\n              number\n              url\n              title\n              repository{ nameWithOwner }\n              parent { id number url title repository{ nameWithOwner } }\n              subIssuesSummary { total percentCompleted completed }\n              subIssues(first:${LIMITS.subIssuesFirst
+    }){ nodes{ id number url title repository{ nameWithOwner } } }\n            }\n            ... on PullRequest{ id number url title repository{ nameWithOwner } }\n          }\n          ${aliasSelections}\n        }\n      }\n    }\n  }\n}`;
 }
 
 export function buildFieldsQuery(
@@ -127,7 +122,6 @@ export function buildFieldsQuery(
 ): string {
   return `query{\n  node(id:${JSON.stringify(
     projectId
-  )}){\n    ... on ProjectV2{\n      fields(first:${
-    LIMITS.fieldsFirst
-  }){\n        nodes{\n          __typename\n          ... on ProjectV2Field{\n            id\n            name\n            dataType\n          }\n          ... on ProjectV2SingleSelectField{\n            id\n            name\n            dataType\n            options{ id name description color }\n          }\n          ... on ProjectV2IterationField{\n            id\n            name\n            dataType\n            configuration{ iterations{ id title startDate duration } }\n          }\n        }\n      }\n    }\n  }\n}`;
+  )}){\n    ... on ProjectV2{\n      fields(first:${LIMITS.fieldsFirst
+    }){\n        nodes{\n          __typename\n          ... on ProjectV2Field{\n            id\n            name\n            dataType\n          }\n          ... on ProjectV2SingleSelectField{\n            id\n            name\n            dataType\n            options{ id name description color }\n          }\n          ... on ProjectV2IterationField{\n            id\n            name\n            dataType\n            configuration{ iterations{ id title startDate duration } }\n          }\n        }\n      }\n    }\n  }\n}`;
 }

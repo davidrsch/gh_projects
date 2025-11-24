@@ -106,7 +106,25 @@
           "description": "Enable developer mode (loads non-bundled webviews)."
         }
       }
-    }
+    },
+    "chatParticipants": [
+      {
+        "id": "ghProjects.participant",
+        "name": "ghProjects",
+        "description": "Manage GitHub Projects",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "list",
+            "description": "List all projects"
+          },
+          {
+            "name": "search",
+            "description": "Search for projects"
+          }
+        ]
+      }
+    ]
   },
   "activationEvents": [
     "*"
