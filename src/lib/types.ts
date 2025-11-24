@@ -80,6 +80,7 @@ export interface ProjectSnapshot {
   project: { id: string; title?: string };
   fields: FieldConfig[];
   items: Item[];
+  details?: any;
 }
 
 export interface ProjectView {

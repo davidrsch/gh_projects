@@ -1,18 +1,9 @@
+import { logDebug, setLoadingState } from "./viewFetcherUtils";
 /// <reference path="./global.d.ts" />
 
 (function () {
   try {
-    if (
-      window &&
-      window.vscodeApi &&
-      typeof window.vscodeApi.postMessage === "function"
-    ) {
-      window.vscodeApi.postMessage({
-        command: "debugLog",
-        level: "debug",
-        message: "roadmapViewFetcher.loaded",
-      });
-    }
+    logDebug("global", "roadmapViewFetcher.loaded");
   } catch (e) { }
 
   window.roadmapViewFetcher = function (
@@ -20,8 +11,7 @@
     container: HTMLElement,
     viewKey: string
   ) {
-    container.innerHTML =
-      '<div class="title">Roadmap View</div><div class="loading"><em>Loading roadmap...</em></div>';
+    setLoadingState(container, "Roadmap View");
 
     // Simple placeholder for now
     setTimeout(() => {

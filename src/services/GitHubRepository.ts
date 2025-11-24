@@ -8,20 +8,12 @@ import {
     Item,
     FieldConfig,
     ProjectMetaNode,
-    FieldsQueryData,
-    GHResponse,
-    GhApiResponse,
-    ProjectV2ViewsData,
-    ItemsQueryData,
-    RepoQueryData,
-    Label,
-    Milestone,
     NormalizedValue,
-    RepoItem,
-    ParsedRepoEntry
+    ParsedRepoEntry,
+    ProjectV2FieldType
 } from '../lib/types';
 import { normalizeFieldConfig } from "../lib/parsers/fieldConfigParser";
-import { parseFieldValue, getGhColor } from "../lib/parsers/valueParsers";
+import { parseFieldValue } from "../lib/parsers/valueParsers";
 import {
     makeLimits,
     buildCandidateFragments,
@@ -29,9 +21,18 @@ import {
     buildItemsQuery,
     buildFieldsQuery,
 } from "../lib/helpers";
-import { aggregateMaps, mergeOptions } from "../lib/aggregation";
+import { aggregateMaps } from "../lib/aggregation";
 import { createCodeError } from "../lib/errors";
-import messages from "../lib/messages";
+import {
+    GetProjectsResponse,
+    GetProjectViewsResponse,
+    GetProjectViewDetailsResponse,
+    GetProjectFieldsResponse,
+    GetProjectItemsResponse,
+    ProjectV2FieldCommon,
+    ProjectV2SingleSelectField,
+    ProjectV2IterationField
+} from './graphqlTypes';
 
 export class GitHubRepository {
     private static instance: GitHubRepository;
@@ -87,7 +88,7 @@ export class GitHubRepository {
         `;
 
         try {
-            const response = await this.query<any>(gql, { owner, name });
+            const response = await this.query<GetProjectsResponse>(gql, { owner, name });
             const projects = response.repository?.projectsV2?.nodes || [];
             return { owner, name, projects };
         } catch (error: any) {
@@ -99,40 +100,22 @@ export class GitHubRepository {
      * Fetches project views.
      */
     public async fetchProjectViews(projectId: string): Promise<ProjectView[]> {
-        // Removed 'layout' field to rule out schema issues
-        const gql = `query ($id: ID!) { node(id: $id) { __typename ... on ProjectV2 { id title shortDescription url views(first: 100) { nodes { id name number } } } } }`;
+        const gql = `query ($id: ID!) { node(id: $id) { __typename ... on ProjectV2 { id title shortDescription url views(first: 100) { nodes { id name number layout } } } } }`;
         try {
             logger.info(`[ghProjects] Fetching views for ${projectId}`);
-            const parsed = await this.query<ProjectV2ViewsData>(gql, { id: projectId });
-            logger.warn(`[ghProjects] Raw views response for ${projectId}: ${JSON.stringify(parsed)}`);
+            const parsed = await this.query<GetProjectViewsResponse>(gql, { id: projectId });
+            // logger.warn(`[ghProjects] Raw views response for ${projectId}: ${JSON.stringify(parsed)}`);
 
             const nodes = parsed?.node?.views?.nodes;
             if (!Array.isArray(nodes)) {
                 logger.warn(`fetchProjectViews: No views found for project ${projectId}`);
                 return [];
             }
-            const mapped = nodes.map((n) => ({
-                id: String(n?.id),
-                name: n?.name,
-                number: n?.number ?? null,
-                layout: null,
-            }));
-            logger.debug(`[ghProjects] Mapped views: ${JSON.stringify(mapped)}`);
-            return mapped;
-        } catch (e: any) {
-            const msg = "fetchProjectViews error: " + e.message;
-            logger.error(msg);
-            vscode.window.showErrorMessage(msg); // Show error to user
-            return [];
-        }
-    }
-
-    /**
-     * Fetches project views.
-                id: String(n?.id),
-                name: n?.name,
-                number: n?.number ?? null,
-                layout: null,
+            const mapped: ProjectView[] = nodes.map((n) => ({
+                id: String(n.id),
+                name: n.name,
+                number: n.number ?? null,
+                layout: n.layout ? String(n.layout).toLowerCase().replace("_layout", "") : null,
             }));
             logger.debug(`[ghProjects] Mapped views: ${JSON.stringify(mapped)}`);
             return mapped;
@@ -150,7 +133,7 @@ export class GitHubRepository {
     public async getProjectViewDetails(projectId: string, viewNumber: number): Promise<any> {
         const gql = `query($projectId: ID!, $viewNumber: Int!) { node(id: $projectId) { __typename ... on ProjectV2 { view(number: $viewNumber) { id name number layout filter fields(first: 100) { nodes { ... on ProjectV2FieldCommon { id name dataType } } } sortByFields(first: 20) { nodes { direction field { ... on ProjectV2FieldCommon { name } } } } groupByFields(first: 10) { nodes { ... on ProjectV2FieldCommon { name } } } verticalGroupByFields(first: 10) { nodes { ... on ProjectV2FieldCommon { name } } } } } } }`;
         try {
-            const res = await this.query<any>(gql, { projectId, viewNumber });
+            const res = await this.query<GetProjectViewDetailsResponse>(gql, { projectId, viewNumber });
             return res?.node?.view;
         } catch (error) {
             logger.error(`Failed to fetch view details: ${error}`);
@@ -181,9 +164,9 @@ export class GitHubRepository {
 
         // 2. Fetch Fields
         const fieldsQuery = buildFieldsQuery(project.id, LIMITS);
-        const fieldsRes = await this.query<FieldsQueryData>(fieldsQuery);
+        const fieldsRes = await this.query<GetProjectFieldsResponse>(fieldsQuery);
         const rawFields = fieldsRes?.node?.fields?.nodes || [];
-        const fields: FieldConfig[] = rawFields.map((n: any) => normalizeFieldConfig(n));
+        const fields: FieldConfig[] = rawFields.map((n) => normalizeFieldConfig(n as any)); // cast to any for now as normalizeFieldConfig expects a specific shape
 
         // 3. Introspect Config Types
         const configTypeNames = ["ProjectV2SingleSelectField", "ProjectV2IterationField"];
@@ -223,11 +206,11 @@ export class GitHubRepository {
 
         // 7. Fetch Items
         const itemsQuery = buildItemsQuery(project.id, aliasSelections.join("\n          "), LIMITS, viewFilter);
-        const itemsRes = await this.query<ItemsQueryData>(itemsQuery);
+        const itemsRes = await this.query<GetProjectItemsResponse>(itemsQuery);
         const rawItems = itemsRes?.node?.items?.nodes || [];
 
         // 8. Normalize Items
-        const items: Item[] = rawItems.map((item: any) => {
+        const items: Item[] = rawItems.map((item) => {
             const fv: any[] = [];
             for (let i = 0; i < fieldAliases.length; i++) {
                 const { alias } = fieldAliases[i];
@@ -242,8 +225,6 @@ export class GitHubRepository {
                     }
                     fv.push(parsed);
                 } else {
-                    // Handle missing/special fields (parent issue, sub-issues) logic here if needed
-                    // For brevity, using simplified missing logic
                     fv.push({
                         type: "missing",
                         fieldId: fields[i].id,
@@ -261,12 +242,12 @@ export class GitHubRepository {
         });
 
         // 9. Aggregate Options
-        const { labelMap, milestoneMap, repoMap, prMap, issueMap, repoNames } = aggregateMaps(items);
+        const { labelMap, repoNames } = aggregateMaps(items);
         const repoOptionsMap = await this.fetchRepoOptions(repoNames, LIMITS);
 
         // 10. Merge Options back to fields
         for (const f of fields) {
-            if (f.dataType === "LABELS") {
+            if (f.dataType === ProjectV2FieldType.LABELS) {
                 if (Object.keys(repoOptionsMap).length > 0) {
                     f.repoOptions = {};
                     for (const rn of Object.keys(repoOptionsMap)) {
@@ -277,7 +258,6 @@ export class GitHubRepository {
                     f.options = Array.from(labelMap.values()).map((l: any) => ({ id: l.id, name: l.name, color: (l as any).color }));
                 }
             }
-            // ... (Add other field types logic: MILESTONE, REPOSITORY, etc.)
         }
 
         return {
@@ -292,11 +272,11 @@ export class GitHubRepository {
         for (const f of fields) {
             const fid = f.id;
             const selParts: string[] = ["__typename"];
-            if (f.dataType === "SINGLE_SELECT" && presentConfigTypes.has("ProjectV2SingleSelectField")) {
+            if (f.dataType === ProjectV2FieldType.SINGLE_SELECT && presentConfigTypes.has("ProjectV2SingleSelectField")) {
                 selParts.push("... on ProjectV2SingleSelectField{ options{ id name description color } }");
             }
-            if (f.dataType === "ITERATION" && presentConfigTypes.has("ProjectV2IterationField")) {
-                selParts.push("... on ProjectV2IterationField{ configuration{ iterations{ id title startDate } } }");
+            if (f.dataType === ProjectV2FieldType.ITERATION && presentConfigTypes.has("ProjectV2IterationField")) {
+                selParts.push("... on ProjectV2IterationField{ configuration{ iterations{ id title startDate duration } } }");
             }
             if (selParts.length > 1) {
                 fieldNodeSelections.push(`n_${fid.replace(/[^a-zA-Z0-9_]/g, "_")}: node(id:${JSON.stringify(fid)}){ ${selParts.join(" ")} }`);
@@ -331,7 +311,7 @@ export class GitHubRepository {
     }
 
     private async fetchRepoOptions(repoNames: string[], LIMITS: any) {
-        const repoOptionsMap: Record<string, { labels?: Label[]; milestones?: Milestone[] }> = {};
+        const repoOptionsMap: Record<string, { labels?: any[]; milestones?: any[] }> = {};
         if (repoNames.length === 0) return repoOptionsMap;
         const repoSelections = buildRepoSelections(repoNames, LIMITS);
         const repoQuery = `query{\n    ${repoSelections}\n  }`;

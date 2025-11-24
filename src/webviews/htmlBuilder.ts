@@ -2,68 +2,68 @@ import * as vscode from "vscode";
 import { ProjectEntry } from "../lib/types";
 
 export function getNonce() {
-    let text = "";
-    const possible =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
+  let text = "";
+  const possible =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
 }
 
 export function buildHtml(
-    webview: vscode.Webview,
-    project: ProjectEntry,
-    elementsScriptUri?: string,
-    fetcherUris?: {
-        overviewUri: vscode.Uri;
-        tableUri: vscode.Uri;
-        boardUri: vscode.Uri;
-        roadmapUri: vscode.Uri;
-        contentUri: vscode.Uri;
-        patchUri?: vscode.Uri;
-        helperUri?: vscode.Uri;
-    },
-    panelKey?: string
+  webview: vscode.Webview,
+  project: ProjectEntry,
+  elementsScriptUri?: string,
+  fetcherUris?: {
+    overviewUri: vscode.Uri;
+    tableUri: vscode.Uri;
+    boardUri: vscode.Uri;
+    roadmapUri: vscode.Uri;
+    contentUri: vscode.Uri;
+    patchUri?: vscode.Uri;
+    helperUri?: vscode.Uri;
+  },
+  panelKey?: string
 ): string {
-    const nonce = getNonce();
-    const csp = webview.cspSource;
+  const nonce = getNonce();
+  const csp = webview.cspSource;
 
-    const projectData = {
-        title: project.title,
-        repos: project.repos ?? [],
-        views: Array.isArray(project.views) ? project.views : [],
-        description: project.description ?? "",
-        panelKey: panelKey ?? "<no-panel-key>",
-    };
+  const projectData = {
+    title: project.title,
+    repos: project.repos ?? [],
+    views: Array.isArray(project.views) ? project.views : [],
+    description: project.description ?? "",
+    panelKey: panelKey ?? "<no-panel-key>",
+  };
 
-    const scriptTag = elementsScriptUri
-        ? `<script nonce="${nonce}" src="${elementsScriptUri}"></script>`
-        : "";
+  const scriptTag = elementsScriptUri
+    ? `<script nonce="${nonce}" src="${elementsScriptUri}"></script>`
+    : "";
 
-    // loader script tags for static fetcher files
-    // Use classic scripts (no type="module") so they execute synchronously
-    const fetcherScripts = fetcherUris
+  // loader script tags for static fetcher files
+  // Use classic scripts (no type="module") so they execute synchronously
+  const fetcherScripts = fetcherUris
+    ? [
+      ...(fetcherUris.helperUri
         ? [
-            ...(fetcherUris.helperUri
-                ? [
-                    `<script nonce="${nonce}" src="${fetcherUris.helperUri.toString()}"></script>`,
-                ]
-                : []),
-            `<script nonce="${nonce}" src="${fetcherUris.overviewUri.toString()}"></script>`,
-            `<script nonce="${nonce}" src="${fetcherUris.tableUri.toString()}"></script>`,
-            `<script nonce="${nonce}" src="${fetcherUris.boardUri.toString()}"></script>`,
-            `<script nonce="${nonce}" src="${fetcherUris.roadmapUri.toString()}"></script>`,
-            `<script nonce="${nonce}" src="${fetcherUris.contentUri.toString()}"></script>`,
-            ...(fetcherUris.patchUri
-                ? [
-                    `<script nonce="${nonce}" src="${fetcherUris.patchUri.toString()}"></script>`,
-                ]
-                : []),
-        ].join("\n")
-        : "";
+          `<script nonce="${nonce}" src="${fetcherUris.helperUri.toString()}"></script>`,
+        ]
+        : []),
+      `<script nonce="${nonce}" src="${fetcherUris.overviewUri.toString()}"></script>`,
+      `<script nonce="${nonce}" src="${fetcherUris.tableUri.toString()}"></script>`,
+      `<script nonce="${nonce}" src="${fetcherUris.boardUri.toString()}"></script>`,
+      `<script nonce="${nonce}" src="${fetcherUris.roadmapUri.toString()}"></script>`,
+      `<script nonce="${nonce}" src="${fetcherUris.contentUri.toString()}"></script>`,
+      ...(fetcherUris.patchUri
+        ? [
+          `<script nonce="${nonce}" src="${fetcherUris.patchUri.toString()}"></script>`,
+        ]
+        : []),
+    ].join("\n")
+    : "";
 
-    return `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -220,14 +220,26 @@ console.log('project.views', project.views);
         // Decide which fetcher to use based on view layout
         // For now, default to table view unless it's a board
         const layout = view.layout || 'table';
-        if (layout === 'board' && window.boardViewFetcher) {
-           window.boardViewFetcher(view, panelsMap[key], key);
-        } else if (layout === 'roadmap' && window.roadmapViewFetcher) {
-           window.roadmapViewFetcher(view, panelsMap[key], key);
-        } else if (window.tableViewFetcher) {
-           window.tableViewFetcher(view, panelsMap[key], key);
+        if (layout === 'board') {
+           if (window.boardViewFetcher) {
+             window.boardViewFetcher(view, panelsMap[key], key);
+           } else {
+             panelsMap[key].innerHTML = '<div style="padding:20px;color:var(--vscode-errorForeground)">Board fetcher not loaded.</div>';
+           }
+        } else if (layout === 'roadmap') {
+           if (window.roadmapViewFetcher) {
+             window.roadmapViewFetcher(view, panelsMap[key], key);
+           } else {
+             panelsMap[key].innerHTML = '<div style="padding:20px;color:var(--vscode-errorForeground)">Roadmap fetcher not loaded.</div>';
+           }
+        } else if (layout === 'table') {
+           if (window.tableViewFetcher) {
+             window.tableViewFetcher(view, panelsMap[key], key);
+           } else {
+             panelsMap[key].innerHTML = '<div style="padding:20px;color:var(--vscode-errorForeground)">Table fetcher not loaded.</div>';
+           }
         } else {
-           panelsMap[key].textContent = 'No fetcher available for ' + layout;
+           panelsMap[key].innerHTML = '<div style="padding:20px;color:var(--vscode-errorForeground)">Unsupported layout: ' + layout + '</div>';
         }
       }
     }

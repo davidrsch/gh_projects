@@ -1,91 +1,64 @@
 import { escapeHtml } from "./utils";
+import { logDebug, setLoadingState, setErrorState, createLoadMoreButton, initFilterBar, applyFilterVisibility } from "./viewFetcherUtils";
 /// <reference path="./global.d.ts" />
 
 // signal that the board fetcher script executed
 try {
-  if (
-    window &&
-    window.vscodeApi &&
-    typeof window.vscodeApi.postMessage === "function"
-  )
-    window.vscodeApi.postMessage({
-      command: "debugLog",
-      level: "debug",
-      message: "boardViewFetcher.loaded",
-    });
+  logDebug("global", "boardViewFetcher.loaded");
 } catch (e) { }
 try {
   console.log && console.log("boardViewFetcher script loaded");
 } catch (e) { }
+
 // Expose a global fetcher: window.boardViewFetcher(view, container, viewKey)
 function createBoardFetcher() {
   return function (view: any, container: HTMLElement, viewKey: string) {
+    const viewName = (view && (view.name || view.id)) ? (view.name || view.id) : "Board View";
+
     try {
-      container.innerHTML =
-        '<div class="title">' +
-        (view && (view.name || view.id)
-          ? view.name || view.id
-          : "Board View") +
-        '</div><div class="loading"><em>Loading board\u2026</em></div>';
+      setLoadingState(container, viewName);
     } catch (e) { }
+
     var first = 50;
 
     function render(payload: any) {
       try {
         var items = (payload && payload.items) || [];
         container.innerHTML = "";
-        var barApi: any = null;
-        if (
-          window.filterBarHelper &&
-          typeof window.filterBarHelper.create === "function"
-        ) {
-          try {
-            barApi = window.filterBarHelper.create({
-              parent: container,
-              suffix: viewKey,
-              effFilter: undefined,
-              viewKey: viewKey,
-              step: first,
-              onLoadMore: function () {
-                first += 50;
-                requestFields();
-              },
-            });
-          } catch (e) {
-            barApi = null;
-          }
-        }
+
+        let barApi = initFilterBar(container, viewKey, {
+          suffix: viewKey,
+          step: first,
+          onLoadMore: function () {
+            first += 50;
+            requestFields();
+          },
+        });
+
         if (!barApi) {
           var header = document.createElement("div");
           header.style.display = "flex";
           header.style.justifyContent = "space-between";
           header.style.alignItems = "center";
           header.style.marginBottom = "8px";
+
           var title = document.createElement("div");
           title.style.fontWeight = "600";
           title.style.padding = "6px";
-          title.textContent =
-            view && (view.name || view.id)
-              ? view.name || view.id
-              : "Board View";
+          title.textContent = viewName;
+
           var right = document.createElement("div");
-          var loadBtn = document.createElement("button");
-          loadBtn.type = "button";
-          loadBtn.textContent = "Load more";
-          loadBtn.style.marginLeft = "8px";
-          loadBtn.style.border =
-            "1px solid var(--vscode-editorWidget-border)";
-          loadBtn.addEventListener("click", function () {
+          var loadBtn = createLoadMoreButton(() => {
             first += 50;
             requestFields();
-            loadBtn.disabled = true;
-            loadBtn.textContent = "Loading\u2026";
           });
+
           right.appendChild(loadBtn);
           header.appendChild(title);
           header.appendChild(right);
           container.appendChild(header);
         }
+
         var content = document.createElement("div");
         content.style.marginTop = "8px";
         for (var i = 0; i < items.length; i++) {
@@ -115,6 +88,7 @@ function createBoardFetcher() {
           content.appendChild(card);
         }
         container.appendChild(content);
+
         try {
           if (barApi && typeof barApi.setCount === "function")
             barApi.setCount(items.length);
@@ -123,89 +97,38 @@ function createBoardFetcher() {
               items.length < first,
               items.length >= first ? "Load more" : "All loaded"
             );
+
           // Wire local preview filtering via centralized helper: register items and subscribe
-          try {
-            if (barApi && barApi.inputEl) {
-              try {
-                if (typeof barApi.registerItems === "function") {
-                  try {
-                    const fields = (payload && payload.fields) || [];
-                    barApi.registerItems(items, { fields: fields });
-                  } catch (e) { }
-                }
-                if (typeof barApi.onFilterChange === "function") {
-                  barApi.onFilterChange(function (matchedIds: any, rawFilter: any) {
-                    try {
-                      const cards = Array.from(
-                        container.querySelectorAll("[data-gh-item-id]")
-                      );
-                      for (let r = 0; r < cards.length; r++) {
-                        try {
-                          const el = cards[r] as HTMLElement;
-                          const id = el.getAttribute("data-gh-item-id");
-                          el.style.display = matchedIds.has(String(id))
-                            ? "block"
-                            : "none";
-                        } catch (e) { }
-                      }
-                    } catch (e) { }
-                    try {
-                      if (barApi && typeof barApi.setCount === "function")
-                        barApi.setCount(matchedIds.size);
-                    } catch (e) { }
-                    try {
-                      if (
-                        typeof window.vscodeApi == "object" &&
-                        window.vscodeApi &&
-                        typeof window.vscodeApi.postMessage == "function"
-                      )
-                        window.vscodeApi.postMessage({
-                          command: "debugLog",
-                          level: "debug",
-                          viewKey: viewKey,
-                          message: "filterInput",
-                          data: {
-                            filter: rawFilter,
-                            matched: matchedIds.size,
-                            original: items.length,
-                          },
-                        });
-                    } catch (e) { }
-                  });
-                }
-              } catch (e) { }
+          if (barApi && barApi.inputEl) {
+            if (typeof barApi.registerItems === "function") {
+              const fields = (payload && payload.fields) || [];
+              barApi.registerItems(items, { fields: fields });
             }
-          } catch (e) { }
+            if (typeof barApi.onFilterChange === "function") {
+              barApi.onFilterChange(function (matchedIds: any, rawFilter: any) {
+                applyFilterVisibility(container, "[data-gh-item-id]", matchedIds, "block");
+
+                if (barApi && typeof barApi.setCount === "function")
+                  barApi.setCount(matchedIds.size);
+
+                logDebug(viewKey, "filterInput", {
+                  filter: rawFilter,
+                  matched: matchedIds.size,
+                  original: items.length,
+                });
+              });
+            }
+          }
         } catch (e) { }
       } catch (err: any) {
-        try {
-          if (
-            window.vscodeApi &&
-            typeof window.vscodeApi.postMessage === "function"
-          )
-            window.vscodeApi.postMessage({
-              command: "debugLog",
-              level: "error",
-              viewKey: viewKey,
-              message: "boardViewFetcher.render.error",
-              data: {
-                message: String(err && err.message),
-                stack: err && err.stack,
-              },
-            });
-        } catch (e) { }
-        try {
-          container.innerHTML =
-            '<div class="title">' +
-            (view && (view.name || view.id)
-              ? view.name || view.id
-              : "Board View") +
-            '</div><div style="color:var(--vscode-editor-foreground)">Error rendering board view: ' +
-            String(err && err.message) +
-            "</div>";
-        } catch (e) { }
+        logDebug(viewKey, "boardViewFetcher.render.error", {
+          message: String(err && err.message),
+          stack: err && err.stack,
+        });
+        setErrorState(container, viewName, "Error rendering board view: " + String(err && err.message));
       }
     }
+
     function onMessage(ev: MessageEvent) {
       var msg = ev && ev.data ? ev.data : ev;
       try {
@@ -217,16 +140,7 @@ function createBoardFetcher() {
           )
             return;
           if (msg.error) {
-            try {
-              container.innerHTML =
-                '<div class="title">' +
-                (view && (view.name || view.id)
-                  ? view.name || view.id
-                  : "Board View") +
-                '</div><div style="color:var(--vscode-editor-foreground)">' +
-                String(msg.error) +
-                "</div>";
-            } catch (e) { }
+            setErrorState(container, viewName, String(msg.error));
           } else {
             render(
               msg.payload || (msg.payload && msg.payload.data) || msg.payload
@@ -235,6 +149,7 @@ function createBoardFetcher() {
         }
       } catch (e) { }
     }
+
     function requestFields() {
       try {
         if (
