@@ -155,19 +155,17 @@ ${scriptTag}
   <div id="tabs-container"></div>
   <div id="tab-panels"></div>
 </div>
-${/* expose project data and vscodeApi for media scripts */ ""}
 <script nonce="${nonce}">
+  // Expose initial project data for the static web UI to consume via postMessage/init
   window.__project_data__ = ${JSON.stringify(projectData)};
-  try { window.vscodeApi = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null; } catch(e) { window.vscodeApi = null; }
 </script>
 
 ${fetcherScripts}
 
 <script nonce="${nonce}" type="module">
-const vscodeApi = window.vscodeApi || (typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null);
-const project = ${JSON.stringify(projectData)};
-// Temporary debug: print views to the webview console to verify layout values
-console.log('project.views', project.views);
+  // Module bootstrap for legacy webviews when running as the fallback.
+  const project = ${JSON.stringify(projectData)};
+  console.log('project.views', project.views);
 
   document.addEventListener('DOMContentLoaded', () => {
   const tabsContainer = document.getElementById('tabs-container');

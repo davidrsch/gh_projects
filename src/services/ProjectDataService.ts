@@ -47,9 +47,10 @@ export class ProjectDataService {
         );
 
         // 4. Process Fields (Filter & Reorder based on View)
-        let effectiveSnapshot = snapshot;
+        let effectiveSnapshot: any = snapshot;
         if (view && (view as any).details) {
-            effectiveSnapshot.details = (view as any).details;
+            // Preserve snapshot immutably and attach view details.
+            effectiveSnapshot = { ...effectiveSnapshot, details: (view as any).details } as ProjectSnapshot;
         }
         if (view && (view as any).details && Array.isArray(effectiveSnapshot.fields)) {
             try {
@@ -106,7 +107,7 @@ export class ProjectDataService {
                                                     v.raw.field &&
                                                     String(v.raw.field.name) === fid)
                                             );
-                                        } catch {
+                                        } catch (e) {
                                             return false;
                                         }
                                     });

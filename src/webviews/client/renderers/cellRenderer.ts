@@ -98,7 +98,7 @@ export function renderCell(e: any, n: any, s: any, allItems: any) {
                         year: "numeric",
                     });
                     return "<div>" + escapeHtml(l) + "</div>";
-                } catch {
+                } catch (e) {
                     return "<div>" + escapeHtml(String(t)) + "</div>";
                 }
             }
@@ -463,7 +463,7 @@ export function renderCell(e: any, n: any, s: any, allItems: any) {
                                     null);
                         }
                     }
-                } catch { }
+                } catch (e) { }
                 f ||
                     (f =
                         (t &&
@@ -489,7 +489,7 @@ export function renderCell(e: any, n: any, s: any, allItems: any) {
                         '<svg width="14" height="14" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;color:' +
                         escapeHtml(h || "#666") +
                         '"><circle cx="8" cy="8" r="6" fill="currentColor" /></svg>' +
-                        '<span style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block">' +
+                        '<span class="parent-issue-title" style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block">' +
                         a +
                         "</span>" +
                         (p
@@ -498,12 +498,10 @@ export function renderCell(e: any, n: any, s: any, allItems: any) {
                             "</span>"
                             : "") +
                         "</div></span>";
+                // Provide a class for parent-issue wrappers so CSS can style/truncate reliably
+                const parentWrapper = '<span data-gh-open="' + (g || '') + '" class="parent-issue-wrapper" style="display:block;width:100%;cursor:' + (g ? 'pointer' : 'default') + '">' ;
                 return g
-                    ? '<span data-gh-open="' +
-                    g +
-                    '" style="display:block;width:100%;cursor:pointer">' +
-                    q +
-                    "</span>"
+                    ? parentWrapper + q + "</span>"
                     : q;
             }
             case "milestone":
@@ -532,29 +530,29 @@ export function renderCell(e: any, n: any, s: any, allItems: any) {
                     pct = Math.max(0, Math.min(100, pct));
                     // Build segmented bar: one segment per total; filled segments show full color,
                     // remaining segments show only border using the active theme color.
-                    let segs = [];
+                    let segs: string[] = [];
                     for (let si = 0; si < totalCount; si++) {
                         if (si < doneCount) {
                             segs.push(
-                                '<div style="flex:1;height:12px;border-radius:4px;background:var(--vscode-focusBorder)"></div>'
+                                '<div class="sub-issues-segment sub-issues-segment-filled" style="flex:1;min-width:0;height:12px;border-radius:4px;background:var(--vscode-focusBorder);box-sizing:border-box"></div>'
                             );
                         } else {
                             segs.push(
-                                '<div style="flex:1;height:12px;border-radius:4px;border:1px solid var(--vscode-focusBorder);background:transparent"></div>'
+                                '<div class="sub-issues-segment sub-issues-segment-empty" style="flex:1;min-width:0;height:12px;border-radius:4px;border:1px solid var(--vscode-focusBorder);background:transparent;box-sizing:border-box"></div>'
                             );
                         }
                     }
                     return (
-                        '<div style="display:flex;align-items:center;gap:8px">' +
-                        '<div style="flex:1;min-width:0;display:flex;gap:4px;align-items:center">' +
+                        '<div class="sub-issues-progress" style="display:flex;align-items:center;gap:8px;width:100%">' +
+                        '<div class="sub-issues-progress-bar" style="flex:1;min-width:0;display:flex;gap:4px;align-items:center">' +
                         segs.join("") +
                         "</div>" +
-                        '<div style="min-width:44px;text-align:right;font-variant-numeric:tabular-nums;color:var(--vscode-descriptionForeground)">' +
+                        '<div class="sub-issues-progress-pct" style="min-width:44px;text-align:right;font-variant-numeric:tabular-nums;color:var(--vscode-descriptionForeground)">' +
                         escapeHtml(String(pct) + "%") +
                         "</div>" +
                         "</div>"
                     );
-                } catch {
+                } catch (e) {
                     return "";
                 }
             case "missing":
@@ -570,7 +568,7 @@ export function renderCell(e: any, n: any, s: any, allItems: any) {
                     "</div>"
                 );
         }
-    } catch {
+    } catch (e) {
         return "";
     }
 }

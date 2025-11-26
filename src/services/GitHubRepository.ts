@@ -178,7 +178,7 @@ export class GitHubRepository {
                 const key = `t${i}`;
                 if (cIntro[key]?.name) presentConfigTypes.add(cIntro[key].name);
             }
-        } catch {
+        } catch (e) {
             presentConfigTypes = new Set(configTypeNames);
         }
 
@@ -200,7 +200,34 @@ export class GitHubRepository {
                 .filter((c) => possibleTypes.length === 0 || possibleTypes.includes(c.typename))
                 .map((c) => c.selection)
                 .join("\n              ");
-            const sel = `${alias}: fieldValueByName(name:${JSON.stringify(f.name)}){ __typename\n              ${fragments}\n            }`;
+
+            // Ensure Issue/Progress fragments are included for fields that
+            // are known to be PARENT_ISSUE or SUB_ISSUES_PROGRESS. In some
+            // environments introspection or filtering can omit those
+            // fragments and the server will return null for those aliases.
+            let forcedFragments = "";
+            try {
+                const dt = String((f.dataType || "")).toUpperCase();
+                const issueTypeName = "ProjectV2ItemFieldIssueValue";
+                const progressTypeName = "ProjectV2ItemFieldProgressValue";
+
+                // Only force-include fragments if the server's introspection
+                // reported that these possible types exist. Adding an unknown
+                // typename to the query will cause a GraphQL validation error
+                // (which you observed), so guard by `possibleTypes`.
+                if (dt === "PARENT_ISSUE" && possibleTypes.includes(issueTypeName)) {
+                    const issueFrag = candidateFragments.find((c) => c.typename === issueTypeName);
+                    if (issueFrag) forcedFragments = issueFrag.selection;
+                }
+                if (dt === "SUB_ISSUES_PROGRESS" && possibleTypes.includes(progressTypeName)) {
+                    const progressFrag = candidateFragments.find((c) => c.typename === progressTypeName);
+                    if (progressFrag) forcedFragments = (forcedFragments ? forcedFragments + "\n              " : "") + progressFrag.selection;
+                }
+            } catch (e) {
+                // ignore failures — fallback behavior exists later
+            }
+
+            const sel = `${alias}: fieldValueByName(name:${JSON.stringify(f.name)}){ __typename\n              ${fragments}\n              ${forcedFragments}\n            }`;
             aliasSelections.push(sel);
         }
 
@@ -208,6 +235,8 @@ export class GitHubRepository {
         const itemsQuery = buildItemsQuery(project.id, aliasSelections.join("\n          "), LIMITS, viewFilter);
         const itemsRes = await this.query<GetProjectItemsResponse>(itemsQuery);
         const rawItems = itemsRes?.node?.items?.nodes || [];
+
+        // debug instrumentation removed
 
         // 8. Normalize Items
         const items: Item[] = rawItems.map((item) => {
@@ -225,13 +254,60 @@ export class GitHubRepository {
                     }
                     fv.push(parsed);
                 } else {
-                    fv.push({
-                        type: "missing",
-                        fieldId: fields[i].id,
-                        fieldName: fields[i].name,
-                        raw: null,
-                        content: item.content ?? null,
-                    });
+                    // Attempt a fallback: sometimes the project stores parent/progress
+                    // information on the item's content (Issue content) rather than
+                    // in the explicit fieldValue alias. If so, synthesize a
+                    // normalized value so the UI can still render the column.
+                    try {
+                        const fdt = String((fields[i].dataType || "")).toUpperCase();
+                        const content = item.content as any;
+                        if (fdt === ProjectV2FieldType.PARENT_ISSUE && content && content.parent) {
+                            const parentNode: any = content.parent;
+                            const synthesized: any = {
+                                type: "parent_issue",
+                                fieldId: fields[i].id,
+                                parent: {
+                                    id: parentNode.id,
+                                    number: parentNode.number,
+                                    url: parentNode.url,
+                                    title: parentNode.title,
+                                    repository: parentNode.repository ? { nameWithOwner: parentNode.repository.nameWithOwner } : undefined,
+                                    state: parentNode.state ?? null,
+                                },
+                                raw: null,
+                                content: item.content ?? null,
+                            };
+                            fv.push(synthesized as any);
+                        } else if (fdt === ProjectV2FieldType.SUB_ISSUES_PROGRESS && content && content.subIssuesSummary) {
+                            const s = content.subIssuesSummary;
+                            const synthesized: any = {
+                                type: "sub_issues_progress",
+                                fieldId: fields[i].id,
+                                total: s?.total ?? null,
+                                done: s?.completed ?? null,
+                                percent: s?.percentCompleted ?? null,
+                                raw: null,
+                                content: item.content ?? null,
+                            };
+                            fv.push(synthesized as any);
+                        } else {
+                            fv.push({
+                                type: "missing",
+                                fieldId: fields[i].id,
+                                fieldName: fields[i].name,
+                                raw: null,
+                                content: item.content ?? null,
+                            });
+                        }
+                    } catch (e) {
+                        fv.push({
+                            type: "missing",
+                            fieldId: fields[i].id,
+                            fieldName: fields[i].name,
+                            raw: null,
+                            content: item.content ?? null,
+                        });
+                    }
                 }
             }
             return {
@@ -263,7 +339,7 @@ export class GitHubRepository {
         return {
             project: { id: project.id, title: project.title },
             fields,
-            items
+            items,
         };
     }
 
@@ -305,7 +381,7 @@ export class GitHubRepository {
         try {
             const introRes = await this.query<any>(introspectQuery);
             return (introRes?.__type?.possibleTypes || []).map((p: any) => p.name);
-        } catch {
+        } catch (e) {
             return [];
         }
     }

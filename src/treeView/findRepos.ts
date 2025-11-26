@@ -7,7 +7,7 @@ async function exists(p: string) {
   try {
     await fs.access(p);
     return true;
-  } catch {
+  } catch (e) {
     return false;
   }
 }
@@ -20,7 +20,7 @@ export async function gitTypeOf(
   try {
     const s = await fs.lstat(gitPath);
     return s.isDirectory() ? "folder" : "file";
-  } catch {
+  } catch (e) {
     return null;
   }
 }
@@ -43,7 +43,7 @@ export async function findGitRepos(
     let entries: string[];
     try {
       entries = await fs.readdir(cur);
-    } catch {
+    } catch (e) {
       return;
     }
 
@@ -55,7 +55,7 @@ export async function findGitRepos(
         if (st.isDirectory()) {
           await walk(full, depth - 1);
         }
-      } catch {
+      } catch (e) {
         // ignore
       }
     }

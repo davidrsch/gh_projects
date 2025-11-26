@@ -50,7 +50,7 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
         vscode.window.showInformationMessage(
           "ghProjects: scanning workspace for GitHub projects..."
         );
-      } catch { }
+      } catch (e) { }
 
       const projects = await this.projectService.loadProjects(this.workspaceRoot);
 
@@ -67,7 +67,7 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
         vscode.window.showErrorMessage(
           `ghProjects: Failed to load projects: ${msg}`
         );
-      } catch { }
+      } catch (e) { }
       if (isGhNotFound(e)) {
         vscode.window.showErrorMessage(messages.GH_NOT_FOUND);
       } else {

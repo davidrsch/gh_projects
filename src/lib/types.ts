@@ -44,6 +44,7 @@ export type NormalizedValue =
     labels?: Array<{ id?: string; name?: string; color?: string }>;
   }
   | { type: "issue"; fieldId?: string; issues?: IssueSummary[] }
+  | { type: "parent_issue"; fieldId?: string; parent?: IssueSummary }
   | { type: "requested_reviewers"; fieldId?: string; reviewers?: any[] }
   | { type: "assignees"; fieldId?: string; assignees?: any[] }
   | {

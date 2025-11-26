@@ -1,5 +1,6 @@
 import { ProjectTable } from "./components/ProjectTable";
 import { setLoadingState, setErrorState, initFilterBar, createLoadMoreButton, logDebug } from "./viewFetcherUtils";
+import { parseSortByFields, sortItems } from "./utils/tableSorting";
 
 /// <reference path="./global.d.ts" />
 
@@ -103,9 +104,35 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
     // Determine Grouping
     const groupingFieldName = getGroupingFieldName(snapshot);
 
+    // Parse sort config from GitHub
+    let sortConfig = parseSortByFields(snapshot.details?.sortByFields);
+
+    // Check for local override
+    if (viewKey) {
+      try {
+          const stored = localStorage.getItem(`ghProjects.table.${viewKey}.sortConfig`);
+          if (stored) sortConfig = JSON.parse(stored);
+        } catch (e) { }
+    }
+
+    // Apply sorting
+    let displayItems = items;
+    if (sortConfig) {
+      displayItems = sortItems(items, fields, sortConfig);
+    }
+
     // Render Table
-    const table = new ProjectTable(tableContainer, fields, items, {
-      groupingFieldName
+    const table = new ProjectTable(tableContainer, fields, displayItems, {
+      groupingFieldName: groupingFieldName || undefined,
+      sortConfig,
+      viewKey,
+      onSortChange: () => requestFields(),
+      onGroupChange: (fieldName: string) => {
+        if (viewKey) {
+          localStorage.setItem(`ghProjects.table.${viewKey}.groupingField`, fieldName);
+        }
+        requestFields();
+      }
     });
     table.render();
 
@@ -143,8 +170,8 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
 
   function requestFields() {
     try {
-      if (window.vscodeApi && typeof window.vscodeApi.postMessage === "function") {
-        window.vscodeApi.postMessage({
+      if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+        (window as any).__APP_MESSAGING__.postMessage({
           command: "requestFields",
           first: itemsLimit,
           viewKey: viewKey,
@@ -153,7 +180,11 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
     } catch (e) { }
   }
 
-  window.addEventListener("message", onMessage);
+  try {
+    (window as any).__APP_MESSAGING__.onMessage(onMessage);
+  } catch (e) {
+    window.addEventListener("message", onMessage);
+  }
   requestFields();
 };
 

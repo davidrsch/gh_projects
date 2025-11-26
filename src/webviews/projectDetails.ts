@@ -5,7 +5,7 @@ import messages, { isGhNotFound } from "../lib/messages";
 import logger from "../lib/logger";
 import { wrapError } from "../lib/errors";
 import { ProjectSnapshot, ProjectView } from "../lib/types";
-import { buildHtml } from "./htmlBuilder";
+import { buildHtml, getNonce } from "./htmlBuilder";
 import { ProjectDataService } from "../services/ProjectDataService";
 
 // Panels map: panelKey -> WebviewPanel
@@ -91,12 +91,16 @@ export async function openProjectWebview(
     return panel;
   }
 
-  // Create new panel
+  // Create new panel (allow loading local resources from `media`)
   const panel = vscode.window.createWebviewPanel(
     "ghProjects.projectDetails",
     project.title ?? String(project.id ?? "Project Details"),
     { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
-    { enableScripts: true, retainContextWhenHidden: true }
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')],
+    }
   );
   panels.set(panelMapKey, panel);
   panel.onDidDispose(
@@ -197,24 +201,115 @@ export async function openProjectWebview(
       )
       : undefined;
 
-  panel.webview.html = buildHtml(
-    panel.webview,
-    project,
-    elementsUri.toString(),
-    {
-      overviewUri,
-      tableUri,
-      boardUri,
-      roadmapUri,
-      contentUri,
-      patchUri,
-      helperUri,
-    },
-    panelMapKey
-  );
+  // Load static webui index.html from media/webui and inject VS Code shim + resource URIs
+  try {
+    const indexUri = vscode.Uri.joinPath(context.extensionUri, 'media', 'webui', 'index.html');
+    const indexBytes = await vscode.workspace.fs.readFile(indexUri);
+    let indexHtml = Buffer.from(indexBytes).toString('utf8');
+
+    const nonce = getNonce();
+    const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${panel.webview.cspSource} https: data:; style-src ${panel.webview.cspSource} 'unsafe-inline' https:; script-src 'nonce-${nonce}' ${panel.webview.cspSource} https:;">`;
+    indexHtml = indexHtml.replace('<!--EXTENSION_INJECT_CSP-->', cspMeta);
+
+    // Resolve local resource URIs to webview URIs
+    const styleUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'webui', 'styles.css'));
+    const appUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'webui', 'app.js'));
+    const browserShimUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'shim', 'vscode-browser-shim.js'));
+    const vscodeShimUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'shim', 'vscode-webview-shim.js'));
+
+    // Replace relative references in the index HTML with webview URIs
+    indexHtml = indexHtml.replace(/\.\/styles\.css/g, styleUri.toString());
+    indexHtml = indexHtml.replace(/\.\/app\.js/g, appUri.toString());
+    indexHtml = indexHtml.replace(/\.\.\/shim\/vscode-browser-shim\.js/g, browserShimUri.toString());
+
+    // Inject only the VS Code shim and REMOVE the bundled browser shim when running inside VS Code.
+    // The browser shim (vscode-browser-shim.js) is intended for plain browser development only
+    // and would overwrite the real VS Code shim if both were loaded in the webview. Replace
+    // the browser shim script tag with the VS Code shim script tag (nonce-protected).
+    const shimTag = `<script nonce="${nonce}" src="${vscodeShimUri}"></script>`;
+    const browserScriptTag = `<script src="${browserShimUri.toString()}"></script>`;
+    indexHtml = indexHtml.replace(browserScriptTag, shimTag);
+
+    panel.webview.html = indexHtml;
+
+    // After loading HTML, send an init message with the project data and resource URIs
+    const projectData = {
+      title: project.title,
+      repos: project.repos ?? [],
+      views: Array.isArray(project.views) ? project.views : [],
+      description: project.description ?? "",
+      panelKey: panelMapKey,
+    };
+
+    // Send initial init; if the webview wasn't ready yet it will send a 'ready' handshake and we'll resend below
+    panel.webview.postMessage({
+      command: 'init',
+      project: projectData,
+      panelKey: panelMapKey,
+      resources: {
+        overview: overviewUri?.toString(),
+        table: tableUri?.toString(),
+        helper: helperUri?.toString(),
+        board: boardUri?.toString(),
+        roadmap: roadmapUri?.toString(),
+        content: contentUri?.toString(),
+        patch: patchUri?.toString(),
+        elements: elementsUri?.toString(),
+      }
+    });
+  } catch (e) {
+    // Fallback: if reading index failed, fall back to generated HTML to avoid breaking
+    panel.webview.html = buildHtml(
+      panel.webview,
+      project,
+      elementsUri.toString(),
+      {
+        overviewUri,
+        tableUri,
+        boardUri,
+        roadmapUri,
+        contentUri,
+        patchUri,
+        helperUri,
+      },
+      panelMapKey
+    );
+  }
 
   panel.webview.onDidReceiveMessage(
     async (msg) => {
+      // Special-case: the UI may send a 'ready' handshake when it has initialized.
+      // Resend the init payload so the page reliably receives it even if it initialized after the extension posted.
+      try {
+        if (msg && typeof msg === 'object' && msg.command === 'ready') {
+          try {
+            const resend = {
+              command: 'init',
+              project: {
+                title: project.title,
+                repos: project.repos ?? [],
+                views: Array.isArray(project.views) ? project.views : [],
+                description: project.description ?? "",
+                panelKey: panelMapKey,
+              },
+              panelKey: panelMapKey,
+              resources: {
+                overview: overviewUri?.toString(),
+                table: tableUri?.toString(),
+                helper: helperUri?.toString(),
+                board: boardUri?.toString(),
+                roadmap: roadmapUri?.toString(),
+                content: contentUri?.toString(),
+                patch: patchUri?.toString(),
+                elements: elementsUri?.toString(),
+              }
+            };
+            panel.webview.postMessage(resend);
+          } catch (e) { }
+          return;
+        }
+      } catch (e) { }
+
       // Basic validation of incoming message object and command
       if (!msg || typeof msg !== "object" || typeof msg.command !== "string") {
         panel.webview.postMessage({

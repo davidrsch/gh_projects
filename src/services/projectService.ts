@@ -115,7 +115,7 @@ export class ProjectService {
                         const res = await this.runCmd("git remote get-url origin", item.path);
                         const or = parseOwnerRepoFromUrl(res.stdout.trim());
                         if (or) map.set(`${or.owner}/${or.name}`, or);
-                    } catch {
+                    } catch (e) {
                         // ignore
                     }
                 });

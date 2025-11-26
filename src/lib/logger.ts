@@ -24,8 +24,8 @@ export default {
       );
       try {
         console.info(formatPrefix("INFO") + msg, ...args);
-      } catch {}
-    } catch {}
+      } catch (e) {}
+    } catch (e) {}
   },
   warn(msg: string, ...args: any[]) {
     try {
@@ -36,8 +36,8 @@ export default {
       );
       try {
         console.warn(formatPrefix("WARN") + msg, ...args);
-      } catch {}
-    } catch {}
+      } catch (e) {}
+    } catch (e) {}
   },
   error(msg: string, ...args: any[]) {
     try {
@@ -48,8 +48,8 @@ export default {
       );
       try {
         console.error(formatPrefix("ERROR") + msg, ...args);
-      } catch {}
-    } catch {}
+      } catch (e) {}
+    } catch (e) {}
   },
   debug(msg: string, ...args: any[]) {
     try {
@@ -63,7 +63,7 @@ export default {
       );
       try {
         console.debug(formatPrefix("DEBUG") + msg, ...args);
-      } catch {}
-    } catch {}
+      } catch (e) {}
+    } catch (e) {}
   },
 };

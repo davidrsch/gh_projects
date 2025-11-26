@@ -14,7 +14,7 @@ export function getRemotesForPath(cwd: string): Promise<Remote[]> {
           logger.debug(
             `getRemotesForPath git error for ${cwd}: ${String(msg)}`
           );
-        } catch {}
+        } catch (e) {}
         return resolve([{ name: "error", url: msg, push: false }]);
       }
 
@@ -38,7 +38,7 @@ export function getRemotesForPath(cwd: string): Promise<Remote[]> {
         logger.debug(
           `getRemotesForPath ${cwd} parsed remotes: ${JSON.stringify(remotes)}`
         );
-      } catch {}
+      } catch (e) {}
       resolve(remotes);
     });
   });

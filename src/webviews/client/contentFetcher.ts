@@ -2,16 +2,8 @@
 
 (function () {
   try {
-    if (
-      window &&
-      window.vscodeApi &&
-      typeof window.vscodeApi.postMessage === "function"
-    ) {
-      window.vscodeApi.postMessage({
-        command: "debugLog",
-        level: "debug",
-        message: "contentFetcher.loaded",
-      });
+    if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+      (window as any).__APP_MESSAGING__.postMessage({ command: 'debugLog', level: 'debug', message: 'contentFetcher.loaded' });
     }
   } catch (e) { }
 
@@ -26,6 +18,6 @@
     // Log initialization
     try {
       console.log("contentFetcher init", { viewKey, view });
-    } catch { }
+    } catch (e) { }
   };
 })();

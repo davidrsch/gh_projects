@@ -6,10 +6,10 @@
 export function logDebug(viewKey: string, message: string, data?: any) {
     try {
         if (
-            window.vscodeApi &&
-            typeof window.vscodeApi.postMessage === "function"
+            (window as any).__APP_MESSAGING__ &&
+            typeof (window as any).__APP_MESSAGING__.postMessage === "function"
         ) {
-            window.vscodeApi.postMessage({
+            (window as any).__APP_MESSAGING__.postMessage({
                 command: "debugLog",
                 level: "debug",
                 viewKey: viewKey,

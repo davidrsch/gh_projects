@@ -161,6 +161,24 @@ function parseByTypename(node: ProjectV2ItemNode): NormalizedValue {
         }),
       );
       const extraIssues: IssueSummary[] = [];
+      // If the field config indicates this is a Parent Issue field, normalize
+      // it to a dedicated `parent_issue` type so the webview renderer can
+      // display the parent item succinctly.
+      try {
+        const dt = (node && node.field && node.field.dataType) || null;
+        if (dt && String(dt).toUpperCase() === "PARENT_ISSUE") {
+          // Parent fields are expected to reference a single issue
+          const parent = issues && issues.length > 0 ? issues[0] : undefined;
+          return {
+            type: "parent_issue",
+            fieldId: node.field?.id,
+            parent: parent,
+          };
+        }
+      } catch (e) {
+        // fallthrough to generic issue
+      }
+
       return {
         type: "issue",
         fieldId: node.field?.id,
@@ -244,7 +262,7 @@ export function parseFieldValue(
     if (parsed && typeof parsed === "object" && !parsed.raw) parsed.raw = node;
     if (parsed && typeof parsed === "object" && parsed.content === undefined)
       parsed.content = (node as any).itemContent ?? null;
-  } catch {
+  } catch (e) {
     // ignore attachment errors
   }
   return parsed;

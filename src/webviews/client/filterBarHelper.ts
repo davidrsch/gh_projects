@@ -91,8 +91,8 @@ function create(opts: any) {
     saveBtn.style.padding = "6px 8px";
     saveBtn.style.border = "none";
     saveBtn.style.borderRadius = "0px";
-    saveBtn.style.background = "#2ea44f";
-    saveBtn.style.color = "#ffffff";
+    saveBtn.style.background = "var(--vscode-button-background, #2ea44f)";
+    saveBtn.style.color = "var(--vscode-button-foreground, #ffffff)";
     saveBtn.style.minHeight = "28px";
     saveBtn.style.lineHeight = "16px";
     saveBtn.disabled = true;
@@ -253,12 +253,8 @@ function create(opts: any) {
         const cur = String(input.value || "");
         const matched = new Set(computeMatches(cur, registeredItems, registeredFields));
         try {
-          if (
-            typeof window.vscodeApi == "object" &&
-            window.vscodeApi &&
-            typeof window.vscodeApi.postMessage == "function"
-          )
-            window.vscodeApi.postMessage({
+          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+            (window as any).__APP_MESSAGING__.postMessage({
               command: "debugLog",
               level: "debug",
               viewKey: viewKey,
@@ -269,6 +265,7 @@ function create(opts: any) {
                 original: registeredItems.length,
               },
             });
+          }
         } catch (e) { }
         try {
           if (typeof barApiInternalSetCount === "function")
@@ -302,15 +299,15 @@ function create(opts: any) {
 
     saveBtn.addEventListener("click", function () {
       try {
-        if (
-          window.vscodeApi &&
-          typeof window.vscodeApi.postMessage === "function"
-        )
-          window.vscodeApi.postMessage({
-            command: "setViewFilter",
-            viewKey: viewKey,
-            filter: input.value,
-          });
+        try {
+          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+            (window as any).__APP_MESSAGING__.postMessage({
+              command: "setViewFilter",
+              viewKey: viewKey,
+              filter: input.value,
+            });
+          }
+        } catch (e) { }
         effectiveFilter = String(input.value || "");
         if (typeof opts.onSave === "function")
           try {
@@ -324,14 +321,14 @@ function create(opts: any) {
 
     discardBtn.addEventListener("click", function () {
       try {
-        if (
-          window.vscodeApi &&
-          typeof window.vscodeApi.postMessage === "function"
-        )
-          window.vscodeApi.postMessage({
-            command: "discardViewFilter",
-            viewKey: viewKey,
-          });
+        try {
+          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+            (window as any).__APP_MESSAGING__.postMessage({
+              command: "discardViewFilter",
+              viewKey: viewKey,
+            });
+          }
+        } catch (e) { }
         if (typeof opts.onDiscard === "function")
           try {
             opts.onDiscard();
@@ -346,15 +343,13 @@ function create(opts: any) {
       try {
         if (typeof opts.onLoadMore === "function") return opts.onLoadMore();
         try {
-          if (
-            window.vscodeApi &&
-            typeof window.vscodeApi.postMessage === "function"
-          )
-            window.vscodeApi.postMessage({
+          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+            (window as any).__APP_MESSAGING__.postMessage({
               command: "requestFields",
               first: step,
               viewKey: viewKey,
             });
+          }
         } catch (e) { }
       } catch (e) { }
     });

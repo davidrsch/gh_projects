@@ -152,20 +152,12 @@ function createBoardFetcher() {
 
     function requestFields() {
       try {
-        if (
-          typeof window.vscodeApi === "object" &&
-          window.vscodeApi &&
-          typeof window.vscodeApi.postMessage === "function"
-        ) {
-          window.vscodeApi.postMessage({
-            command: "requestFields",
-            first: first,
-            viewKey: viewKey,
-          });
+        if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+          (window as any).__APP_MESSAGING__.postMessage({ command: 'requestFields', first: first, viewKey: viewKey });
         }
       } catch (e) { }
     }
-    window.addEventListener("message", onMessage);
+    try { (window as any).__APP_MESSAGING__.onMessage(onMessage); } catch(e) { window.addEventListener("message", onMessage); }
     requestFields();
   };
 }

@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/webviews/client/contentFetcher.ts"],
+  "sourcesContent": ["/// <reference path=\"./global.d.ts\" />\r\n\r\n(function () {\r\n  try {\r\n    if (\r\n      window &&\r\n      window.vscodeApi &&\r\n      typeof window.vscodeApi.postMessage === \"function\"\r\n    ) {\r\n      window.vscodeApi.postMessage({\r\n        command: \"debugLog\",\r\n        level: \"debug\",\r\n        message: \"contentFetcher.loaded\",\r\n      });\r\n    }\r\n  } catch (e) { }\r\n\r\n  window.contentFetcher = function (\r\n    view: any,\r\n    container: HTMLElement,\r\n    viewKey: string\r\n  ) {\r\n    // Content fetcher logic here\r\n    container.innerHTML = '<div style=\"padding:10px\">Content details...</div>';\r\n\r\n    // Log initialization\r\n    try {\r\n      console.log(\"contentFetcher init\", { viewKey, view });\r\n    } catch { }\r\n  };\r\n})();\r\n"],
+  "mappings": "oBAEC,UAAY,CACX,GAAI,CAEA,QACA,OAAO,WACP,OAAO,OAAO,UAAU,aAAgB,YAExC,OAAO,UAAU,YAAY,CAC3B,QAAS,WACT,MAAO,QACP,QAAS,uBACX,CAAC,CAEL,MAAY,CAAE,CAEd,OAAO,eAAiB,SACtBA,EACAC,EACAC,EACA,CAEAD,EAAU,UAAY,qDAGtB,GAAI,CACF,QAAQ,IAAI,sBAAuB,CAAE,QAAAC,EAAS,KAAAF,CAAK,CAAC,CACtD,MAAQ,CAAE,CACZ,CACF,GAAG",
+  "names": ["view", "container", "viewKey"]
+}

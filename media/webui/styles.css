@@ -1,0 +1,80 @@
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: var(--vscode-editor-background, #ffffff);
+  color: var(--vscode-editor-foreground, #000000);
+}
+#root { display:flex; flex-direction:column; height:100%; }
+#tabs-container { width:100%; overflow-x:auto; overflow-y:hidden; white-space:nowrap; border-bottom:1px solid var(--vscode-editorWidget-border, #dddddd); }
+.tab { display:inline-block; padding:10px 16px; cursor:pointer; white-space:nowrap; user-select:none; }
+.tab:hover { background: var(--vscode-list-hoverBackground, #f3f3f3) !important; color: inherit !important; }
+.tab.active { font-weight:600; border-bottom:2px solid var(--vscode-focusBorder, #007acc); color: var(--vscode-list-activeSelectionForeground, #000000); }
+#tab-panels { flex:1; overflow:auto; padding:12px; box-sizing:border-box; }
+.repo-list { display:flex; flex-wrap:wrap; gap:8px; }
+.repo-item { padding:6px 8px; border:1px solid var(--vscode-editorWidget-border, #dddddd); border-radius:4px; cursor:pointer; }
+.repo-item:hover { background: var(--vscode-list-hoverBackground, #f3f3f3) !important; color: inherit !important; }
+.title { font-size:14px; font-weight:600; margin-bottom:8px; }
+
+/* Extra overrides to catch classes used by bundled/minified fetchers */
+.pill, .chip, .label, .tag, .gh-pill, .cell-pill {
+  background: var(--vscode-badge-background, rgba(0,0,0,0.06)) !important;
+  color: var(--vscode-foreground, inherit) !important;
+  border: 1px solid var(--vscode-editorWidget-border, rgba(0,0,0,0.06)) !important;
+}
+.pill:hover, .chip:hover, .label:hover, .tag:hover, .gh-pill:hover, .cell-pill:hover {
+  background: var(--vscode-list-hoverBackground, rgba(0,0,0,0.04)) !important;
+  color: inherit !important;
+}
+
+/* Fallback enforcement for selection/hover states that might be applied inline */
+*[data-gh-pill] {
+  background: var(--vscode-badge-background, rgba(0,0,0,0.06)) !important;
+}
+
+/* Sub-issues progress bar styling to ensure segments render inside table cells */
+.sub-issues-progress {
+  width: 100%;
+}
+.sub-issues-progress .sub-issues-progress-bar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+.sub-issues-progress .sub-issues-segment {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 12px;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+.sub-issues-progress .sub-issues-segment-filled {
+  background: var(--vscode-progressBar-background, var(--vscode-focusBorder, #007acc));
+}
+.sub-issues-progress .sub-issues-segment-empty {
+  background: transparent;
+  border: 1px solid var(--vscode-progressBar-background, var(--vscode-focusBorder, rgba(0,0,0,0.12)));
+}
+
+/* Parent issue wrapper - ensure truncation and consistent colors */
+.parent-issue-wrapper {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.parent-issue-wrapper .parent-issue-title {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: calc(100% - 60px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Scrollbar theming fallbacks */
+#tabs-container::-webkit-scrollbar { height:8px; }
+#tabs-container::-webkit-scrollbar-track { background: var(--vscode-scrollbar-background, #f0f0f0); }
+#tabs-container::-webkit-scrollbar-thumb { background-color: var(--vscode-scrollbarSlider-background, #cccccc); border-radius:0px; }
+
