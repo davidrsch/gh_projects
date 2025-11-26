@@ -201,80 +201,35 @@ export async function openProjectWebview(
       )
       : undefined;
 
-  // Load static webui index.html from media/webui and inject VS Code shim + resource URIs
-  try {
-    const indexUri = vscode.Uri.joinPath(context.extensionUri, 'media', 'webui', 'index.html');
-    const indexBytes = await vscode.workspace.fs.readFile(indexUri);
-    let indexHtml = Buffer.from(indexBytes).toString('utf8');
+  // Get VS Code webview shim URI (provides window.vscodeApi for extension communication)
+  const vscodeShimUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "media",
+      "shim",
+      "vscode-webview-shim.js"
+    )
+  );
 
-    const nonce = getNonce();
-    const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${panel.webview.cspSource} https: data:; style-src ${panel.webview.cspSource} 'unsafe-inline' https:; script-src 'nonce-${nonce}' ${panel.webview.cspSource} https:;">`;
-    indexHtml = indexHtml.replace('<!--EXTENSION_INJECT_CSP-->', cspMeta);
+  // Generate HTML using buildHtml (no longer loading from external index.html)
+  panel.webview.html = buildHtml(
+    panel.webview,
+    project,
+    elementsUri.toString(),
+    {
+      overviewUri,
+      tableUri,
+      boardUri,
+      roadmapUri,
+      contentUri,
+      patchUri,
+      helperUri,
+    },
+    panelMapKey,
+    vscodeShimUri.toString()
+  );
 
-    // Resolve local resource URIs to webview URIs
-    const styleUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'webui', 'styles.css'));
-    const appUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'webui', 'app.js'));
-    const browserShimUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'shim', 'vscode-browser-shim.js'));
-    const vscodeShimUri = panel.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', 'shim', 'vscode-webview-shim.js'));
 
-    // Replace relative references in the index HTML with webview URIs
-    indexHtml = indexHtml.replace(/\.\/styles\.css/g, styleUri.toString());
-    indexHtml = indexHtml.replace(/\.\/app\.js/g, appUri.toString());
-    indexHtml = indexHtml.replace(/\.\.\/shim\/vscode-browser-shim\.js/g, browserShimUri.toString());
-
-    // Inject only the VS Code shim and REMOVE the bundled browser shim when running inside VS Code.
-    // The browser shim (vscode-browser-shim.js) is intended for plain browser development only
-    // and would overwrite the real VS Code shim if both were loaded in the webview. Replace
-    // the browser shim script tag with the VS Code shim script tag (nonce-protected).
-    const shimTag = `<script nonce="${nonce}" src="${vscodeShimUri}"></script>`;
-    const browserScriptTag = `<script src="${browserShimUri.toString()}"></script>`;
-    indexHtml = indexHtml.replace(browserScriptTag, shimTag);
-
-    panel.webview.html = indexHtml;
-
-    // After loading HTML, send an init message with the project data and resource URIs
-    const projectData = {
-      title: project.title,
-      repos: project.repos ?? [],
-      views: Array.isArray(project.views) ? project.views : [],
-      description: project.description ?? "",
-      panelKey: panelMapKey,
-    };
-
-    // Send initial init; if the webview wasn't ready yet it will send a 'ready' handshake and we'll resend below
-    panel.webview.postMessage({
-      command: 'init',
-      project: projectData,
-      panelKey: panelMapKey,
-      resources: {
-        overview: overviewUri?.toString(),
-        table: tableUri?.toString(),
-        helper: helperUri?.toString(),
-        board: boardUri?.toString(),
-        roadmap: roadmapUri?.toString(),
-        content: contentUri?.toString(),
-        patch: patchUri?.toString(),
-        elements: elementsUri?.toString(),
-      }
-    });
-  } catch (e) {
-    // Fallback: if reading index failed, fall back to generated HTML to avoid breaking
-    panel.webview.html = buildHtml(
-      panel.webview,
-      project,
-      elementsUri.toString(),
-      {
-        overviewUri,
-        tableUri,
-        boardUri,
-        roadmapUri,
-        contentUri,
-        patchUri,
-        helperUri,
-      },
-      panelMapKey
-    );
-  }
 
   panel.webview.onDidReceiveMessage(
     async (msg) => {
@@ -531,6 +486,110 @@ export async function openProjectWebview(
           });
         }
       }
+      // Set a view-level grouping (Save). Update in-memory view details and refresh snapshot
+      if (msg?.command === "setViewGrouping") {
+        try {
+          const reqViewKey = (msg as any).viewKey as string | undefined;
+          const newGrouping = (msg as any).grouping;
+          if (!reqViewKey) return;
+          let localKey = String(reqViewKey).split(":").pop();
+          let viewIdx = 0;
+          if (localKey && localKey.startsWith("view-")) {
+            const idx = Number(localKey.split("-")[1]);
+            if (!isNaN(idx)) viewIdx = idx;
+          }
+          const viewsArr: ProjectView[] = Array.isArray(project.views)
+            ? project.views
+            : [];
+          const view = viewsArr[viewIdx];
+          // Update in-memory details.groupByFields
+          if (view) {
+            if (!(view as any).details) (view as any).details = {};
+            (view as any).details.groupByFields =
+              typeof newGrouping === "string" && newGrouping
+                ? { nodes: [{ name: newGrouping }] }
+                : undefined;
+          }
+          // Persist saved grouping to workspaceState so it survives reloads
+          try {
+            const storageKey = `viewGrouping:${project.id}:${view && view.number}`;
+            await context.workspaceState.update(
+              storageKey,
+              (view && (view as any).details && (view as any).details.groupByFields && (view as any).details.groupByFields.nodes && (view as any).details.groupByFields.nodes[0] && (view as any).details.groupByFields.nodes[0].name) ||
+              undefined
+            );
+          } catch (e) {
+            logger.debug("workspaceState.update (grouping) failed: " + String(e));
+          }
+
+          const { snapshot, effectiveFilter } = await ProjectDataService.getProjectData(project, reqViewKey);
+
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: reqViewKey,
+            payload: snapshot,
+            effectiveFilter: effectiveFilter,
+          });
+        } catch (e) {
+          const wrapped = wrapError(e, "setViewGrouping failed");
+          const msgText = String(wrapped?.message || wrapped || "");
+          logger.error("setViewGrouping failed: " + msgText);
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: (msg as any).viewKey || null,
+            error: msgText,
+          });
+        }
+      }
+      // Discard edits to the view grouping: re-fetch using the current stored grouping value and refresh
+      if (msg?.command === "discardViewGrouping") {
+        try {
+          const reqViewKey = (msg as any).viewKey as string | undefined;
+          if (!reqViewKey) return;
+          let localKey = String(reqViewKey).split(":").pop();
+          let viewIdx = 0;
+          if (localKey && localKey.startsWith("view-")) {
+            const idx = Number(localKey.split("-")[1]);
+            if (!isNaN(idx)) viewIdx = idx;
+          }
+          const viewsArr: ProjectView[] = Array.isArray(project.views)
+            ? project.views
+            : [];
+          const view = viewsArr[viewIdx];
+
+          // Restore the saved grouping from workspaceState (if any), otherwise keep existing
+          try {
+            const storageKey = `viewGrouping:${project.id}:${view && view.number}`;
+            const saved = await context.workspaceState.get<string>(storageKey);
+            if (typeof saved === "string") {
+              if (!view) (view as any) = {};
+              if (!(view as any).details) (view as any).details = {};
+              (view as any).details.groupByFields = { nodes: [{ name: saved }] };
+            }
+          } catch (e) {
+            // ignore
+          }
+
+          const { snapshot, effectiveFilter } = await ProjectDataService.getProjectData(project, reqViewKey);
+
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: reqViewKey,
+            payload: snapshot,
+            effectiveFilter: effectiveFilter,
+          });
+        } catch (e) {
+          const wrapped = wrapError(e, "discardViewGrouping failed");
+          const msgText = String(wrapped?.message || wrapped || "");
+          logger.error("discardViewGrouping failed: " + msgText);
+          panel.webview.postMessage({
+            command: "fields",
+            viewKey: (msg as any).viewKey || null,
+            error: msgText,
+          });
+        }
+      }
+      
     },
     undefined,
     context.subscriptions

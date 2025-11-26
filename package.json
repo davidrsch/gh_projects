@@ -135,7 +135,6 @@
     "watch": "tsc -watch -p ./",
     "postinstall": "node ./scripts/copy-vscode-elements.js",
     "build:webviews": "node ./scripts/build-webviews.js",
-    "serve-browser-tool": "node ./browser_tool/server.js",
     "lint": "npx eslint 'src/**/*.{ts,js}' --fix || npx prettier --write 'src/**/*.{ts,js,json,md}'",
     "test": "jest --runInBand",
     "fetch-sample": "npx ts-node src/scripts/fetchSample.ts"

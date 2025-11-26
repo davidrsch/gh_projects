@@ -7,9 +7,15 @@ export interface MenuOptions {
     canGroup: boolean;
     canSlice: boolean;
     canFilter: boolean;
+    isGrouped?: boolean;
+    isSliced?: boolean;
+    currentSort?: 'ASC' | 'DESC' | null;
     onSort?: (direction: 'ASC' | 'DESC') => void;
     onGroup?: () => void;
     onSlice?: () => void;
+    onClearGroup?: () => void;
+    onClearSlice?: () => void;
+    onClearSort?: () => void;
     onHide?: () => void;
     onMove?: (direction: 'left' | 'right') => void;
     onFilter?: () => void;
@@ -92,16 +98,16 @@ export class ColumnHeaderMenu {
         this.addMenuItem('Select column', null, { isHeader: true });
         this.addSeparator();
 
-        // Sort options (always available)
+        // Sort options (always available). If the column is currently sorted, show an 'x' clear button
         this.addMenuItem('Sort ascending ↑', () => {
             this.options.onSort?.('ASC');
             this.hide();
-        }, { icon: '↑' });
+        }, { icon: '↑', showClear: !!(this.options.currentSort === 'ASC'), clearAction: this.options.onClearSort });
 
         this.addMenuItem('Sort descending ↓', () => {
             this.options.onSort?.('DESC');
             this.hide();
-        }, { icon: '↓' });
+        }, { icon: '↓', showClear: !!(this.options.currentSort === 'DESC'), clearAction: this.options.onClearSort });
 
         this.addSeparator();
 
@@ -110,7 +116,7 @@ export class ColumnHeaderMenu {
             this.addMenuItem('Group by values', () => {
                 this.options.onGroup?.();
                 this.hide();
-            });
+            }, { showClear: !!this.options.isGrouped, clearAction: this.options.onClearGroup });
         }
 
         // Slice by (conditional)
@@ -118,7 +124,7 @@ export class ColumnHeaderMenu {
             this.addMenuItem('Slice by values', () => {
                 this.options.onSlice?.();
                 this.hide();
-            });
+            }, { showClear: !!this.options.isSliced, clearAction: this.options.onClearSlice });
         }
 
         // Filter (conditional)
@@ -158,39 +164,84 @@ export class ColumnHeaderMenu {
     private addMenuItem(
         label: string,
         onClick: (() => void) | null,
-        options?: { isHeader?: boolean; icon?: string }
+        options?: { isHeader?: boolean; icon?: string; showClear?: boolean; clearAction?: (() => void) | null }
     ): void {
         if (!this.menuElement) return;
-
         const item = document.createElement('div');
         item.className = 'menu-item';
-        item.textContent = label;
 
         if (options?.isHeader) {
+            item.textContent = label;
             item.style.padding = '6px 12px';
             item.style.fontWeight = '600';
             item.style.color = 'var(--vscode-descriptionForeground)';
             item.style.fontSize = '11px';
             item.style.textTransform = 'uppercase';
             item.style.cursor = 'default';
-        } else {
-            item.style.padding = '6px 12px';
-            item.style.cursor = 'pointer';
-            item.style.color = 'var(--vscode-menu-foreground)';
+            this.menuElement.appendChild(item);
+            return;
+        }
 
-            if (onClick) {
-                item.addEventListener('mouseenter', () => {
-                    item.style.background = 'var(--vscode-menu-selectionBackground)';
-                    item.style.color = 'var(--vscode-menu-selectionForeground)';
-                });
+        // Non-header item layout: label on the left, optional clear 'x' button on the right
+        item.style.display = 'flex';
+        item.style.alignItems = 'center';
+        item.style.justifyContent = 'space-between';
+        item.style.padding = '6px 12px';
+        item.style.cursor = 'pointer';
+        item.style.color = 'var(--vscode-menu-foreground)';
 
-                item.addEventListener('mouseleave', () => {
-                    item.style.background = 'transparent';
-                    item.style.color = 'var(--vscode-menu-foreground)';
-                });
+        const labelEl = document.createElement('span');
+        labelEl.textContent = label;
+        labelEl.style.flex = '1';
+        labelEl.style.whiteSpace = 'nowrap';
+        labelEl.style.overflow = 'hidden';
+        labelEl.style.textOverflow = 'ellipsis';
 
-                item.addEventListener('click', onClick);
-            }
+        item.appendChild(labelEl);
+
+        // Optional clear 'x' button
+        if (options?.showClear && options?.clearAction) {
+            const clearBtn = document.createElement('button');
+            clearBtn.type = 'button';
+            clearBtn.textContent = '✕';
+            clearBtn.title = 'Clear';
+            clearBtn.style.border = 'none';
+            clearBtn.style.background = 'transparent';
+            clearBtn.style.cursor = 'pointer';
+            clearBtn.style.padding = '2px 6px';
+            clearBtn.style.marginLeft = '8px';
+            clearBtn.style.color = 'var(--vscode-menu-foreground)';
+
+            clearBtn.addEventListener('mouseenter', () => {
+                clearBtn.style.color = 'var(--vscode-menu-selectionForeground)';
+                clearBtn.style.background = 'var(--vscode-menu-selectionBackground)';
+            });
+            clearBtn.addEventListener('mouseleave', () => {
+                clearBtn.style.color = 'var(--vscode-menu-foreground)';
+                clearBtn.style.background = 'transparent';
+            });
+
+            clearBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                options.clearAction && options.clearAction();
+                this.hide();
+            });
+
+            item.appendChild(clearBtn);
+        }
+
+        if (onClick) {
+            item.addEventListener('mouseenter', () => {
+                item.style.background = 'var(--vscode-menu-selectionBackground)';
+                item.style.color = 'var(--vscode-menu-selectionForeground)';
+            });
+
+            item.addEventListener('mouseleave', () => {
+                item.style.background = 'transparent';
+                item.style.color = 'var(--vscode-menu-foreground)';
+            });
+
+            item.addEventListener('click', onClick);
         }
 
         this.menuElement.appendChild(item);

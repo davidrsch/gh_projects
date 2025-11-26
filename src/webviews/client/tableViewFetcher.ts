@@ -45,12 +45,41 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
     headerContainer.appendChild(filterWrapper);
 
     // Init Filter Bar
+    // Track unsaved view-level changes (grouping) and wire Save/Discard hooks
+    let unsavedGrouping: string | null = null;
     let barApi = initFilterBar(filterWrapper, viewKey, {
       suffix: viewKey ? String(viewKey).split(":").pop() : "",
       step: itemsLimit,
       onLoadMore: () => {
         itemsLimit += 30;
         requestFields();
+      },
+      onSave: (newFilter: any) => {
+        try {
+          if (unsavedGrouping !== null) {
+            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+              (window as any).__APP_MESSAGING__.postMessage({
+                command: "setViewGrouping",
+                viewKey: viewKey,
+                grouping: unsavedGrouping,
+              });
+            }
+            unsavedGrouping = null;
+          }
+        } catch (e) { }
+      },
+      onDiscard: () => {
+        try {
+          if (unsavedGrouping !== null) {
+            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+              (window as any).__APP_MESSAGING__.postMessage({
+                command: "discardViewGrouping",
+                viewKey: viewKey,
+              });
+            }
+            unsavedGrouping = null;
+          }
+        } catch (e) { }
       }
     });
 
@@ -128,10 +157,21 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
       viewKey,
       onSortChange: () => requestFields(),
       onGroupChange: (fieldName: string) => {
-        if (viewKey) {
-          localStorage.setItem(`ghProjects.table.${viewKey}.groupingField`, fieldName);
-        }
-        requestFields();
+        // Defer persistence of grouping until user explicitly Saves from the filter bar
+        try {
+          unsavedGrouping = fieldName || null;
+          // Enable Save/Discard buttons in the filter bar if present
+          if (barApi && barApi.saveBtn && barApi.discardBtn) {
+            try {
+              barApi.saveBtn.disabled = false;
+              barApi.discardBtn.disabled = false;
+              barApi.saveBtn.style.opacity = "1";
+              barApi.saveBtn.style.cursor = "pointer";
+              barApi.discardBtn.style.opacity = "1";
+              barApi.discardBtn.style.cursor = "pointer";
+            } catch (e) { }
+          }
+        } catch (e) { }
       }
     });
     table.render();

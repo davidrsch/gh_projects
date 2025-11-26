@@ -24,7 +24,8 @@ export function buildHtml(
     patchUri?: vscode.Uri;
     helperUri?: vscode.Uri;
   },
-  panelKey?: string
+  panelKey?: string,
+  vscodeShimUri?: string
 ): string {
   const nonce = getNonce();
   const csp = webview.cspSource;
@@ -148,6 +149,7 @@ html, body {
 .title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
 </style>
 
+${vscodeShimUri ? `<script nonce="${nonce}" src="${vscodeShimUri}"></script>` : ''}
 ${scriptTag}
 </head>
 <body>

@@ -75,6 +75,8 @@ export function initFilterBar(
         suffix?: string;
         step?: number;
         onLoadMore?: () => void;
+        onSave?: (filter: any) => void;
+        onDiscard?: () => void;
     }
 ): any {
     if (
@@ -89,6 +91,8 @@ export function initFilterBar(
                 viewKey: viewKey,
                 step: options.step || 50,
                 onLoadMore: options.onLoadMore,
+                onSave: options.onSave,
+                onDiscard: options.onDiscard,
             });
         } catch (e) {
             return null;

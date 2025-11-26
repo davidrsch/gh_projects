@@ -92,10 +92,10 @@ export class SlicePanel {
 
         // Sort by count (descending)
         const sorted = Array.from(valueCounts.entries())
-            .sort((a, b) => b[1] - a[1]);
+            .sort((a, b) => b[1].count - a[1].count);
 
         // Render each value
-        sorted.forEach(([value, count]) => {
+        sorted.forEach(([key, { value, count }]) => {
             const item = document.createElement('div');
             item.className = 'slice-value-item';
             item.style.padding = '8px 12px';
@@ -107,7 +107,7 @@ export class SlicePanel {
             item.style.alignItems = 'center';
 
             const label = document.createElement('span');
-            label.textContent = this.formatValue(value);
+            label.textContent = key;
             label.style.flex = '1';
 
             const badge = document.createElement('span');
@@ -144,20 +144,27 @@ export class SlicePanel {
     /**
      * Get unique values and their counts
      */
-    private getValueCounts(): Map<string, number> {
-        const counts = new Map<string, number>();
+    private getValueCounts(): Map<string, { value: any, count: number }> {
+        const counts = new Map<string, { value: any, count: number }>();
 
         this.items.forEach(item => {
             const fieldValue = item.fieldValues?.find((fv: any) =>
                 fv.fieldId === this.field.id || fv.fieldName === this.field.name
             );
 
+            let value = null;
+            let key = '(empty)';
+
             if (fieldValue) {
-                const value = this.extractValue(fieldValue);
-                const key = String(value || '(empty)');
-                counts.set(key, (counts.get(key) || 0) + 1);
+                value = this.extractValue(fieldValue);
+                key = this.formatValue(value);
+            }
+
+            const existing = counts.get(key);
+            if (existing) {
+                existing.count++;
             } else {
-                counts.set('(empty)', (counts.get('(empty)') || 0) + 1);
+                counts.set(key, { value, count: 1 });
             }
         });
 
