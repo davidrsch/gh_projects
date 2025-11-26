@@ -201,33 +201,9 @@ export class GitHubRepository {
                 .map((c) => c.selection)
                 .join("\n              ");
 
-            // Ensure Issue/Progress fragments are included for fields that
-            // are known to be PARENT_ISSUE or SUB_ISSUES_PROGRESS. In some
-            // environments introspection or filtering can omit those
-            // fragments and the server will return null for those aliases.
-            let forcedFragments = "";
-            try {
-                const dt = String((f.dataType || "")).toUpperCase();
-                const issueTypeName = "ProjectV2ItemFieldIssueValue";
-                const progressTypeName = "ProjectV2ItemFieldProgressValue";
-
-                // Only force-include fragments if the server's introspection
-                // reported that these possible types exist. Adding an unknown
-                // typename to the query will cause a GraphQL validation error
-                // (which you observed), so guard by `possibleTypes`.
-                if (dt === "PARENT_ISSUE" && possibleTypes.includes(issueTypeName)) {
-                    const issueFrag = candidateFragments.find((c) => c.typename === issueTypeName);
-                    if (issueFrag) forcedFragments = issueFrag.selection;
-                }
-                if (dt === "SUB_ISSUES_PROGRESS" && possibleTypes.includes(progressTypeName)) {
-                    const progressFrag = candidateFragments.find((c) => c.typename === progressTypeName);
-                    if (progressFrag) forcedFragments = (forcedFragments ? forcedFragments + "\n              " : "") + progressFrag.selection;
-                }
-            } catch (e) {
-                // ignore failures — fallback behavior exists later
-            }
-
-            const sel = `${alias}: fieldValueByName(name:${JSON.stringify(f.name)}){ __typename\n              ${fragments}\n              ${forcedFragments}\n            }`;
+            const sel = `${alias}: fieldValueByName(name:${JSON.stringify(f.name)}){ __typename
+              ${fragments}
+            }`;
             aliasSelections.push(sel);
         }
 
@@ -244,24 +220,15 @@ export class GitHubRepository {
             for (let i = 0; i < fieldAliases.length; i++) {
                 const { alias } = fieldAliases[i];
                 const node = item[alias];
-                if (node) {
-                    node.field = fields[i];
-                    node.itemContent = item.content;
-                    const parsed = parseFieldValue(node) as any;
-                    if (parsed && typeof parsed === "object") {
-                        if (!parsed.raw) parsed.raw = node;
-                        if (!parsed.content) parsed.content = item.content ?? null;
-                    }
-                    fv.push(parsed);
-                } else {
-                    // Attempt a fallback: sometimes the project stores parent/progress
-                    // information on the item's content (Issue content) rather than
-                    // in the explicit fieldValue alias. If so, synthesize a
-                    // normalized value so the UI can still render the column.
-                    try {
-                        const fdt = String((fields[i].dataType || "")).toUpperCase();
-                        const content = item.content as any;
-                        if (fdt === ProjectV2FieldType.PARENT_ISSUE && content && content.parent) {
+                // For Parent issue and Sub-issues progress prefer the synthesized
+                // value from the item's content (Issue content) rather than any
+                // fieldValue alias the server might return. This makes the
+                // content-based shape the canonical source of truth.
+                try {
+                    const fdt = String((fields[i].dataType || "")).toUpperCase();
+                    const content = item.content as any;
+                    if (fdt === ProjectV2FieldType.PARENT_ISSUE) {
+                        if (content && content.parent) {
                             const parentNode: any = content.parent;
                             const synthesized: any = {
                                 type: "parent_issue",
@@ -278,7 +245,11 @@ export class GitHubRepository {
                                 content: item.content ?? null,
                             };
                             fv.push(synthesized as any);
-                        } else if (fdt === ProjectV2FieldType.SUB_ISSUES_PROGRESS && content && content.subIssuesSummary) {
+                        } else {
+                            fv.push({ type: "missing", fieldId: fields[i].id, fieldName: fields[i].name, raw: null, content: item.content ?? null });
+                        }
+                    } else if (fdt === ProjectV2FieldType.SUB_ISSUES_PROGRESS) {
+                        if (content && content.subIssuesSummary) {
                             const s = content.subIssuesSummary;
                             const synthesized: any = {
                                 type: "sub_issues_progress",
@@ -291,23 +262,24 @@ export class GitHubRepository {
                             };
                             fv.push(synthesized as any);
                         } else {
-                            fv.push({
-                                type: "missing",
-                                fieldId: fields[i].id,
-                                fieldName: fields[i].name,
-                                raw: null,
-                                content: item.content ?? null,
-                            });
+                            fv.push({ type: "missing", fieldId: fields[i].id, fieldName: fields[i].name, raw: null, content: item.content ?? null });
                         }
-                    } catch (e) {
-                        fv.push({
-                            type: "missing",
-                            fieldId: fields[i].id,
-                            fieldName: fields[i].name,
-                            raw: null,
-                            content: item.content ?? null,
-                        });
+                    } else {
+                        if (node) {
+                            node.field = fields[i];
+                            node.itemContent = item.content;
+                            const parsed = parseFieldValue(node) as any;
+                            if (parsed && typeof parsed === "object") {
+                                if (!parsed.raw) parsed.raw = node;
+                                if (!parsed.content) parsed.content = item.content ?? null;
+                            }
+                            fv.push(parsed);
+                        } else {
+                            fv.push({ type: "missing", fieldId: fields[i].id, fieldName: fields[i].name, raw: null, content: item.content ?? null });
+                        }
                     }
+                } catch (e) {
+                    fv.push({ type: "missing", fieldId: fields[i].id, fieldName: fields[i].name, raw: null, content: item.content ?? null });
                 }
             }
             return {
