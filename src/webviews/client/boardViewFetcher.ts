@@ -157,7 +157,7 @@ function createBoardFetcher() {
         }
       } catch (e) { }
     }
-    try { (window as any).__APP_MESSAGING__.onMessage(onMessage); } catch(e) { window.addEventListener("message", onMessage); }
+    try { (window as any).__APP_MESSAGING__.onMessage(onMessage); } catch (e) { window.addEventListener("message", onMessage); }
     requestFields();
   };
 }

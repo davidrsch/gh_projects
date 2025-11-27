@@ -1,6 +1,7 @@
 import { renderCell } from "../renderers/cellRenderer";
 import { normalizeColor, getContrastColor, escapeHtml } from "../utils";
 import { ColumnHeaderMenu } from "./ColumnHeaderMenu";
+import FieldsMenu from "./FieldsMenu";
 import { SlicePanel } from "./SlicePanel";
 import type { SortConfig } from "../utils/tableSorting";
 import { sortItems } from "../utils/tableSorting";
@@ -13,6 +14,7 @@ export interface TableOptions {
     onSortChange?: (config: SortConfig) => void;
     onGroupChange?: (fieldName: string) => void;
     onSliceChange?: (field: any) => void;
+    onHiddenFieldsChange?: (hiddenIds: string[]) => void;
 }
 
 export class ProjectTable {
@@ -23,22 +25,39 @@ export class ProjectTable {
     private options: TableOptions;
     private hiddenFieldIds: Set<string>;
     private activeMenu: ColumnHeaderMenu | null = null;
+    private activeFieldsMenu: FieldsMenu | null = null;
     private activeSlicePanel: SlicePanel | null = null;
     private activeSlice: { fieldId: string, value: any } | null = null;
 
     constructor(container: HTMLElement, fields: any[], items: any[], options: TableOptions = {}) {
         this.container = container;
-        this.allFields = fields;
+        // Normalize all field ids to strings to avoid type mismatches
+        this.allFields = (fields || []).map(f => ({ ...f, id: String(f.id) }));
         this.options = options;
         this.items = items;
 
         // Load hidden fields from options or localStorage
-        const hiddenFromStorage = this.loadHiddenFields();
-        const hiddenFromOptions = options.hiddenFields || [];
-        this.hiddenFieldIds = new Set([...hiddenFromStorage, ...hiddenFromOptions]);
+        const hiddenFromStorage = this.loadHiddenFields().map(id => String(id));
+        const hiddenFromOptions = (options.hiddenFields || []).map(id => String(id));
+        this.hiddenFieldIds = new Set<string>([...hiddenFromStorage, ...hiddenFromOptions]);
 
-        // Filter visible fields
+        // Filter visible fields (ids already normalized on allFields)
         this.fields = this.allFields.filter(f => !this.hiddenFieldIds.has(f.id));
+
+        // Debug: log initial hidden/visible sets
+        try {
+            console.debug('[ProjectTable] init: allFieldIds=', this.allFields.map(f => f.id));
+            console.debug('[ProjectTable] init: hiddenFieldIds=', Array.from(this.hiddenFieldIds));
+            console.debug('[ProjectTable] init: visibleFieldIds=', this.fields.map(f => f.id));
+        } catch (e) { }
+
+        // Also forward debug info to the extension output channel so it's visible
+        try {
+            const dbg = { allFieldIds: this.allFields.map((f: any) => String(f.id)), hiddenFieldIds: Array.from(this.hiddenFieldIds), visibleFieldIds: this.fields.map((f: any) => String(f.id)) };
+            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+                (window as any).__APP_MESSAGING__.postMessage({ command: 'debugLog', level: 'debug', message: 'ProjectTable init', data: dbg, viewKey: this.options.viewKey });
+            }
+        } catch (e) { }
 
         // Load and apply field order if stored
         this.applyFieldOrder();
@@ -238,7 +257,7 @@ export class ProjectTable {
         addFieldBtn.style.height = '100%';
         addFieldBtn.title = 'Show hidden fields';
 
-        addFieldBtn.addEventListener('click', () => this.showHiddenFieldsMenu(addFieldBtn));
+        addFieldBtn.addEventListener('click', () => this.showFieldsMenu(addFieldBtn));
 
         thAddField.appendChild(addFieldBtn);
         this.styleHeaderCell(thAddField);
@@ -248,6 +267,37 @@ export class ProjectTable {
 
         thead.appendChild(tr);
         table.appendChild(thead);
+    }
+
+    private showFieldsMenu(anchorElement: HTMLElement) {
+        // Hide existing menus
+        if (this.activeMenu) { this.activeMenu.hide(); this.activeMenu = null; }
+        if (this.activeFieldsMenu) { this.activeFieldsMenu.hide(); this.activeFieldsMenu = null; }
+
+        // Build visible id set from hiddenFieldIds to ensure consistent detection (normalize ids)
+        const visibleSet = new Set<string>(this.allFields.filter(f => !this.hiddenFieldIds.has(String(f.id))).map(f => String(f.id)));
+
+        // Debug: log current hidden/visible sets before showing menu
+        try {
+            console.debug('[ProjectTable] showFieldsMenu: hiddenFieldIds=', Array.from(this.hiddenFieldIds));
+            console.debug('[ProjectTable] showFieldsMenu: allFieldIds=', this.allFields.map(f => f.id));
+        } catch (e) { }
+
+        const menu = new FieldsMenu({
+            fields: this.allFields.map(f => ({ id: f.id, name: f.name, iconClass: f.iconClass })),
+            visibleFieldIds: visibleSet,
+            onToggleVisibility: (fieldId: string, visible: boolean) => {
+                if (visible) this.showField(fieldId);
+                else this.hideField(fieldId);
+            },
+            onCreateField: () => {
+                // Placeholder: open create field flow if available
+                try { console.log('Create field requested'); } catch (e) { }
+            }
+        });
+
+        this.activeFieldsMenu = menu;
+        menu.show(anchorElement);
     }
 
     private styleHeaderCell(th: HTMLTableCellElement) {
@@ -278,7 +328,7 @@ export class ProjectTable {
         // Apply Slice Filter
         if (this.activeSlice) {
             displayItems = displayItems.filter(item => {
-                const fv = item.fieldValues.find((v: any) => v.fieldId === this.activeSlice!.fieldId);
+                const fv = item.fieldValues.find((v: any) => String(v.fieldId) === String(this.activeSlice!.fieldId));
                 if (!fv) return this.activeSlice!.value === null; // Match empty if value is null
 
                 // Extract value logic similar to SlicePanel
@@ -363,7 +413,7 @@ export class ProjectTable {
                 for (const gi of itemsArr) {
                     const it = gi.item || gi;
                     if (!it || !Array.isArray(it.fieldValues)) continue;
-                    const fv = it.fieldValues.find((v: any) => (v.fieldId && v.fieldId === estimateFieldId) || (v.fieldName && String(v.fieldName).toLowerCase().includes('estimate')) || v.type === 'number');
+                    const fv = it.fieldValues.find((v: any) => (v.fieldId && String(v.fieldId) === String(estimateFieldId)) || (v.fieldName && String(v.fieldName).toLowerCase().includes('estimate')) || v.type === 'number');
                     if (fv) {
                         const num = Number(fv.number != null ? fv.number : (fv.value != null ? fv.value : NaN));
                         if (!isNaN(num)) sum += num;
@@ -433,7 +483,7 @@ export class ProjectTable {
             if (String(groupingField.dataType || '').toLowerCase() === 'parent_issue') {
                 const first = (group.items && group.items[0]) ? (group.items[0].item || group.items[0]) : null;
                 if (first && Array.isArray(first.fieldValues)) {
-                    const pfv = first.fieldValues.find((v: any) => v.fieldId === groupingField.id || v.fieldName === groupingField.name || v.type === 'parent_issue');
+                    const pfv = first.fieldValues.find((v: any) => String(v.fieldId) === String(groupingField.id) || v.fieldName === groupingField.name || v.type === 'parent_issue');
                     if (pfv) {
                         parentMeta = pfv.parent || pfv.parentIssue || pfv.issue || pfv.item || pfv.value || null;
                     }
@@ -481,7 +531,7 @@ export class ProjectTable {
                     for (const gi of group.items) {
                         const it = gi.item || gi;
                         if (!it || !Array.isArray(it.fieldValues)) continue;
-                        const fv = it.fieldValues.find((v: any) => v.type === 'assignees' || (v.fieldId === groupingField.id));
+                        const fv = it.fieldValues.find((v: any) => v.type === 'assignees' || (String(v.fieldId) === String(groupingField.id)));
                         if (fv && fv.assignees && Array.isArray(fv.assignees)) {
                             const match = fv.assignees.find((a: any) => String(a.login || a.name) === String(group.option.name || group.option.id));
                             if (match && (match.avatarUrl || match.avatar)) return match.avatarUrl || match.avatar;
@@ -569,7 +619,8 @@ export class ProjectTable {
                 estEl.style.lineHeight = '18px';
                 estEl.style.marginLeft = '8px';
                 estEl.textContent = 'Estimate: ' + formatEstimate(estSum);
-                rightPane.appendChild(estEl);
+                // Put estimate pill into the left sticky pane so it remains visible when horizontally scrolling
+                leftPane.appendChild(estEl);
 
                 // If parent_issue, show completed/amount + progress bar (only for real parents)
                 if (String(groupingField.dataType || '').toLowerCase() === 'parent_issue' && !(group.option && (group.option.name === 'Unassigned' || group.option.title === 'Unassigned'))) {
@@ -633,7 +684,8 @@ export class ProjectTable {
                     doneText.style.marginLeft = '8px';
                     doneText.style.fontVariantNumeric = 'tabular-nums';
                     doneText.textContent = `${done}/${total}`;
-                    rightPane.appendChild(doneText);
+                    // Keep completed/total near the left sticky area so it stays visible
+                    leftPane.appendChild(doneText);
 
                     // show progress bar
                     const progWrapper = document.createElement('div');
@@ -656,7 +708,8 @@ export class ProjectTable {
                     fill.style.background = 'var(--vscode-focusBorder)';
                     bar.appendChild(fill);
                     progWrapper.appendChild(bar);
-                    rightPane.appendChild(progWrapper);
+                    // Progress bar is useful summary info — keep it in the sticky left pane
+                    leftPane.appendChild(progWrapper);
                 }
             }
 
@@ -670,7 +723,8 @@ export class ProjectTable {
                         descEl.style.fontSize = '12px';
                         descEl.style.marginLeft = '8px';
                         descEl.textContent = String(opt.description).slice(0, 120);
-                        rightPane.appendChild(descEl);
+                        // Keep description fixed in the left sticky pane so it remains visible
+                        leftPane.appendChild(descEl);
                     }
                 } catch (e) { }
             }
@@ -701,7 +755,8 @@ export class ProjectTable {
                         iterEl.style.fontSize = '12px';
                         iterEl.style.marginLeft = '8px';
                         iterEl.textContent = String(iterText).slice(0, 120);
-                        rightPane.appendChild(iterEl);
+                        // Keep iteration info fixed in the left sticky pane
+                        leftPane.appendChild(iterEl);
                     }
                 } catch (e) { }
             }
@@ -755,7 +810,7 @@ export class ProjectTable {
             const unassigned: any[] = [];
 
             items.forEach((item, index) => {
-                const fv = item.fieldValues.find((v: any) => v.fieldId === field.id || v.fieldName === field.name);
+                const fv = item.fieldValues.find((v: any) => String(v.fieldId) === String(field.id) || v.fieldName === field.name);
                 let placed = false;
 
                 if (fv) {
@@ -800,7 +855,7 @@ export class ProjectTable {
         const unassignedFallback: any[] = [];
 
         items.forEach((item, index) => {
-            const fv = item.fieldValues.find((v: any) => v.fieldId === field.id || v.fieldName === field.name);
+            const fv = item.fieldValues.find((v: any) => String(v.fieldId) === String(field.id) || v.fieldName === field.name);
             let val: any = null;
             if (fv) {
                 // Text/title/number/date straightforward
@@ -874,7 +929,7 @@ export class ProjectTable {
             const td = document.createElement("td");
             this.styleCell(td);
 
-            const fv = item.fieldValues.find((v: any) => v.fieldId === field.id || v.fieldName === field.name);
+            const fv = item.fieldValues.find((v: any) => String(v.fieldId) === String(field.id) || v.fieldName === field.name);
             if (fv) {
                 td.innerHTML = renderCell(fv, field, item, this.items);
             }
@@ -1029,7 +1084,7 @@ export class ProjectTable {
         }
 
         // Get hidden fields
-        const hiddenFields = this.allFields.filter(f => this.hiddenFieldIds.has(f.id));
+        const hiddenFields = this.allFields.filter(f => this.hiddenFieldIds.has(String(f.id)));
 
         if (hiddenFields.length === 0) {
             // Show message that no fields are hidden
@@ -1195,17 +1250,42 @@ export class ProjectTable {
     }
 
     public hideField(fieldId: string) {
-        this.hiddenFieldIds.add(fieldId);
-        this.saveHiddenFields();
-        this.fields = this.allFields.filter(f => !this.hiddenFieldIds.has(f.id));
-        this.render();
+        const fid = String(fieldId);
+        this.hiddenFieldIds.add(fid);
+        try { console.debug('[ProjectTable] hideField -> added', fid, 'hiddenFieldIds=', Array.from(this.hiddenFieldIds)); } catch (e) { }
+        // If a parent callback is provided (e.g. tableViewFetcher managing Save/Discard),
+        // notify it instead of immediately persisting to localStorage. This allows hide/unhide
+        // to be treated as an unsaved view-level change which can be saved/discarded by the user.
+        if (this.options.onHiddenFieldsChange) {
+            // update in-memory state and notify parent (do not persist to localStorage yet)
+            this.fields = this.allFields.filter(f => !this.hiddenFieldIds.has(f.id));
+            // Re-apply stored field order so the UI appears consistent after toggling
+            try { this.applyFieldOrder(); } catch (e) { }
+            try { this.options.onHiddenFieldsChange(Array.from(this.hiddenFieldIds)); } catch (e) { }
+            this.render();
+        } else {
+            this.saveHiddenFields();
+            this.fields = this.allFields.filter(f => !this.hiddenFieldIds.has(f.id));
+            try { this.applyFieldOrder(); } catch (e) { }
+            this.render();
+        }
     }
 
     public showField(fieldId: string) {
-        this.hiddenFieldIds.delete(fieldId);
-        this.saveHiddenFields();
-        this.fields = this.allFields.filter(f => !this.hiddenFieldIds.has(f.id));
-        this.render();
+        const fid = String(fieldId);
+        this.hiddenFieldIds.delete(fid);
+        try { console.debug('[ProjectTable] showField -> removed', fid, 'hiddenFieldIds=', Array.from(this.hiddenFieldIds)); } catch (e) { }
+        if (this.options.onHiddenFieldsChange) {
+            this.fields = this.allFields.filter(f => !this.hiddenFieldIds.has(f.id));
+            try { this.applyFieldOrder(); } catch (e) { }
+            try { this.options.onHiddenFieldsChange(Array.from(this.hiddenFieldIds)); } catch (e) { }
+            this.render();
+        } else {
+            this.saveHiddenFields();
+            this.fields = this.allFields.filter(f => !this.hiddenFieldIds.has(f.id));
+            try { this.applyFieldOrder(); } catch (e) { }
+            this.render();
+        }
     }
 
     private handleMove(field: any, direction: 'left' | 'right') {
@@ -1236,7 +1316,11 @@ export class ProjectTable {
 
         try {
             const stored = localStorage.getItem(key);
-            return stored ? JSON.parse(stored) : [];
+            const arr = stored ? JSON.parse(stored) : [];
+            // Normalize stored ids to strings
+            const normalized = (arr || []).map((id: any) => String(id));
+            try { console.debug('[ProjectTable] loadHiddenFields ->', normalized); } catch (e) { }
+            return normalized;
         } catch (e) {
             return [];
         }
@@ -1246,7 +1330,9 @@ export class ProjectTable {
         const key = this.getStorageKey('hiddenFields');
         if (!key) return;
 
-        localStorage.setItem(key, JSON.stringify(Array.from(this.hiddenFieldIds)));
+        const arr = Array.from(this.hiddenFieldIds).map(id => String(id));
+        try { console.debug('[ProjectTable] saveHiddenFields ->', arr); } catch (e) { }
+        localStorage.setItem(key, JSON.stringify(arr));
     }
 
     private saveSortConfig(config: SortConfig) {
@@ -1277,7 +1363,7 @@ export class ProjectTable {
 
             // Add fields in stored order
             for (const fieldId of order) {
-                const field = this.fields.find(f => f.id === fieldId);
+                const field = this.fields.find(f => String(f.id) === String(fieldId));
                 if (field) {
                     orderedFields.push(field);
                 }

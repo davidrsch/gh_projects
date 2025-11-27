@@ -46,12 +46,20 @@ export class ProjectDataService {
             { first, viewFilter }
         );
 
+        // Preserve a copy of the full fields list so the webview/client can
+        // determine which fields are hidden by the view definition (view.details.fields)
+        const originalFields = Array.isArray(snapshot.fields) ? snapshot.fields.slice() : [];
+
         // 4. Process Fields (Filter & Reorder based on View)
         let effectiveSnapshot: any = snapshot;
         if (view && (view as any).details) {
             // Preserve snapshot immutably and attach view details.
             effectiveSnapshot = { ...effectiveSnapshot, details: (view as any).details } as ProjectSnapshot;
         }
+        // Always expose the original full fields list on the snapshot under `allFields` so
+        // the client can see which fields were present in the project vs the view.
+        effectiveSnapshot = { ...effectiveSnapshot, allFields: originalFields };
+
         if (view && (view as any).details && Array.isArray(effectiveSnapshot.fields)) {
             try {
                 const vd = (view as any).details;
@@ -75,60 +83,18 @@ export class ProjectDataService {
 
                     // If matches were found, reorder fields and also reorder each item's fieldValues
                     if (ordered.length > 0) {
-                        const orderedFieldIds = ordered.map((f: any) =>
-                            String(f.id ?? f.name ?? "")
-                        );
-
-                        // Rebuild items' fieldValues to match orderedFieldIds
-                        const newItems = (effectiveSnapshot.items || []).map(
-                            (it: any) => {
-                                const fv = Array.isArray(it.fieldValues)
-                                    ? it.fieldValues
-                                    : [];
-                                const mapped = orderedFieldIds.map((fid: string) => {
-                                    // Prefer match by fieldId
-                                    const found = fv.find(
-                                        (v: any) =>
-                                            v &&
-                                            (String(v.fieldId) === fid ||
-                                                String(v.fieldName || "") === fid)
-                                    );
-                                    if (found) return found;
-                                    // Fallback: attempt to match using raw metadata
-                                    const foundAlt = fv.find((v: any) => {
-                                        try {
-                                            return (
-                                                (v &&
-                                                    v.raw &&
-                                                    v.raw.field &&
-                                                    String(v.raw.field.id) === fid) ||
-                                                (v &&
-                                                    v.raw &&
-                                                    v.raw.field &&
-                                                    String(v.raw.field.name) === fid)
-                                            );
-                                        } catch (e) {
-                                            return false;
-                                        }
-                                    });
-                                    // If still not found, return a missing placeholder for that field
-                                    return (
-                                        foundAlt || {
-                                            type: "missing",
-                                            fieldId: fid,
-                                            raw: null,
-                                        }
-                                    );
-                                });
-                                return { ...it, fieldValues: mapped };
-                            }
-                        );
-
+                        // When a view defines an explicit field ordering (and thus implicitly the
+                        // visible fields), expose that ordering as `fields` while preserving the
+                        // original `items` and their full `fieldValues`. This ensures the client
+                        // receives the complete project-level item data (including hidden fields)
+                        // and can decide which fields to render when the user shows/hides columns.
                         effectiveSnapshot = {
                             ...effectiveSnapshot,
+                            allFields: originalFields,
                             fields: ordered,
-                            items: newItems,
-                            details: (view as any)?.details
+                            // keep original items intact so hidden fields remain available
+                            items: effectiveSnapshot.items,
+                            details: (view as any)?.details,
                         } as ProjectSnapshot;
                     }
                 }

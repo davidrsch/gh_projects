@@ -46,7 +46,9 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
 
     // Init Filter Bar
     // Track unsaved view-level changes (grouping) and wire Save/Discard hooks
-    let unsavedGrouping: string | null = null;
+      let unsavedGrouping: string | null = null;
+      // Track unsaved hidden fields changes (shown/hidden via the plus-column menu)
+      let unsavedHiddenFields: Set<string> | null = null;
     let barApi = initFilterBar(filterWrapper, viewKey, {
       suffix: viewKey ? String(viewKey).split(":").pop() : "",
       step: itemsLimit,
@@ -56,6 +58,7 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
       },
       onSave: (newFilter: any) => {
         try {
+          // Save grouping if changed
           if (unsavedGrouping !== null) {
             if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
               (window as any).__APP_MESSAGING__.postMessage({
@@ -66,10 +69,29 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
             }
             unsavedGrouping = null;
           }
+
+          // Save hidden fields if changed
+          if (unsavedHiddenFields !== null) {
+            const hiddenArr = Array.from(unsavedHiddenFields);
+            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+              (window as any).__APP_MESSAGING__.postMessage({
+                command: "setViewHiddenFields",
+                viewKey: viewKey,
+                hiddenFields: hiddenArr,
+              });
+            }
+            // Persist to localStorage as well so UI persists across reloads (server may also return updated snapshot)
+            try {
+              const key = viewKey ? `ghProjects.table.${viewKey}.hiddenFields` : null;
+              if (key) localStorage.setItem(key, JSON.stringify(hiddenArr));
+            } catch (e) { }
+            unsavedHiddenFields = null;
+          }
         } catch (e) { }
       },
       onDiscard: () => {
         try {
+          // Discard grouping changes
           if (unsavedGrouping !== null) {
             if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
               (window as any).__APP_MESSAGING__.postMessage({
@@ -78,6 +100,19 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
               });
             }
             unsavedGrouping = null;
+          }
+
+          // Discard hidden fields changes: request fresh snapshot from extension
+          if (unsavedHiddenFields !== null) {
+            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+              (window as any).__APP_MESSAGING__.postMessage({
+                command: "discardViewHiddenFields",
+                viewKey: viewKey,
+              });
+            }
+            unsavedHiddenFields = null;
+            // Re-request fields to refresh UI from server state
+            requestFields();
           }
         } catch (e) { }
       }
@@ -151,10 +186,55 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
     }
 
     // Render Table
-    const table = new ProjectTable(tableContainer, fields, displayItems, {
+    // Use `allFields` if provided (full project fields), otherwise fall back to `fields` (view-visible fields)
+    const allFields = (snapshot as any).allFields && Array.isArray((snapshot as any).allFields) ? (snapshot as any).allFields : (snapshot.fields || []);
+
+    // Determine which fields the view exposes (visible). If view details contain a fields.nodes
+    // list, compute the hidden fields (allFields - viewFields) and pass them to ProjectTable so
+    // it picks up view-default hidden fields.
+    const viewFieldNodes = (snapshot as any).details && (snapshot as any).details.fields && Array.isArray((snapshot as any).details.fields.nodes)
+      ? (snapshot as any).details.fields.nodes
+      : null;
+
+    let viewHiddenFieldIds: string[] | undefined = undefined;
+    if (viewFieldNodes && Array.isArray(viewFieldNodes)) {
+      const visibleIds = new Set(viewFieldNodes.map((n: any) => String(n.id)));
+      viewHiddenFieldIds = (allFields || []).map((f: any) => String(f.id)).filter((id: string) => !visibleIds.has(id));
+    }
+
+    // Send debug info to extension output (via postMessage) so we can see what the webview computed
+    try {
+      const dbg = {
+        allFieldIds: (allFields || []).map((f: any) => String(f.id)),
+        viewFieldIds: viewFieldNodes ? viewFieldNodes.map((n: any) => String(n.id)) : null,
+        viewHiddenFieldIds,
+      };
+      if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+        (window as any).__APP_MESSAGING__.postMessage({ command: 'debugLog', level: 'debug', message: 'tableViewFetcher field debug', data: dbg, viewKey });
+      }
+    } catch (e) { }
+
+    const table = new ProjectTable(tableContainer, allFields, displayItems, {
       groupingFieldName: groupingFieldName || undefined,
       sortConfig,
       viewKey,
+      hiddenFields: viewHiddenFieldIds,
+      onHiddenFieldsChange: (hiddenIds: string[]) => {
+        try {
+          unsavedHiddenFields = new Set((hiddenIds || []).map((h: any) => String(h)));
+          // Enable Save/Discard buttons in the filter bar if present
+          if (barApi && barApi.saveBtn && barApi.discardBtn) {
+            try {
+              barApi.saveBtn.disabled = false;
+              barApi.discardBtn.disabled = false;
+              barApi.saveBtn.style.opacity = "1";
+              barApi.saveBtn.style.cursor = "pointer";
+              barApi.discardBtn.style.opacity = "1";
+              barApi.discardBtn.style.cursor = "pointer";
+            } catch (e) { }
+          }
+        } catch (e) { }
+      },
       onSortChange: () => requestFields(),
       onGroupChange: (fieldName: string) => {
         // Defer persistence of grouping until user explicitly Saves from the filter bar
