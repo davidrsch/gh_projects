@@ -46,9 +46,9 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
 
     // Init Filter Bar
     // Track unsaved view-level changes (grouping) and wire Save/Discard hooks
-      let unsavedGrouping: string | null = null;
-      // Track unsaved hidden fields changes (shown/hidden via the plus-column menu)
-      let unsavedHiddenFields: Set<string> | null = null;
+    let unsavedGrouping: string | null = null;
+    // Track unsaved hidden fields changes (shown/hidden via the plus-column menu)
+    let unsavedHiddenFields: Set<string> | null = null;
     let barApi = initFilterBar(filterWrapper, viewKey, {
       suffix: viewKey ? String(viewKey).split(":").pop() : "",
       step: itemsLimit,
@@ -174,9 +174,9 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
     // Check for local override
     if (viewKey) {
       try {
-          const stored = localStorage.getItem(`ghProjects.table.${viewKey}.sortConfig`);
-          if (stored) sortConfig = JSON.parse(stored);
-        } catch (e) { }
+        const stored = localStorage.getItem(`ghProjects.table.${viewKey}.sortConfig`);
+        if (stored) sortConfig = JSON.parse(stored);
+      } catch (e) { }
     }
 
     // Apply sorting
@@ -250,6 +250,20 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
             } catch (e) { }
+          }
+        } catch (e) { }
+      },
+      onSliceChange: (field: any) => {
+        // Slice is a transient UI operation (no persistence needed)
+        // Just log for debugging purposes
+        try {
+          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+            (window as any).__APP_MESSAGING__.postMessage({
+              command: "debugLog",
+              level: "debug",
+              message: field ? `Slice activated on field: ${field.name}` : "Slice cleared",
+              viewKey: viewKey
+            });
           }
         } catch (e) { }
       }

@@ -64,9 +64,18 @@ export class ProjectTable {
     }
 
     public render() {
+        // Preserve slice panel if it exists
+        const existingSlicePanel = this.container.querySelector('.slice-panel');
+
         this.container.innerHTML = "";
 
+        // Re-add slice panel if it existed
+        if (existingSlicePanel) {
+            this.container.appendChild(existingSlicePanel);
+        }
+
         const tableContainer = document.createElement("div");
+        tableContainer.className = "table-wrapper";
         tableContainer.style.overflowX = "auto";
         tableContainer.style.overflowY = "auto";
         tableContainer.style.width = "100%";
@@ -540,7 +549,7 @@ export class ProjectTable {
                     return null;
                 })();
                 if (avatarUrl) {
-                    avatarEl.innerHTML = '<span title="' + (escapeHtml((group.option && (group.option.login || group.option.name)) || 'Assignee') ) + '" style="display:inline-block;width:20px;height:20px;border-radius:50%;overflow:hidden;background-size:cover;background-position:center;background-image:url(' + escapeHtml(avatarUrl) + ');border:2px solid var(--vscode-editor-background)"></span>';
+                    avatarEl.innerHTML = '<span title="' + (escapeHtml((group.option && (group.option.login || group.option.name)) || 'Assignee')) + '" style="display:inline-block;width:20px;height:20px;border-radius:50%;overflow:hidden;background-size:cover;background-position:center;background-image:url(' + escapeHtml(avatarUrl) + ');border:2px solid var(--vscode-editor-background)"></span>';
                     leftPane.appendChild(avatarEl);
                 } else {
                     leftPane.appendChild(colorDot);
@@ -897,7 +906,7 @@ export class ProjectTable {
         });
 
         const groupsArr = Array.from(map.values());
-            if (unassignedFallback.length > 0) {
+        if (unassignedFallback.length > 0) {
             groupsArr.push({ option: { name: "Unassigned", title: "Unassigned", color: "GRAY" }, items: unassignedFallback });
         }
 
@@ -1062,6 +1071,8 @@ export class ProjectTable {
             this.activeSlicePanel.close();
             this.activeSlicePanel = null;
         }
+        // Reset container layout
+        this.container.style.display = 'block';
         this.render();
         if (this.options.onSliceChange) {
             this.options.onSliceChange(null as any);
@@ -1185,7 +1196,7 @@ export class ProjectTable {
         // Append to body
         document.body.appendChild(menu);
         document.body.appendChild(backdrop);
-        
+
         // End of showHiddenFieldsMenu
     }
 
@@ -1224,18 +1235,23 @@ export class ProjectTable {
             this.activeSlicePanel = null;
         }
 
-        // Create and show new panel in the table container (left side)
+        // Create and show new panel in the container (left side)
         this.activeSlicePanel = new SlicePanel(this.container, field, this.items);
         this.activeSlicePanel.render();
 
-        // Make sure the slice panel appears before the table
-        const table = this.container.querySelector('table');
-        if (table) {
+        // Make sure the slice panel appears before the table wrapper
+        const tableWrapper = this.container.querySelector('.table-wrapper');
+        if (tableWrapper) {
             const sliceEl = this.container.querySelector('.slice-panel');
             if (sliceEl) {
-                this.container.insertBefore(sliceEl, table);
+                this.container.insertBefore(sliceEl, tableWrapper);
             }
         }
+
+        // Setup layout: container should use flexbox to show panel + table side by side
+        this.container.style.display = 'flex';
+        this.container.style.flexDirection = 'row';
+        this.container.style.gap = '0';
 
         this.activeSlicePanel.onValueSelect((value) => {
             // Filter table by this value
