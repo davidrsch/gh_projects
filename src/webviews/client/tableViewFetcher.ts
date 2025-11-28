@@ -12,7 +12,7 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
 
   let itemsLimit = 30;
 
-  function render(payload: any) {
+  function render(payload: any, effectiveFilter?: string) {
     const snapshot = payload || {};
     const fields = snapshot.fields || [];
     const allItems = snapshot.items || [];
@@ -154,6 +154,15 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
         } catch (e) { }
       }
     });
+
+    // If the server provided an effective filter, apply it via the bar API
+    // rather than passing it in the options object. This avoids typing
+    // mismatches while still initializing the input value at runtime.
+    try {
+      if (effectiveFilter && barApi && typeof barApi.setEffectiveFilter === "function") {
+        try { barApi.setEffectiveFilter(effectiveFilter); } catch (e) { }
+      }
+    } catch (e) { }
 
     // Fallback Header if Filter Bar fails or returns null
     if (!barApi) {
@@ -347,7 +356,7 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
         if (msg.error) {
           setErrorState(container, viewName, String(msg.error));
         } else {
-          render(msg.payload);
+            render(msg.payload, msg.effectiveFilter);
         }
       }
     } catch (e) { }

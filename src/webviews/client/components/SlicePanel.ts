@@ -218,7 +218,22 @@ export class SlicePanel {
 
         sliceableFields.forEach(field => {
             const item = document.createElement('div');
-            item.textContent = field.name;
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+
+            // Icon for field type
+            const iconSpan = document.createElement('span');
+            iconSpan.style.display = 'inline-flex';
+            iconSpan.style.alignItems = 'center';
+            iconSpan.style.justifyContent = 'center';
+            iconSpan.style.width = '18px';
+            iconSpan.style.marginRight = '8px';
+            iconSpan.innerHTML = this.getIconForDataType((field.dataType || '').toString().toLowerCase());
+            item.appendChild(iconSpan);
+
+            const labelSpan = document.createElement('span');
+            labelSpan.textContent = field.name;
+            item.appendChild(labelSpan);
             item.style.padding = '8px 12px';
             item.style.cursor = 'pointer';
             item.style.fontSize = '13px';
@@ -270,6 +285,47 @@ export class SlicePanel {
 
         document.body.appendChild(backdrop);
         document.body.appendChild(dropdown);
+    }
+
+    /**
+     * Return inline SVG HTML for a given dataType. Uses simple placeholders/paths
+     * so icons align with the FieldsMenu's visuals.
+     */
+    private getIconForDataType(dataType: string): string {
+        const svg = (cls: string, inner: string) => {
+            if (inner && (inner.startsWith('<') || inner.startsWith('__OCTICON_'))) {
+                return `<svg class="octicon ${cls}" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">${inner}</svg>`;
+            }
+            return `<svg class="octicon ${cls}" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="${inner}"/></svg>`;
+        };
+
+        switch ((dataType || '').toLowerCase()) {
+            case 'assignees':
+            case 'reviewers':
+                return svg('octicon-people', 'M2 5.5a3.5 3.5 0 1 1 5.898 2.549 5.508 5.508 0 0 1 3.034 4.084.75.75 0 1 1-1.482.235 4 4 0 0 0-7.9 0 .75.75 0 0 1-1.482-.236A5.507 5.507 0 0 1 3.102 8.05 3.493 3.493 0 0 1 2 5.5ZM11 4a3.001 3.001 0 0 1 2.22 5.018 5.01 5.01 0 0 1 2.56 3.012.749.749 0 0 1-.885.954.752.752 0 0 1-.549-.514 3.507 3.507 0 0 0-2.522-2.372.75.75 0 0 1-.574-.73v-.352a.75.75 0 0 1 .416-.672A1.5 1.5 0 0 0 11 5.5.75.75 0 0 1 11 4Zm-5.5-.5a2 2 0 1 0-.001 3.999A2 2 0 0 0 5.5 3.5Z');
+            case 'single_select':
+                return svg('octicon-single-select', '<path d="m5.06 7.356 2.795 2.833c.08.081.21.081.29 0l2.794-2.833c.13-.131.038-.356-.145-.356H5.206c-.183 0-.275.225-.145.356Z"></path><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 13.25 15H2.75A1.75 1.75 0 0 1 1 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25Z"></path>');
+            case 'labels':
+                return svg('octicon-tag', '<path d="M1 7.775V2.75C1 1.784 1.784 1 2.75 1h5.025c.464 0 .91.184 1.238.513l6.25 6.25a1.75 1.75 0 0 1 0 2.474l-5.026 5.026a1.75 1.75 0 0 1-2.474 0l-6.25-6.25A1.752 1.752 0 0 1 1 7.775Zm1.5 0c0 .066.026.13.073.177l6.25 6.25a.25.25 0 0 0 .354 0l5.025-5.025a.25.25 0 0 0 0-.354l-6.25-6.25a.25.25 0 0 0-.177-.073H2.75a.25.25 0 0 0-.25.25"></path>');
+            case 'parent_issue':
+                return svg('octicon-issue-tracks', '<path d="M1.5 8a6.5 6.5 0 0 1 13 0A.75.75 0 0 0 16 8a8 8 0 1 0-8 8 .75.75 0 0 0 0-1.5A6.5 6.5 0 0 1 1.5 8Z"></path><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm3.573 5.823-2.896-2.896a.25.25 0 0 1 0-.354l2.896-2.896a.25.25 0 0 1 .427.177V11.5h3.25a.75.75 0 0 1 0 1.5H12v2.146a.25.25 0 0 1-.427.177Z"></path>');
+            case 'iteration':
+                return svg('octicon-iterations', '<path d="M2.5 7.25a4.75 4.75 0 0 1 9.5 0 .75.75 0 0 0 1.5 0 6.25 6.25 0 1 0-6.25 6.25H12v2.146c0 .223.27.335.427.177l2.896-2.896a.25.25 0 0 0 0-.354l-2.896-2.896a.25.25 0 0 0-.427.177V12H7.25A4.75 4.75 0 0 1 2.5 7.25Z"></path>');
+            case 'number':
+            case 'numeric':
+                return svg('octicon-number', '<path d="M9 4.75A.75.75 0 0 1 9.75 4h4a.75.75 0 0 1 .53 1.28l-1.89 1.892c.312.076.604.18.867.319.742.391 1.244 1.063 1.244 2.005 0 .653-.231 1.208-.629 1.627-.386.408-.894.653-1.408.777-1.01.243-2.225.063-3.124-.527a.751.751 0 0 1 .822-1.254c.534.35 1.32.474 1.951.322.306-.073.53-.201.67-.349.129-.136.218-.32.218-.596 0-.308-.123-.509-.444-.678-.373-.197-.98-.318-1.806-.318a.75.75 0 0 1-.53-1.28l1.72-1.72H9.75A.75.75 0 0 1 9 4.75Zm-3.587 5.763c-.35-.05-.77.113-.983.572a.75.75 0 1 1-1.36-.632c.508-1.094 1.589-1.565 2.558-1.425 1 .145 1.872.945 1.872 2.222 0 1.433-1.088 2.192-1.79 2.681-.308.216-.571.397-.772.573H7a.75.75 0 0 1 0 1.5H3.75a.75.75 0 0 1-.75-.75c0-.69.3-1.211.67-1.61.348-.372.8-.676 1.15-.92.8-.56 1.18-.904 1.18-1.474 0-.473-.267-.69-.587-.737ZM5.604.089A.75.75 0 0 1 6 .75v4.77h.711a.75.75 0 0 1 0 1.5H3.759a.75.75 0 0 1 0-1.5H4.5V2.15l-.334.223a.75.75 0 0 1-.832-1.248l1.5-1a.75.75 0 0 1 .77-.037Z"></path>');
+            case 'date':
+                return svg('octicon-calendar', '<path d="M4.75 0a.75.75 0 0 1 .75.75V2h5V.75a.75.75 0 0 1 1.5 0V2h1.25c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 13.25 16H2.75A1.75 1.75 0 0 1 1 14.25V3.75C1 2.784 1.784 2 2.75 2H4V.75A.75.75 0 0 1 4.75 0ZM2.5 7.5v6.75c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V7.5Zm10.75-4H2.75a.25.25 0 0 0-.25.25V6h11V3.75a.25.25 0 0 0-.25-.25Z"></path>');
+            case 'milestone':
+                return svg('octicon-milestone', '<path d="M7.75 0a.75.75 0 0 1 .75.75V3h3.634c.414 0 .814.147 1.13.414l2.07 1.75a1.75 1.75 0 0 1 0 2.672l-2.07 1.75a1.75 1.75 0 0 1-1.13.414H8.5v5.25a.75.75 0 0 1-1.5 0V10H2.75A1.75 1.75 0 0 1 1 8.25v-3.5C1 3.784 1.784 3 2.75 3H7V.75A.75.75 0 0 1 7.75 0Zm4.384 8.5a.25.25 0 0 0 .161-.06l2.07-1.75a.248.248 0 0 0 0-.38l-2.07-1.75a.25.25 0 0 0-.161-.06H2.75a.25.25 0 0 0-.25.25v3.5c0 .138.112.25.25.25h9.384Z"></path>');
+            case 'repository':
+                return svg('octicon-repo', '<path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5A.75.75 0 0 1 13.25 15h-9A1.5 1.5 0 0 1 2 13.5v-11zM3.5 2A.5.5 0 0 0 3 2.5V4h10V2.5a.5.5 0 0 0-.5-.5h-9z"/>');
+            case 'text':
+            case 'string':
+                return svg('octicon-typography', '__OCTICON_TYPOGRAPHY_PATH__');
+            default:
+                return svg('octicon-tag', '__OCTICON_TAG_PATH__');
+        }
     }
 
     /**

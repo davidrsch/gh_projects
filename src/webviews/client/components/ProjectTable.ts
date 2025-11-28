@@ -178,27 +178,46 @@ export class ProjectTable {
             // Check if this field is being sliced (either a value selected, or the slice panel is open for this field)
             const isSliced = (this.activeSlice && this.activeSlice.fieldId === field.id) || (this.activeSlicePanelFieldId && String(this.activeSlicePanelFieldId) === String(field.id));
 
-            // Icons container (for filter/group indicators)
+            // Icons container (for group / slice indicators)
             const iconsContainer = document.createElement('span');
             iconsContainer.style.display = 'flex';
             iconsContainer.style.alignItems = 'center';
-            iconsContainer.style.gap = '2px';
+            iconsContainer.style.gap = '6px';
 
-            // Add filter/funnel icon if grouped or sliced
-            if (isGrouped || isSliced) {
-                const filterIcon = document.createElement('span');
-                // SVG Funnel Icon - use currentColor so it matches surrounding text color
-                filterIcon.innerHTML = `<svg aria-hidden="true" height="12" viewBox="0 0 16 16" version="1.1" width="12" data-view-component="true" class="octicon octicon-filter"><path fill="currentColor" d="M.75 3h14.5a.75.75 0 0 1 .75.75v2a.75.75 0 0 1-.75.75H.75a.75.75 0 0 1-.75-.75v-2a.75.75 0 0 1 .75-.75zm0 1.5v.5h14.5v-.5H.75zM5 9.75A.75.75 0 0 1 5.75 9h4.5a.75.75 0 0 1 .75.75v2a.75.75 0 0 1-.75.75h-4.5a.75.75 0 0 1-.75-.75v-2zm1.5.5v.5h3v-.5h-3z"></path></svg>`;
-                filterIcon.style.display = "flex";
-                filterIcon.style.alignItems = "center";
-                // Use CSS color so SVG inherits the same text color
-                filterIcon.style.color = 'var(--vscode-foreground)';
-                filterIcon.style.opacity = '0.7';
-                filterIcon.title = isGrouped ? 'Grouped by this field' : 'Sliced by this field';
-                // Ensure the inner svg uses currentColor (some browsers need explicit style)
-                const innerSvg = filterIcon.querySelector('svg');
-                if (innerSvg) (innerSvg as SVGElement).style.fill = 'currentColor';
-                iconsContainer.appendChild(filterIcon);
+            // Show Group icon when this field is used for grouping
+            if (isGrouped) {
+                const groupIcon = document.createElement('span');
+                groupIcon.className = 'column-group-icon';
+                groupIcon.innerHTML = '<svg class="octicon octicon-rows" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M16 10.75v2.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25v-2.5C0 9.784.784 9 1.75 9h12.5c.966 0 1.75.784 1.75 1.75Zm0-8v2.5A1.75 1.75 0 0 1 14.25 7H1.75A1.75 1.75 0 0 1 0 5.25v-2.5C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75Zm-1.75-.25H1.75a.25.25 0 0 0-.25.25v2.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-2.5a.25.25 0 0 0-.25-.25Zm0 8H1.75a.25.25 0 0 0-.25.25v2.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-2.5a.25.25 0 0 0-.25-.25Z"></path></svg>';
+                groupIcon.style.display = 'inline-flex';
+                groupIcon.style.alignItems = 'center';
+                groupIcon.style.color = 'var(--vscode-foreground)';
+                groupIcon.style.opacity = '0.85';
+                groupIcon.title = 'Grouped by this field (click to clear)';
+                groupIcon.style.cursor = 'pointer';
+                groupIcon.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    this.clearGroup(field);
+                });
+                iconsContainer.appendChild(groupIcon);
+            }
+
+            // Show Slice icon when this field has an active slice
+            if (isSliced) {
+                const sliceIcon = document.createElement('span');
+                sliceIcon.className = 'column-slice-icon';
+                sliceIcon.innerHTML = '<svg class="octicon octicon-sliceby" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M14.5 1.5H6.5V5H10C10.4142 5 10.75 5.33579 10.75 5.75C10.75 6.16421 10.4142 6.5 10 6.5H6.5V7.75C6.5 8.16421 6.16421 8.5 5.75 8.5C5.33579 8.5 5 8.16421 5 7.75V6.5H1.5V14.5H5V12.75C5 12.3358 5.33579 12 5.75 12C6.16421 12 6.5 12.3358 6.5 12.75V14.5H14.5V1.5ZM5 1.5V5H1.5V1.5H5ZM0 14.5V5.75V1.5C0 0.671573 0.671573 0 1.5 0H5.75H14.5C15.3284 0 16 0.671573 16 1.5V14.5C16 15.3284 15.3284 16 14.5 16H5.75H1.5C0.671573 16 0 15.3284 0 14.5ZM9.62012 9.58516C10.8677 9.59206 11.8826 8.58286 11.8826 7.33544V6.32279C11.8826 5.90857 12.2184 5.57279 12.6326 5.57279C13.0468 5.57279 13.3826 5.90857 13.3826 6.32279V7.33544C13.3826 9.4147 11.6909 11.0966 9.61182 11.0851L9.3826 11.0839L9.3826 12.9995C9.3826 13.2178 9.12245 13.3312 8.96248 13.1827L6.07989 10.506C5.97337 10.4071 5.97337 10.2385 6.07989 10.1396L8.96248 7.46291C9.12245 7.31438 9.3826 7.42782 9.3826 7.64611V9.58384L9.62012 9.58516Z"></path></svg>';
+                sliceIcon.style.display = 'inline-flex';
+                sliceIcon.style.alignItems = 'center';
+                sliceIcon.style.color = 'var(--vscode-foreground)';
+                sliceIcon.style.opacity = '0.85';
+                sliceIcon.title = 'Sliced by this field (click to clear)';
+                sliceIcon.style.cursor = 'pointer';
+                sliceIcon.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    this.clearSlice(field);
+                });
+                iconsContainer.appendChild(sliceIcon);
             }
 
             // Menu button (⋮)
@@ -295,7 +314,7 @@ export class ProjectTable {
         } catch (e) { }
 
         const menu = new FieldsMenu({
-            fields: this.allFields.map(f => ({ id: f.id, name: f.name, iconClass: f.iconClass })),
+            fields: this.allFields.map(f => ({ id: f.id, name: f.name, iconClass: f.iconClass, dataType: (f.dataType || f.type) })),
             visibleFieldIds: visibleSet,
             onToggleVisibility: (fieldId: string, visible: boolean) => {
                 if (visible) this.showField(fieldId);
@@ -1035,6 +1054,10 @@ export class ProjectTable {
         const currentSort = (this.options.sortConfig && this.options.sortConfig.fieldId === field.id) ? this.options.sortConfig.direction : null;
 
         // Create and show menu
+        const fieldIndex = this.fields.findIndex(f => f.id === field.id);
+        const isFirst = fieldIndex === 0;
+        const isLast = fieldIndex === this.fields.length - 1;
+
         this.activeMenu = new ColumnHeaderMenu(field, {
             canGroup,
             canSlice,
@@ -1042,6 +1065,8 @@ export class ProjectTable {
             isGrouped,
             isSliced,
             currentSort,
+            isFirst,
+            isLast,
             onSort: (direction) => this.handleSort(field, direction),
             onClearSort: () => this.clearSort(field),
             onGroup: () => this.handleGroup(field),
@@ -1257,6 +1282,10 @@ export class ProjectTable {
         this.container.style.display = 'flex';
         this.container.style.flexDirection = 'row';
         this.container.style.gap = '0';
+
+        // Re-render so header reflects the active slice panel (shows slice icon)
+        // We preserve the existing slice panel in render(), so this is safe.
+        this.render();
 
         this.activeSlicePanel.onValueSelect((value) => {
             // Filter table by this value

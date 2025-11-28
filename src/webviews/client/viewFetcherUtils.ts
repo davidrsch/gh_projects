@@ -74,6 +74,7 @@ export function initFilterBar(
     options: {
         suffix?: string;
         step?: number;
+        effFilter?: string;
         onLoadMore?: () => void;
         onSave?: (filter: any) => void;
         onDiscard?: () => void;
@@ -87,7 +88,7 @@ export function initFilterBar(
             return window.filterBarHelper.create({
                 parent: container,
                 suffix: options.suffix || viewKey,
-                effFilter: undefined,
+                effFilter: typeof options.effFilter === 'string' ? options.effFilter : undefined,
                 viewKey: viewKey,
                 step: options.step || 50,
                 onLoadMore: options.onLoadMore,

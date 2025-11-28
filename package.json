@@ -155,6 +155,7 @@
   },
   "dependencies": {
     "@octokit/graphql": "^7.0.2",
+    "@primer/octicons": "^19.21.0",
     "@vscode-elements/elements": "^2.3.1",
     "express": "^4.18.2",
     "p-map": "^7.0.4"

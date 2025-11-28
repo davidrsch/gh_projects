@@ -21,7 +21,7 @@ function createBoardFetcher() {
 
     var first = 50;
 
-    function render(payload: any) {
+    function render(payload: any, effectiveFilter?: string) {
       try {
         var items = (payload && payload.items) || [];
         container.innerHTML = "";
@@ -34,6 +34,13 @@ function createBoardFetcher() {
             requestFields();
           },
         });
+
+        // If the server returned an effective filter, apply it via the bar API
+        try {
+          if (effectiveFilter && barApi && typeof barApi.setEffectiveFilter === "function") {
+            try { barApi.setEffectiveFilter(effectiveFilter); } catch (e) { }
+          }
+        } catch (e) { }
 
         if (!barApi) {
           var header = document.createElement("div");
@@ -143,7 +150,8 @@ function createBoardFetcher() {
             setErrorState(container, viewName, String(msg.error));
           } else {
             render(
-              msg.payload || (msg.payload && msg.payload.data) || msg.payload
+              msg.payload || (msg.payload && msg.payload.data) || msg.payload,
+              msg.effectiveFilter
             );
           }
         }
