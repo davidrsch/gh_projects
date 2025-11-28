@@ -49,6 +49,8 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
     let unsavedGrouping: string | null = null;
     // Track unsaved hidden fields changes (shown/hidden via the plus-column menu)
     let unsavedHiddenFields: Set<string> | null = null;
+    // Track unsaved slice changes
+    let unsavedSlice: { fieldId: string, value: any } | null = null;
     let barApi = initFilterBar(filterWrapper, viewKey, {
       suffix: viewKey ? String(viewKey).split(":").pop() : "",
       step: itemsLimit,
@@ -87,6 +89,23 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
             } catch (e) { }
             unsavedHiddenFields = null;
           }
+
+          // Save slice if changed
+          if (unsavedSlice !== null) {
+            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+              (window as any).__APP_MESSAGING__.postMessage({
+                command: "setViewSlice",
+                viewKey: viewKey,
+                slice: unsavedSlice,
+              });
+            }
+            // Persist to localStorage as well
+            try {
+              const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null;
+              if (key) localStorage.setItem(key, JSON.stringify(unsavedSlice));
+            } catch (e) { }
+            unsavedSlice = null;
+          }
         } catch (e) { }
       },
       onDiscard: () => {
@@ -111,6 +130,24 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
               });
             }
             unsavedHiddenFields = null;
+            // Re-request fields to refresh UI from server state
+            requestFields();
+          }
+
+          // Discard slice changes: clear slice and refresh UI
+          if (unsavedSlice !== null) {
+            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+              (window as any).__APP_MESSAGING__.postMessage({
+                command: "discardViewSlice",
+                viewKey: viewKey,
+              });
+            }
+            unsavedSlice = null;
+            // Clear localStorage
+            try {
+              const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null;
+              if (key) localStorage.removeItem(key);
+            } catch (e) { }
             // Re-request fields to refresh UI from server state
             requestFields();
           }
@@ -254,9 +291,23 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
         } catch (e) { }
       },
       onSliceChange: (field: any) => {
-        // Slice is a transient UI operation (no persistence needed)
-        // Just log for debugging purposes
+        // Track slice as unsaved change (requires Save/Discard)
         try {
+          unsavedSlice = field ? { fieldId: field.id, value: null } : null;
+
+          // Enable Save/Discard buttons in the filter bar if present
+          if (barApi && barApi.saveBtn && barApi.discardBtn) {
+            try {
+              barApi.saveBtn.disabled = false;
+              barApi.discardBtn.disabled = false;
+              barApi.saveBtn.style.opacity = "1";
+              barApi.saveBtn.style.cursor = "pointer";
+              barApi.discardBtn.style.opacity = "1";
+              barApi.discardBtn.style.cursor = "pointer";
+            } catch (e) { }
+          }
+
+          // Log for debugging
           if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
             (window as any).__APP_MESSAGING__.postMessage({
               command: "debugLog",

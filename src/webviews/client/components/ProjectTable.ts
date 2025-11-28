@@ -28,6 +28,8 @@ export class ProjectTable {
     private activeFieldsMenu: FieldsMenu | null = null;
     private activeSlicePanel: SlicePanel | null = null;
     private activeSlice: { fieldId: string, value: any } | null = null;
+    // Track which field the active slice panel is for (panel may be open before a value is selected)
+    private activeSlicePanelFieldId: string | null = null;
 
     constructor(container: HTMLElement, fields: any[], items: any[], options: TableOptions = {}) {
         this.container = container;
@@ -173,8 +175,8 @@ export class ProjectTable {
             // Check if this field is grouped
             const isGrouped = field.name?.toLowerCase() === this.options.groupingFieldName?.toLowerCase();
 
-            // Check if this field is being sliced
-            const isSliced = this.activeSlice?.fieldId === field.id;
+            // Check if this field is being sliced (either a value selected, or the slice panel is open for this field)
+            const isSliced = (this.activeSlice && this.activeSlice.fieldId === field.id) || (this.activeSlicePanelFieldId && String(this.activeSlicePanelFieldId) === String(field.id));
 
             // Icons container (for filter/group indicators)
             const iconsContainer = document.createElement('span');
@@ -1029,7 +1031,7 @@ export class ProjectTable {
 
         // Determine current state (grouped/sliced/sorted)
         const isGrouped = !!(this.options.groupingFieldName && field.name && field.name.toLowerCase() === this.options.groupingFieldName.toLowerCase());
-        const isSliced = !!(this.activeSlice && this.activeSlice.fieldId === field.id);
+        const isSliced = !!((this.activeSlice && this.activeSlice.fieldId === field.id) || (this.activeSlicePanelFieldId && String(this.activeSlicePanelFieldId) === String(field.id)));
         const currentSort = (this.options.sortConfig && this.options.sortConfig.fieldId === field.id) ? this.options.sortConfig.direction : null;
 
         // Create and show menu
@@ -1071,6 +1073,7 @@ export class ProjectTable {
             this.activeSlicePanel.close();
             this.activeSlicePanel = null;
         }
+        this.activeSlicePanelFieldId = null;
         // Reset container layout
         this.container.style.display = 'block';
         this.render();
@@ -1236,8 +1239,10 @@ export class ProjectTable {
         }
 
         // Create and show new panel in the container (left side)
-        this.activeSlicePanel = new SlicePanel(this.container, field, this.items);
+        this.activeSlicePanel = new SlicePanel(this.container, field, this.items, this.allFields);
         this.activeSlicePanel.render();
+        // Remember which field the panel belongs to so header menu can show an "unslice" button
+        try { this.activeSlicePanelFieldId = String(field.id); } catch (e) { this.activeSlicePanelFieldId = null; }
 
         // Make sure the slice panel appears before the table wrapper
         const tableWrapper = this.container.querySelector('.table-wrapper');
@@ -1257,6 +1262,18 @@ export class ProjectTable {
             // Filter table by this value
             this.activeSlice = { fieldId: field.id, value };
             this.render();
+        });
+
+        // Handle field change
+        this.activeSlicePanel.onFieldChange((newField) => {
+            // Update active slice field
+            this.activeSlice = null; // Reset slice value when changing field
+            this.handleSlice(newField); // Re-render with new field
+
+            // Notify parent
+            if (this.options.onSliceChange) {
+                this.options.onSliceChange(newField);
+            }
         });
 
         // Notify parent
