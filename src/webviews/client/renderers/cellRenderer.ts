@@ -528,30 +528,23 @@ export function renderCell(e: any, n: any, s: any, allItems: any) {
                     else pct = Math.round((doneCount / totalCount) * 100);
                     if (pct == null || !isFinite(pct)) return "";
                     pct = Math.max(0, Math.min(100, pct));
-                    // Build segmented bar: one segment per total; filled segments show full color,
-                    // remaining segments show only border using the active theme color.
-                    let segs: string[] = [];
-                    for (let si = 0; si < totalCount; si++) {
-                        if (si < doneCount) {
-                            segs.push(
-                                '<div class="sub-issues-segment sub-issues-segment-filled" style="flex:1;min-width:0;height:12px;border-radius:4px;background:var(--vscode-focusBorder);box-sizing:border-box"></div>'
-                            );
-                        } else {
-                            segs.push(
-                                '<div class="sub-issues-segment sub-issues-segment-empty" style="flex:1;min-width:0;height:12px;border-radius:4px;border:1px solid var(--vscode-focusBorder);background:transparent;box-sizing:border-box"></div>'
-                            );
-                        }
-                    }
-                    return (
-                        '<div class="sub-issues-progress" style="display:flex;align-items:center;gap:8px;width:100%">' +
-                        '<div class="sub-issues-progress-bar" style="flex:1;min-width:0;display:flex;gap:4px;align-items:center">' +
-                        segs.join("") +
-                        "</div>" +
+                    // Render a single pill-style progress bar (matching group header style)
+                    const barHtml =
+                        '<div class="sub-issues-progress" style="display:flex;align-items:center;gap:8px;width:100%;">' +
+                        // flexible bar container
+                        '<div class="sub-issues-progress-bar" style="flex:1;min-width:0">' +
+                        // outer bar: border + rounded corners, inner fill width is pct%
+                        '<div style="width:100%;height:12px;border-radius:6px;border:1px solid var(--vscode-focusBorder);overflow:hidden;background:transparent;box-sizing:border-box">' +
+                        '<div style="height:100%;width:' + String(pct) + '%;background:var(--vscode-focusBorder)"></div>' +
+                        '</div>' +
+                        '</div>' +
+                        // percentage text
                         '<div class="sub-issues-progress-pct" style="min-width:44px;text-align:right;font-variant-numeric:tabular-nums;color:var(--vscode-descriptionForeground)">' +
                         escapeHtml(String(pct) + "%") +
-                        "</div>" +
-                        "</div>"
-                    );
+                        '</div>' +
+                        '</div>';
+
+                    return barHtml;
                 } catch (e) {
                     return "";
                 }
