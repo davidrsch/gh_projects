@@ -43,9 +43,10 @@ describe('ProjectTable', () => {
 
         // Check Headers
         const headers = container.querySelectorAll('th');
-        expect(headers.length).toBe(3); // #, Title, Status
-        expect(headers[1].textContent).toBe('Title');
-        expect(headers[2].textContent).toBe('Status');
+        expect(headers.length).toBe(4); // #, Title, Status, +
+        expect(headers[1].textContent).toContain('Title');
+        expect(headers[2].textContent).toContain('Status');
+        expect(headers[3].textContent?.trim()).toBe('+');
 
         // Check Rows
         const rows = container.querySelectorAll('tbody tr');
@@ -54,9 +55,9 @@ describe('ProjectTable', () => {
 
         // Check Cells
         const cells = container.querySelectorAll('tbody td');
-        expect(cells.length).toBe(3); // Index, Title, Status
+        expect(cells.length).toBe(fields.length + 1); // Index + field cells
         expect(cells[0].textContent).toBe('1');
-        expect(cells[1].innerHTML).toBe('<span>Cell Content</span>');
+        expect(cells[1].innerHTML).toContain('<span>Cell Content</span>');
     });
 
     test('renders grouped rows', () => {

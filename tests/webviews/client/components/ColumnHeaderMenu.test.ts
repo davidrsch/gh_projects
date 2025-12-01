@@ -47,15 +47,15 @@ describe('ColumnHeaderMenu', () => {
         expect(items).toBeTruthy();
 
         // Should have: Header, Sort asc, Sort desc, Group, Slice, Filter, Hide, Move left, Move right
-        const textContents = Array.from(items || []).map(item => item.textContent);
-        expect(textContents).toContain('Sort ascending ↑');
-        expect(textContents).toContain('Sort descending ↓');
+        const textContents = Array.from(items || []).map(item => item.textContent?.trim() || '');
+        expect(textContents).toContain('Sort ascending');
+        expect(textContents).toContain('Sort descending');
         expect(textContents).toContain('Group by values');
         expect(textContents).toContain('Slice by values');
         expect(textContents).toContain('Filter by values...');
         expect(textContents).toContain('Hide field');
-        expect(textContents).toContain('Move left ←');
-        expect(textContents).toContain('Move right →');
+        expect(textContents).toContain('Move left');
+        expect(textContents).toContain('Move right');
     });
 
     test('hides group option when canGroup is false', () => {
@@ -69,7 +69,7 @@ describe('ColumnHeaderMenu', () => {
         menu.show(container);
 
         const items = document.querySelectorAll('.menu-item');
-        const textContents = Array.from(items).map(item => item.textContent);
+        const textContents = Array.from(items).map(item => item.textContent?.trim() || '');
 
         expect(textContents).not.toContain('Group by values');
         expect(textContents).toContain('Slice by values');
@@ -86,7 +86,7 @@ describe('ColumnHeaderMenu', () => {
         menu.show(container);
 
         const items = document.querySelectorAll('.menu-item');
-        const textContents = Array.from(items).map(item => item.textContent);
+        const textContents = Array.from(items).map(item => item.textContent?.trim() || '');
 
         expect(textContents).toContain('Group by values');
         expect(textContents).not.toContain('Slice by values');
@@ -104,7 +104,7 @@ describe('ColumnHeaderMenu', () => {
         menu.show(container);
 
         const sortAscItem = Array.from(document.querySelectorAll('.menu-item'))
-            .find(item => item.textContent === 'Sort ascending ↑');
+            .find(item => item.textContent?.trim() === 'Sort ascending');
 
         expect(sortAscItem).toBeTruthy();
         (sortAscItem as HTMLElement).click();
@@ -124,7 +124,7 @@ describe('ColumnHeaderMenu', () => {
         menu.show(container);
 
         const sortDescItem = Array.from(document.querySelectorAll('.menu-item'))
-            .find(item => item.textContent === 'Sort descending ↓');
+            .find(item => item.textContent?.trim() === 'Sort descending');
 
         expect(sortDescItem).toBeTruthy();
         (sortDescItem as HTMLElement).click();
@@ -144,7 +144,7 @@ describe('ColumnHeaderMenu', () => {
         menu.show(container);
 
         const groupItem = Array.from(document.querySelectorAll('.menu-item'))
-            .find(item => item.textContent === 'Group by values');
+            .find(item => item.textContent?.trim() === 'Group by values');
 
         expect(groupItem).toBeTruthy();
         (groupItem as HTMLElement).click();
@@ -164,7 +164,7 @@ describe('ColumnHeaderMenu', () => {
         menu.show(container);
 
         const sliceItem = Array.from(document.querySelectorAll('.menu-item'))
-            .find(item => item.textContent === 'Slice by values');
+            .find(item => item.textContent?.trim() === 'Slice by values');
 
         expect(sliceItem).toBeTruthy();
         (sliceItem as HTMLElement).click();
@@ -184,7 +184,7 @@ describe('ColumnHeaderMenu', () => {
         menu.show(container);
 
         const hideItem = Array.from(document.querySelectorAll('.menu-item'))
-            .find(item => item.textContent === 'Hide field');
+            .find(item => item.textContent?.trim() === 'Hide field');
 
         expect(hideItem).toBeTruthy();
         (hideItem as HTMLElement).click();
@@ -204,7 +204,7 @@ describe('ColumnHeaderMenu', () => {
         menu.show(container);
 
         const moveLeftItem = Array.from(document.querySelectorAll('.menu-item'))
-            .find(item => item.textContent === 'Move left ←');
+            .find(item => item.textContent?.trim() === 'Move left');
 
         expect(moveLeftItem).toBeTruthy();
         (moveLeftItem as HTMLElement).click();
@@ -224,7 +224,7 @@ describe('ColumnHeaderMenu', () => {
         menu.show(container);
 
         const moveRightItem = Array.from(document.querySelectorAll('.menu-item'))
-            .find(item => item.textContent === 'Move right →');
+            .find(item => item.textContent?.trim() === 'Move right');
 
         expect(moveRightItem).toBeTruthy();
         (moveRightItem as HTMLElement).click();
