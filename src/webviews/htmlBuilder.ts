@@ -46,6 +46,9 @@ export function buildHtml(
   // Use classic scripts (no type="module") so they execute synchronously
   const fetcherScripts = fetcherUris
     ? [
+      ...(vscodeShimUri
+        ? [`<script nonce="${nonce}" src="${vscodeShimUri}"></script>`]
+        : []),
       ...(fetcherUris.helperUri
         ? [
           `<script nonce="${nonce}" src="${fetcherUris.helperUri.toString()}"></script>`,
@@ -283,6 +286,136 @@ ${fetcherScripts}
   // Select first tab by default
   if (allTabs.length > 0) {
     showTab(allTabs[0].key, tabsContainer.children[0]);
+  }
+
+  // Test infrastructure for integration tests
+  (function() {
+      let vscode = undefined;
+      
+      try {
+          vscode = acquireVsCodeApi();
+          window.vscodeApi = vscode;
+      } catch (e) {
+          if (window.vscodeApi) {
+              vscode = window.vscodeApi;
+          } else if (window.__APP_MESSAGING__) {
+              // Wrap it to look like vscode api
+              vscode = {
+                  postMessage: (msg) => window.__APP_MESSAGING__.postMessage(msg)
+              };
+          }
+      }
+
+      if (vscode) {
+          // Send ready message
+          vscode.postMessage({ command: 'test:ready', from: 'test-infra' });
+          
+          window.addEventListener('message', (event) => {
+              const msg = event.data;
+              if (msg && msg.command && msg.command.startsWith('test:')) {
+                  handleTestCommand(msg, vscode);
+              }
+          });
+      }
+  })();
+
+  function handleTestCommand(msg, vscode) {
+    console.log('[Webview] Handling test command:', msg.command);
+    const { command, requestId } = msg;
+    
+    try {
+      let result = null;
+
+      switch (command) {
+        case 'test:getProjectInfo':
+          result = {
+            projectTitle: project.title,
+            totalViews: project.views?.length || 0,
+            viewNames: (project.views || []).map(v => v.name || v.id),
+            views: (project.views || []).map((v, i) => ({ 
+                index: i, 
+                name: v.name || v.id, 
+                layout: v.layout || 'table' 
+            }))
+          };
+          break;
+// ... rest of the function ...
+
+        case 'test:clickTab':
+          const tabIndex = msg.tabIndex;
+          const tabs = tabsContainer.querySelectorAll('.tab');
+          if (tabs[tabIndex]) {
+            tabs[tabIndex].click();
+            result = { success: true, tabIndex };
+          } else {
+            result = { success: false, error: 'Tab not found', tabIndex };
+          }
+          break;
+
+        case 'test:getTableInfo':
+          // Find visible panel
+          const visiblePanel = Array.from(panelsContainer.children).find(p => p.style.display !== 'none');
+          if (!visiblePanel) {
+             result = { hasContainer: false, rowCount: 0, sliceItemCount: 0, error: 'No visible panel' };
+          } else {
+             const rows = visiblePanel.querySelectorAll('[data-gh-item-id]');
+             const sliceItems = visiblePanel.querySelectorAll('.slice-value-item');
+             // Consider it a table view if it has rows (table items)
+             result = {
+                hasContainer: rows.length > 0,
+                rowCount: rows.length,
+                sliceItemCount: sliceItems.length,
+                firstRowId: rows.length > 0 ? rows[0].getAttribute('data-gh-item-id') : null
+             };
+          }
+          break;
+
+        case 'test:clickRow':
+          const rowIndex = msg.rowIndex || 0;
+          const tableRows = panelsContainer.querySelectorAll('[data-gh-item-id]');
+          if (tableRows[rowIndex]) {
+            tableRows[rowIndex].click();
+            result = { success: true, rowIndex, itemId: tableRows[rowIndex].getAttribute('data-gh-item-id') };
+          } else {
+            result = { success: false, error: 'Row not found', rowIndex };
+          }
+          break;
+
+        case 'test:getStyles':
+          const selector = msg.selector;
+          const element = panelsContainer.querySelector(selector);
+          if (element) {
+            const styles = window.getComputedStyle(element);
+            result = {
+              success: true,
+              color: styles.color,
+              backgroundColor: styles.backgroundColor,
+              fontSize: styles.fontSize,
+              display: styles.display
+            };
+          } else {
+            result = { success: false, error: 'Element not found' };
+          }
+          break;
+
+        default:
+          result = { error: 'Unknown test command: ' + command };
+      }
+
+      // Send result back
+      vscode.postMessage({
+          command: 'test:result',
+          requestId,
+          result
+      });
+    } catch (error) {
+      // Send error back
+      vscode.postMessage({
+          command: 'test:result',
+          requestId,
+          error: error.message || String(error)
+      });
+    }
   }
 });
 </script>

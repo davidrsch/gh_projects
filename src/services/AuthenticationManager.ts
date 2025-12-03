@@ -20,6 +20,17 @@ export class AuthenticationManager {
      * @returns The authentication session or undefined.
      */
     public async getSession(createIfNone: boolean = false): Promise<vscode.AuthenticationSession | undefined> {
+        // Support for integration testing
+        if (process.env.GH_PROJECTS_TOKEN_FOR_TESTING) {
+            logger.debug('AuthenticationManager: Using test token from environment.');
+            return {
+                id: 'test-session',
+                accessToken: process.env.GH_PROJECTS_TOKEN_FOR_TESTING,
+                account: { id: 'test-user', label: 'Test User' },
+                scopes: this.scopes
+            };
+        }
+
         try {
             const session = await vscode.authentication.getSession(
                 'github',

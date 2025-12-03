@@ -233,6 +233,11 @@ export async function openProjectWebview(
 
   panel.webview.onDidReceiveMessage(
     async (msg) => {
+      // Log all messages for debugging
+      if (msg.command && msg.command.startsWith('test:')) {
+        console.log('[Extension] Received test message:', msg);
+      }
+
       // Special-case: the UI may send a 'ready' handshake when it has initialized.
       // Resend the init payload so the page reliably receives it even if it initialized after the extension posted.
       try {
@@ -589,7 +594,7 @@ export async function openProjectWebview(
           });
         }
       }
-      
+
     },
     undefined,
     context.subscriptions
@@ -597,5 +602,15 @@ export async function openProjectWebview(
 }
 
 
+
+// Test helpers to expose webview panels for integration testing
+export function getAllPanelsForTesting(): vscode.WebviewPanel[] {
+  return Array.from(panels.values());
+}
+
+export function getFirstPanelForTesting(): vscode.WebviewPanel | undefined {
+  const allPanels = Array.from(panels.values());
+  return allPanels.length > 0 ? allPanels[0] : undefined;
+}
 
 export default { openProjectWebview };

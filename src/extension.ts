@@ -108,6 +108,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Initial auth check
   try {
+    if (process.env.GH_PROJECTS_TOKEN_FOR_TESTING) {
+      logger.info("Skipping initial auth check for testing");
+      return;
+    }
     const authManager = (await import('./services/AuthenticationManager')).AuthenticationManager.getInstance();
     const session = await authManager.getSession(false);
     if (!session) {
