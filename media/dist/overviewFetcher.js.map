@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/webviews/client/overviewFetcher.ts"],
+  "sourcesContent": ["/// <reference path=\"./global.d.ts\" />\r\n\r\n(function () {\r\n    try {\r\n      if (\r\n        (window as any).__APP_MESSAGING__ &&\r\n        typeof (window as any).__APP_MESSAGING__.postMessage === \"function\"\r\n      ) {\r\n        (window as any).__APP_MESSAGING__.postMessage({\r\n          command: \"debugLog\",\r\n          level: \"debug\",\r\n          message: \"overviewFetcher.loaded\",\r\n        });\r\n      }\r\n    } catch (e) { }\r\n\r\n  window.overviewFetcher = function (\r\n    container: HTMLElement,\r\n    viewKey: string\r\n  ) {\r\n    container.innerHTML =\r\n      '<div class=\"title\">Overview</div><div class=\"loading\"><em>Loading overview...</em></div>';\r\n\r\n    // Simple placeholder for now\r\n    setTimeout(() => {\r\n      container.innerHTML = '<div class=\"title\">Overview</div><div style=\"padding:10px\">Overview content not implemented yet.</div>';\r\n    }, 100);\r\n  };\r\n})();\r\n"],
+  "mappings": "oBAEC,UAAY,CACT,GAAI,CAEC,OAAe,mBAChB,OAAQ,OAAe,kBAAkB,aAAgB,YAExD,OAAe,kBAAkB,YAAY,CAC5C,QAAS,WACT,MAAO,QACP,QAAS,wBACX,CAAC,CAEL,MAAY,CAAE,CAEhB,OAAO,gBAAkB,SACvBA,EACAC,EACA,CACAD,EAAU,UACR,2FAGF,WAAW,IAAM,CACfA,EAAU,UAAY,wGACxB,EAAG,GAAG,CACR,CACF,GAAG",
+  "names": ["container", "viewKey"]
+}

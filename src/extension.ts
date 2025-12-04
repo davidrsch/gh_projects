@@ -1,80 +1,134 @@
-import * as vscode from 'vscode';
-import { ProjectsProvider } from './providers/projectsProvider';
-import { openProjectWebview } from './webview';
-import type { ProjectNode } from './model';
-import { fetchTableMeta, fetchTableItems } from './github/tables';
+import * as vscode from "vscode";
+import { ProjectsProvider } from "./treeViewProvider";
+import { ProjectEntry } from "./lib/types";
+import { openProjectWebview } from "./webviews/projectDetails";
+import findGitRepos from "./treeView/findRepos";
+import getRemotesForPath from "./treeView/getRemotes";
+import logger from "./lib/logger";
+import messages from "./lib/messages";
 
-export function activate(context: vscode.ExtensionContext) {
-  const output = vscode.window.createOutputChannel('Github Projects');
-  const provider = new ProjectsProvider(output);
+import { ProjectChatParticipant } from "./chat/projectParticipant";
+import { ProjectService } from "./services/projectService";
+
+export async function activate(context: vscode.ExtensionContext) {
+  logger.info("activate", {
+    workspaceFoldersCount: (vscode.workspace.workspaceFolders || []).length,
+  });
+
+  // Initialize Chat Participant
+  const projectService = new ProjectService();
+  new ProjectChatParticipant(context, projectService);
+
+  const folders = vscode.workspace.workspaceFolders || [];
+  if (folders.length === 0) {
+    vscode.window
+      .showWarningMessage(
+        "No folder is open. Open a folder to use ghProjects.",
+        "Open Folder"
+      )
+      .then((sel) => {
+        if (sel === "Open Folder")
+          vscode.commands.executeCommand("vscode.openFolder");
+      });
+    return;
+  }
+
+  let workspaceRoot: string | undefined;
+  if (folders.length === 1) {
+    workspaceRoot = folders[0].uri.fsPath;
+  } else {
+    const pick = await vscode.window.showQuickPick(
+      folders.map((f) => f.uri.fsPath),
+      { placeHolder: "Select workspace folder for ghProjects" }
+    );
+    if (!pick) return;
+    workspaceRoot = pick;
+  }
+
+  const provider = new ProjectsProvider(workspaceRoot, projectService);
+  const treeView = vscode.window.createTreeView("projects", {
+    treeDataProvider: provider,
+  });
+
   context.subscriptions.push(
-    output,
-    vscode.window.registerTreeDataProvider('projects', provider),
-    vscode.commands.registerCommand('ghProjects.refresh', () => provider.refresh()),
-    vscode.commands.registerCommand('ghProjects.openProject', (node: ProjectNode) => openProjectWebview(context, node)),
-    vscode.commands.registerCommand('ghProjects.testTableQueries', async (node?: ProjectNode) => {
+    treeView,
+    vscode.commands.registerCommand("ghProjects.refresh", () =>
+      provider.refresh()
+    ),
+    vscode.commands.registerCommand("ghProjects.signIn", async () => {
       try {
-        let project = node as ProjectNode | undefined;
-        if (!project) {
-          // Try to use cached projects; if empty, refresh
-          let projects = provider.getCachedProjects();
-          if (!projects || projects.length === 0) {
-            projects = await provider.getChildren();
-          }
-          if (!projects || projects.length === 0) {
-            vscode.window.showWarningMessage('No GitHub Projects found in the workspace. Try refresh first.');
-            return;
-          }
-          const pick = await vscode.window.showQuickPick(
-            projects.map(p => ({
-              label: p.title,
-              description: `${p.owner}/${p.repo}`,
-              detail: p.url,
-              project: p,
-            })),
-            { placeHolder: 'Select a project to test project table queries' }
-          );
-          if (!pick) return;
-          project = (pick as any).project as ProjectNode;
-        }
-
-        const session = await vscode.authentication.getSession('github', ['repo', 'read:project'], { createIfNone: true });
-        const token = session?.accessToken;
-        if (!token) {
-          vscode.window.showErrorMessage('Missing GitHub token for testing queries.');
-          return;
-        }
-
-        output.appendLine(`[test] Project: ${project.title} (${project.owner}/${project.repo})`);
-        const views = project.views ?? [];
-        if (views.length === 0) {
-          output.appendLine('[test] No views found on this project.');
-          return;
-        }
-
-        for (const v of views) {
-          try {
-            output.appendLine(`[test] Fetch meta for view #${v.number} (${v.name})...`);
-            const meta = await fetchTableMeta(project.id, v.number, token);
-            output.appendLine(`[test]  layout=${meta.layout} filter=${meta.filter ?? '—'} columns=${meta.visibleFieldIds.length}`);
-            if (meta.layout === 'TABLE') {
-              const page = await fetchTableItems(project.id, meta, token);
-              output.appendLine(`[test]  items=${page.items.length} hasNextPage=${page.pageInfo.hasNextPage}`);
-            } else {
-              output.appendLine('[test]  Skipped items fetch (not a TABLE view).');
-            }
-          } catch (err: any) {
-            output.appendLine(`[test:error] View #${v.number} (${v.name}): ${err?.message ?? String(err)}`);
-          }
-        }
-
-        vscode.window.showInformationMessage('GitHub Projects table queries test completed. See "Github Projects" output.');
-      } catch (err: any) {
-        output.appendLine(`[test:fatal] ${err?.message ?? String(err)}`);
-        vscode.window.showErrorMessage('Failed to run table queries test. See output for details.');
+        const authManager = (await import('./services/AuthenticationManager')).AuthenticationManager.getInstance();
+        await authManager.ensureAuthenticated();
+        vscode.window.showInformationMessage("Signed in to GitHub");
+        provider.refresh();
+      } catch (error) {
+        vscode.window.showErrorMessage(`Sign in failed: ${error}`);
       }
-    })
+    }),
+    vscode.commands.registerCommand(
+      "ghProjects.openProject",
+      (project: ProjectEntry) =>
+        openProjectWebview(context, project, workspaceRoot)
+    ),
+    vscode.commands.registerCommand(
+      "ghProjects.testTableQueries",
+      (project: ProjectEntry) => {
+        openProjectWebview(context, project as any, workspaceRoot);
+      }
+    )
   );
+
+  // Listen for workspace folder changes and refresh provider as needed
+  const workspaceFoldersChange = vscode.workspace.onDidChangeWorkspaceFolders(
+    (e) => {
+      try {
+        logger.info("workspace folders changed", {
+          added: e.added?.length,
+          removed: e.removed?.length,
+        });
+      } catch (err) {
+        logger.debug("workspace change log failed: " + String(err));
+      }
+      try {
+        provider.refresh();
+      } catch (err) {
+        logger.error("provider.refresh failed: " + String(err));
+      }
+      const stillPresent = (vscode.workspace.workspaceFolders || []).some(
+        (f) => f.uri.fsPath === workspaceRoot
+      );
+      if (!stillPresent) {
+        vscode.window.showWarningMessage(
+          'ghProjects: previously-selected workspace folder is no longer in the workspace. Run "ghProjects.refresh" or re-select a workspace.'
+        );
+      }
+    }
+  );
+  context.subscriptions.push(workspaceFoldersChange);
+
+  // Initial auth check
+  try {
+    if (process.env.GH_PROJECTS_TOKEN_FOR_TESTING) {
+      logger.info("Skipping initial auth check for testing");
+      return;
+    }
+    const authManager = (await import('./services/AuthenticationManager')).AuthenticationManager.getInstance();
+    const session = await authManager.getSession(false);
+    if (!session) {
+      const action = "Sign in to GitHub";
+      const choice = await vscode.window.showInformationMessage(
+        "ghProjects: Sign in to GitHub to enable authenticated features",
+        action
+      );
+      if (choice === action) {
+        await vscode.commands.executeCommand("ghProjects.signIn");
+      }
+    }
+  } catch (e) {
+    logger.debug("Auth check failed: " + String(e));
+  }
 }
 
-export function deactivate() {}
+// webview handling moved to `src/webviews/projectDetails.ts`
+
+export function deactivate() { }

@@ -1,2 +1,13 @@
 node_modules
 out
+dist
+knowledge
+.vscode-test
+.gh-debug
+.env
+test_output.txt
+*.vsix
+.DS_Store
+coverage
+npm-debug.log
+yarn-error.log

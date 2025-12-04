@@ -1,0 +1,7 @@
+.eslintrc.cjs
+node_modules/
+out/
+dist/
+lib/
+**/*.json
+**/*.md
