@@ -4,47 +4,10 @@ import * as dotenv from 'dotenv';
 import { connectToCDP, findWebviewPage, captureArtifacts } from './playwrightHelpers';
 import { ScreenshotHelper } from './helpers/screenshotHelper';
 import { HTMLReportGenerator } from './helpers/htmlReportGenerator';
+import { runComprehensiveTests } from './specs/comprehensiveUITests';
 
 // Load .env
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
-
-interface TestCommandResponse {
-    success?: boolean;
-    error?: string;
-    [key: string]: any;
-}
-
-// Helper to send test command and wait for response
-async function sendTestCommand<T = TestCommandResponse>(
-    panel: vscode.WebviewPanel,
-    command: string,
-    params: Record<string, any> = {}
-): Promise<T> {
-    return new Promise((resolve, reject) => {
-        const requestId = `test-${Date.now()}-${Math.random()}`;
-        const timeout = setTimeout(() => {
-            reject(new Error(`Test command timeout: ${command}`));
-        }, 10000);
-
-        const messageHandler = panel.webview.onDidReceiveMessage((msg: any) => {
-            if (msg.command === 'test:result' && msg.requestId === requestId) {
-                clearTimeout(timeout);
-                messageHandler.dispose();
-                if (msg.error) {
-                    reject(new Error(msg.error));
-                } else {
-                    resolve(msg.result as T);
-                }
-            }
-        });
-
-        panel.webview.postMessage({
-            command,
-            requestId,
-            ...params
-        });
-    });
-}
 
 export async function run() {
     const outDir = path.resolve(__dirname, '../../../out/test-artifacts');
@@ -122,91 +85,10 @@ export async function run() {
 
         console.log('✓ Got webview panel reference');
 
-        // 5. Run UI tests
-        report.startStep('Get Project Info');
-        console.log('\n--- Getting Project Info ---');
-        const projectInfo: any = await sendTestCommand(panel, 'test:getProjectInfo');
-        console.log(`✓ Project: ${projectInfo.projectTitle}`);
-        console.log(`✓ Total views: ${projectInfo.totalViews}`);
-        console.log(`✓ Views found: ${projectInfo.views.length}`);
-        report.endStep('Get Project Info', 'pass', projectInfo);
+        // 5. Run Comprehensive UI Tests
+        await runComprehensiveTests(panel, page, report, screenshots);
 
-        if (projectInfo.views.length === 0) {
-            console.warn('⚠ No views found in project');
-            console.log('✅ Test completed (no views to test)');
-            await report.generate(reportPath);
-            return;
-        }
-
-        // Test each view
-        for (const view of projectInfo.views) {
-            const viewStepName = `Test View: ${view.name} (${view.layout})`;
-            report.startStep(viewStepName);
-            console.log(`\n--- Testing view: "${view.name}" (index ${view.index}, layout: ${view.layout}) ---`);
-
-            // Click the tab (index + 1 because overview is tab 0)
-            const tabResult: any = await sendTestCommand(panel, 'test:clickTab', { tabIndex: view.index + 1 });
-            if (tabResult.success) {
-                console.log(`✓ Clicked tab ${tabResult.tabIndex}`);
-            } else {
-                console.error(`❌ Failed to click tab: ${tabResult.error}`);
-                report.endStep(viewStepName, 'fail', null, undefined, tabResult.error);
-                continue;
-            }
-
-            // Wait for content to load
-            await new Promise(resolve => setTimeout(resolve, 5000));
-
-            // 📸 Screenshot: After tab click
-            const tabScreenshot = await screenshots.capture(page, `view-${view.index}-${view.name.replace(/\s+/g, '-')}`);
-
-            // Get table info
-            const tableInfo: any = await sendTestCommand(panel, 'test:getTableInfo');
-
-            if (!tableInfo.hasContainer) {
-                console.log(`  ℹ No table container found (likely not a table view)`);
-                report.endStep(viewStepName, 'skip', { reason: 'Not a table view' }, tabScreenshot);
-                continue;
-            }
-
-            console.log(`  ✓ Table container found`);
-            console.log(`  ✓ Row count: ${tableInfo.rowCount}`);
-            console.log(`  ✓ Slice items: ${tableInfo.sliceItemCount}`);
-
-            if (tableInfo.rowCount > 0) {
-                console.log(`  ✓ First row ID: ${tableInfo.firstRowId}`);
-
-                // Test row click
-                const clickResult: any = await sendTestCommand(panel, 'test:clickRow', { rowIndex: 0 });
-                if (clickResult.success) {
-                    console.log(`  ✓ Clicked row 0 (item: ${clickResult.itemId})`);
-                } else {
-                    console.warn(`  ⚠ Failed to click row: ${clickResult.error}`);
-                }
-
-                // Check styles of first row
-                const styleResult: any = await sendTestCommand(panel, 'test:getStyles', { selector: `[data-gh-item-id="${tableInfo.firstRowId}"]` });
-                if (styleResult.success) {
-                    console.log(`  ✓ Row style - Display: ${styleResult.display}`);
-                }
-
-                report.endStep(viewStepName, 'pass', {
-                    rowCount: tableInfo.rowCount,
-                    sliceItems: tableInfo.sliceItemCount,
-                    firstRowId: tableInfo.firstRowId
-                }, tabScreenshot);
-            } else {
-                console.warn('  ⚠ No rows found in table');
-                report.endStep(viewStepName, 'pass', { rowCount: 0 }, tabScreenshot);
-            }
-        }
-
-        // 📸 Final screenshot
-        report.startStep('Capture Final State');
-        const finalScreenshot = await screenshots.capture(page, 'final-state');
-        report.endStep('Capture Final State', 'pass', null, finalScreenshot);
-
-        console.log('\n✅ All table view UI tests completed!');
+        console.log('\n✅ All UI tests completed!');
 
         // Generate HTML report
         await report.generate(reportPath);
