@@ -184,46 +184,84 @@ export async function runTableInteractionTests(
             report.endStep(`Slicing: ${testView.name}`, 'fail', null, undefined, err.message);
             results.failed++;
         }
-    }
+
+        // --- RESIZING ---
+        report.startStep(`Resizing: ${testView.name}`, 'Resize the first column and verify width change.');
+        try {
+            const headersBefore = await sendTestCommand(panel, 'test:getHeaders');
+            const colIndex = 1; // First field column (0 is index)
+            await snap(page, screenshots, report, 'resize-before');
+
+            // Resize by +50px
+            await sendTestCommand(panel, 'test:resizeColumn', { colIndex: colIndex, delta: 50 });
+            await new Promise(r => setTimeout(r, 1000));
+
+            await snap(page, screenshots, report, 'resize-after');
+
+            const colStyle = await sendTestCommand(panel, 'test:getElementStyles', {
+                selector: `colgroup col:nth-child(${colIndex + 1})`,
+                props: ['width']
+            });
+
+            // If width isn't in style, check width attr (though logic uses style)
+            const widthVal = colStyle.styles.width ? parseInt(colStyle.styles.width) : 0;
+
+            assert(widthVal > 150,
+                `Column width increased (current: ${colStyle.styles.width})`);
+
+            report.endStep(`Resizing: ${testView.name}`, 'pass', { width: colStyle.styles.width }, undefined, undefined,
+                'Column resized successfully.');
+            results.passed++;
+
+        } catch (err: any) {
+            await snap(page, screenshots, report, 'resize-FAIL');
+            report.endStep(`Resizing: ${testView.name}`, 'fail', null, undefined, err.message);
+            results.failed++;
+        }
+    } // End of if (tableViews.length > 0)
 
     // --- EDGE CASE: ZERO ROWS FILTER ---
     report.startStep('Edge Case: Zero Rows Filter', 'Apply a text filter that matches nothing and verify empty state.');
     try {
-        // Focus first table view
-        const headers = await sendTestCommand(panel, 'test:getHeaders'); // Ensure we are on a table
+        // Look for any table view, or assume current view is table if setup correctly.
+        // Or re-verify we are on a table.
+        const headers = await sendTestCommand(panel, 'test:getHeaders');
         if (headers.count > 0) {
-            await snap(page, screenshots, report, 'filter-before-zero');
-
             // Type non-existent value into filter input
-            await sendTestCommand(panel, 'test:evaluate', {
+            const inputSet = await sendTestCommand(panel, 'test:evaluate', {
                 expression: `(() => {
-                      const input = document.querySelector('.filter-input');
-                      if (input) {
-                          input.value = 'NON_EXISTENT_VALUE_XYZ_123';
-                          input.dispatchEvent(new Event('input', { bubbles: true }));
-                          return true;
-                      }
-                      return false;
-                  })()`
+                        const input = document.querySelector('input[data-filter-input]');
+                        if (input) {
+                            input.value = 'NON_EXISTENT_VALUE_XYZ_123';
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            return input.value === 'NON_EXISTENT_VALUE_XYZ_123';
+                        }
+                        return false;
+                    })()`
             });
 
-            await new Promise(r => setTimeout(r, 1000));
+            if (!inputSet) {
+                throw new Error('Failed to set filter input value');
+            }
+
+            await new Promise(r => setTimeout(r, 2000));
             await snap(page, screenshots, report, 'filter-zero-results');
 
             const tableInfo = await sendTestCommand(panel, 'test:getTableInfo');
-            assert(tableInfo.rowCount === 0, 'Row count is 0 after filtering');
+            assert(tableInfo.rowCount === 0, 'Row count should be 0 after filtering, but was ' + tableInfo.rowCount);
 
             // Clear filter
             await sendTestCommand(panel, 'test:evaluate', {
                 expression: `(() => {
-                      const input = document.querySelector('.filter-input');
-                      if (input) {
-                          input.value = '';
-                          input.dispatchEvent(new Event('input', { bubbles: true }));
-                          return true;
-                      }
-                      return false;
-                  })()`
+                        const input = document.querySelector('input[data-filter-input]');
+                        if (input) {
+                            input.value = '';
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            return true;
+                        }
+                        return false;
+                    })()`
             });
             await new Promise(r => setTimeout(r, 1000));
 

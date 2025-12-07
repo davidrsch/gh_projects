@@ -28,6 +28,7 @@ export const TEST_HANDLER_CODE = `
     }
     
     // Helper: simulate mouse event
+    // Helper: simulate mouse event
     function simulateEvent(el, eventType, options = {}) {
       if (!el) return false;
       const event = new MouseEvent(eventType, {
@@ -36,6 +37,8 @@ export const TEST_HANDLER_CODE = `
         view: window,
         ...options
       });
+      if (options.pageX !== undefined) Object.defineProperty(event, 'pageX', { value: options.pageX });
+      if (options.pageY !== undefined) Object.defineProperty(event, 'pageY', { value: options.pageY });
       el.dispatchEvent(event);
       return true;
     }
@@ -445,6 +448,43 @@ export const TEST_HANDLER_CODE = `
             result = { error: e.message };
           }
           break;
+
+        case 'test:resizeColumn': {
+          const colIndex = msg.colIndex || 0;
+          const delta = msg.delta || 50;
+          const visiblePanel = getVisiblePanel();
+          if (!visiblePanel) {
+            result = { error: 'No visible panel' };
+          } else {
+            const headers = visiblePanel.querySelectorAll('thead th');
+            const th = headers[colIndex];
+            if (!th) {
+                result = { error: 'Header not found' };
+            } else {
+                const resizer = th.querySelector('.column-resizer');
+                if (!resizer) {
+                    result = { error: 'Resizer not found' };
+                } else {
+                    const rect = resizer.getBoundingClientRect();
+                    const startX = rect.left + rect.width / 2;
+                    const startY = rect.top + rect.height / 2;
+                    const endX = startX + delta;
+                    
+                    // Dispatch mousedown
+                    simulateEvent(resizer, 'mousedown', { clientX: startX, clientY: startY, screenX: startX, screenY: startY, pageX: startX, which: 1, buttons: 1 });
+                    
+                    // Dispatch mousemove
+                    simulateEvent(document, 'mousemove', { clientX: endX, clientY: startY, screenX: endX, screenY: startY, pageX: endX, which: 1, buttons: 1 });
+                    
+                    // Dispatch mouseup
+                    simulateEvent(document, 'mouseup', { clientX: endX, clientY: startY, screenX: endX, screenY: startY, pageX: endX });
+                    
+                    result = { success: true };
+                }
+            }
+          }
+          break;
+        }
 
         default:
           result = { error: 'Unknown test command: ' + command };

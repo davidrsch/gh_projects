@@ -11,6 +11,7 @@ import { runTableStructureTests } from './tableStructure.spec';
 import { runTableInteractionTests } from './tableInteractions.spec';
 import { runColumnOperationsTests } from './columnOperations.spec';
 import { runBoardViewTests } from './boardView.spec';
+import { runRoadmapViewTests } from './roadmapView.spec';
 
 export async function runComprehensiveTests(
     panel: vscode.WebviewPanel,
@@ -42,6 +43,9 @@ export async function runComprehensiveTests(
 
     // 5. Board View Tests
     addResults(await runBoardViewTests(panel, page, report, screenshots));
+
+    // 6. Roadmap View Tests
+    addResults(await runRoadmapViewTests(panel, page, report, screenshots));
 
     // Final Summary
     console.log('\n=== Test Results ===');

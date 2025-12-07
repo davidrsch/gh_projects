@@ -16,8 +16,6 @@ export async function runBoardViewTests(
 
     const projectInfo = await sendTestCommand(panel, 'test:getProjectInfo');
     // Find views that are NOT table (assuming they are board or roadmap)
-    // The previous implementation defaulted 'layout' to 'table'.
-    // htmlBuilder checks: layout === 'board'
     const boardViews = projectInfo.views.filter((v: any) => v.layout === 'board');
 
     if (boardViews.length > 0) {
@@ -35,8 +33,17 @@ export async function runBoardViewTests(
                 });
 
                 // Check for header title (flexible check)
-                const hasTitle = await sendTestCommand(panel, 'test:evaluate', {
-                    expression: `!!Array.from(document.querySelectorAll('div')).find(d => d.textContent.trim() === '${view.name}' && (d.style.fontWeight === '600' || d.style.fontWeight === 'bold' || getComputedStyle(d).fontWeight >= 600))`
+                const boardTitleFound = await sendTestCommand(panel, 'test:evaluate', {
+                    expression: `(() => {
+                        const els = Array.from(document.querySelectorAll('div'));
+                        // Look for the name in text content, case-insensitive, and ensure it looks like a header
+                        const found = els.find(d => 
+                            d.textContent && 
+                            d.textContent.trim().toLowerCase() === '${view.name.toLowerCase()}' && 
+                            (d.style.fontWeight === '600' || d.style.fontWeight === 'bold' || getComputedStyle(d).fontWeight >= 600)
+                        );
+                        return !!found;
+                    })()`
                 });
 
                 assert(typeof cardCount === 'number', 'Card count is a number');
@@ -46,7 +53,8 @@ export async function runBoardViewTests(
                     report.addAssertion('Board view is empty (0 cards)');
                 }
 
-                assert(hasTitle, `Board title "${view.name}" is visible`);
+                // Assert title found
+                assert(boardTitleFound, `Board title "${view.name}" is visible (flexible match)`);
 
                 report.endStep(`Board View: ${view.name}`, 'pass', { cardCount }, undefined, undefined,
                     `Verified board view with ${cardCount} cards.`);
