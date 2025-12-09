@@ -70,3 +70,25 @@ export async function snap(
     report.addScreenshot(path, label);
     return path;
 }
+
+export async function runTestStep(
+    context: {
+        page: Page;
+        report: HTMLReportGenerator;
+        screenshots: ScreenshotHelper;
+    },
+    stepName: string,
+    description: string,
+    action: () => Promise<any>
+): Promise<boolean> {
+    context.report.startStep(stepName, description);
+    try {
+        const result = await action();
+        context.report.endStep(stepName, 'pass', result, undefined, undefined, typeof result === 'string' ? result : undefined);
+        return true;
+    } catch (err: any) {
+        await snap(context.page, context.screenshots, context.report, `${stepName}-FAIL`);
+        context.report.endStep(stepName, 'fail', null, undefined, err.message);
+        throw err; // Re-throw to let caller handle failure count
+    }
+}

@@ -765,6 +765,7 @@ export class ProjectTable {
 
     private createRow(item: any, index: number): HTMLTableRowElement {
         const tr = document.createElement("tr");
+        tr.classList.add("table-row");
         tr.setAttribute("data-gh-item-id", item.id);
 
         // Add row hover effect

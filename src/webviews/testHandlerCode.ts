@@ -119,7 +119,8 @@ export const TEST_HANDLER_CODE = `
           } else {
             const tableWrapper = visiblePanel.querySelector('.table-wrapper');
             const table = visiblePanel.querySelector('table');
-            const rows = visiblePanel.querySelectorAll('tbody tr[data-gh-item-id]');
+            const rows = Array.from(visiblePanel.querySelectorAll('tbody tr[data-gh-item-id]'))
+                .filter(r => window.getComputedStyle(r).display !== 'none');
             const sliceItems = visiblePanel.querySelectorAll('.slice-value-item');
             const groupHeaders = visiblePanel.querySelectorAll('.group-header');
             result = {
