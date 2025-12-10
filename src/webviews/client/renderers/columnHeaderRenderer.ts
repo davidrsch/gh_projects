@@ -52,15 +52,7 @@ export class ColumnHeaderRenderer {
 
       // Field name span
       const nameSpan = document.createElement("span");
-      let headerText = field.name || field.id || "";
-
-      // Add sort indicator if this field is sorted
-      if (this.options.sortConfig?.fieldId === field.id) {
-        const indicator =
-          this.options.sortConfig?.direction === "ASC" ? " ↑" : " ↓";
-        headerText += indicator;
-      }
-
+      const headerText = field.name || field.id || "";
       nameSpan.textContent = headerText;
       nameSpan.style.flex = "1";
       nameSpan.style.overflow = "hidden";
@@ -79,11 +71,32 @@ export class ColumnHeaderRenderer {
         (this.options.activeSlicePanelFieldId &&
           String(this.options.activeSlicePanelFieldId) === String(field.id));
 
-      // Icons container (for group / slice indicators)
+      // Check if this field is sorted
+      const isSorted = this.options.sortConfig?.fieldId === field.id;
+
+      // Icons container (for sort / group / slice indicators)
       const iconsContainer = document.createElement("span");
       iconsContainer.style.display = "flex";
       iconsContainer.style.alignItems = "center";
       iconsContainer.style.gap = "6px";
+
+      // Show Sort icon
+      if (isSorted) {
+        const sortIcon = document.createElement("span");
+        sortIcon.className = "column-sort-icon";
+        const direction =
+          this.options.sortConfig?.direction === "ASC" ? "sort-asc" : "sort-desc";
+        sortIcon.innerHTML = this.getIconSvg(direction);
+        sortIcon.style.display = "inline-flex";
+        sortIcon.style.alignItems = "center";
+        sortIcon.style.color = "var(--vscode-foreground)";
+        sortIcon.style.opacity = "0.85";
+        sortIcon.title =
+          this.options.sortConfig?.direction === "ASC"
+            ? "Sorted ascending"
+            : "Sorted descending";
+        iconsContainer.appendChild(sortIcon);
+      }
 
       // Show Group icon
       if (isGrouped) {
@@ -152,7 +165,7 @@ export class ColumnHeaderRenderer {
       });
 
       headerContent.appendChild(nameSpan);
-      if (isGrouped || isSliced) {
+      if (isSorted || isGrouped || isSliced) {
         headerContent.appendChild(iconsContainer);
       }
       headerContent.appendChild(menuBtn);
