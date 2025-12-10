@@ -197,6 +197,46 @@ Located in `src/webviews/client/`:
 - `storage.ts` - Local storage wrapper
 - `logger.ts` - Client-side logging
 
+#### Icon Registry (`src/webviews/client/icons/`)
+**Purpose**: Centralized management of all GitHub-style Octicon icons used in webviews
+
+**Key files**:
+- `iconRegistry.ts` - Core icon definitions and helper functions
+- `../iconHelper.ts` - Exposes registry to browser window
+
+**Features**:
+- **Type-safe icon names**: `IconName` union type ensures valid references
+- **Official GitHub SVGs**: Uses authentic Octicons path data (16x16 viewBox)
+- **Consistent styling**: All icons use `fill="currentColor"` for theme integration
+- **Accessibility**: Automatic `aria-hidden="true"` and `focusable="false"` attributes
+- **Helper functions**:
+  - `getIconSvg(name, options?)` - Returns inline SVG string
+  - `createIconElement(name, options?)` - Returns DOM element
+  - `getIconNameForDataType(dataType)` - Maps field data types to icon names
+
+**Available icons** (30+):
+- View layouts: `table`, `project`, `board`, `roadmap`
+- Field types: `list`, `people`, `tag`, `single-select`, `issue-tracks`, `issue-tracked-by`, `iterations`, `number`, `calendar`, `pull-request`, `milestone`, `repo`, `typography`
+- Actions: `sort-asc`, `sort-desc`, `rows`, `sliceby`, `eye-closed`, `arrow-left`, `arrow-right`, `triangle-down`, `triangle-right`, `note`
+
+**Usage pattern**:
+```typescript
+// TypeScript modules can import directly
+import { getIconSvg, IconName } from './icons/iconRegistry';
+
+// Browser window access (via iconHelper.ts)
+window.getIconSvg('table', { size: 16 });
+window.getIconNameForDataType('assignees'); // returns 'people'
+```
+
+**Components using icon registry**:
+- `htmlHelpers.ts` - View tab icons
+- `FieldsMenu.ts` - Field type icons
+- `SlicePanel.ts` - Slice field icons
+- `ColumnHeaderMenu.ts` - Sort/action icons
+- `columnHeaderRenderer.ts` - Group/slice indicators
+- `GroupRenderer.ts` - Expand/collapse icons
+
 **Current issues**:
 - Shared behaviors (filtering, grouping, view handling) spread across multiple modules
 - Inconsistent interfaces between fetchers
