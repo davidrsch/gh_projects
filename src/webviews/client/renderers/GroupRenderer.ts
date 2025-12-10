@@ -11,8 +11,8 @@ export class GroupRenderer {
    * Helper to get icon SVG from registry
    */
   private getIconSvg(iconName: string, size: number = 14): string {
-    if (typeof (window as any).getIconSvg === "function") {
-      return (window as any).getIconSvg(iconName, { size });
+    if (window.getIconSvg) {
+      return window.getIconSvg(iconName as any, { size });
     }
     return "";
   }

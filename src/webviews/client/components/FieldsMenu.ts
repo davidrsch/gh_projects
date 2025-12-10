@@ -272,10 +272,10 @@ export class FieldsMenu {
   private getIconForField(field: FieldItem): string {
     const dataType = (field.dataType || "").toString().toLowerCase();
 
-    // If getIconNameForDataType is available from the icon registry, use it
-    if (typeof (window as any).getIconNameForDataType === "function" && typeof (window as any).getIconSvg === "function") {
-      const iconName = (window as any).getIconNameForDataType(dataType);
-      return (window as any).getIconSvg(iconName);
+    // Use icon registry if available
+    if (window.getIconNameForDataType && window.getIconSvg) {
+      const iconName = window.getIconNameForDataType(dataType);
+      return window.getIconSvg(iconName);
     }
 
     // Fallback: use provided CSS iconClass if available

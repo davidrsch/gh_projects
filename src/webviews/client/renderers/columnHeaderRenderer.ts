@@ -17,8 +17,8 @@ export class ColumnHeaderRenderer {
    * Helper to get icon SVG from registry
    */
   private getIconSvg(iconName: string): string {
-    if (typeof (window as any).getIconSvg === "function") {
-      return (window as any).getIconSvg(iconName);
+    if (window.getIconSvg) {
+      return window.getIconSvg(iconName as any);
     }
     return "";
   }
