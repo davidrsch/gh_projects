@@ -17,6 +17,7 @@ const entryPoints = [
     "roadmapViewFetcher.ts",
     "contentFetcher.ts",
     "filterBarHelper.ts",
+    "iconHelper.ts",
 ].map((f) => path.join(srcDir, f));
 
 async function build() {
