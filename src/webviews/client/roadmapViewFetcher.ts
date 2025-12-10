@@ -4,18 +4,19 @@ import { logDebug, setLoadingState } from "./viewFetcherUtils";
 (function () {
   try {
     logDebug("global", "roadmapViewFetcher.loaded");
-  } catch (e) { }
+  } catch (e) {}
 
   window.roadmapViewFetcher = function (
     view: any,
     container: HTMLElement,
-    viewKey: string
+    viewKey: string,
   ) {
     setLoadingState(container, "Roadmap View");
 
     // Simple placeholder for now
     setTimeout(() => {
-      container.innerHTML = '<div class="title">Roadmap View</div><div style="padding:10px">Roadmap content not implemented yet.</div>';
+      container.innerHTML =
+        '<div class="title">Roadmap View</div><div style="padding:10px">Roadmap content not implemented yet.</div>';
     }, 100);
   };
 })();

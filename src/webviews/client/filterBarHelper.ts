@@ -79,10 +79,10 @@ function create(opts: any) {
         const show = Boolean(
           String(input.value || "").trim() ||
           String(effectiveFilter || "").trim() ||
-          cnt
+          cnt,
         );
         countSpan.style.display = show ? "" : "none";
-      } catch (e) { }
+      } catch (e) {}
     }
 
     const saveBtn = document.createElement("button");
@@ -137,8 +137,7 @@ function create(opts: any) {
         const inputChanged =
           String(input.value || "") !== String(effectiveFilter || "");
         const changed =
-          inputChanged ||
-          Boolean(layoutChangedGetter && layoutChangedGetter());
+          inputChanged || Boolean(layoutChangedGetter && layoutChangedGetter());
         saveBtn.disabled = !changed;
         discardBtn.disabled = !changed;
         try {
@@ -149,11 +148,11 @@ function create(opts: any) {
           discardBtn.style.cursor = changed ? "pointer" : "default";
           const showCount = Boolean(
             String(input.value || "").trim() ||
-            String(effectiveFilter || "").trim()
+            String(effectiveFilter || "").trim(),
           );
           countSpan.style.display = showCount ? "" : "none";
-        } catch (e) { }
-      } catch (e) { }
+        } catch (e) {}
+      } catch (e) {}
     }
 
     input.addEventListener("input", updateButtonsState);
@@ -189,7 +188,7 @@ function create(opts: any) {
         const matches = candidates.filter((c) =>
           String(c || "")
             .toLowerCase()
-            .includes(q)
+            .includes(q),
         );
         if (!matches || matches.length === 0) {
           suggestBox.style.display = "none";
@@ -214,18 +213,17 @@ function create(opts: any) {
               const newVal = parts.join(" ").trim();
               try {
                 input.value = newVal;
-              } catch (e) { }
+              } catch (e) {}
               try {
                 input.dispatchEvent(new Event("input", { bubbles: true }));
-              } catch (e) { }
+              } catch (e) {}
               try {
-                if (typeof opts.onChange === "function")
-                  opts.onChange(newVal);
-              } catch (e) { }
+                if (typeof opts.onChange === "function") opts.onChange(newVal);
+              } catch (e) {}
               try {
                 input.focus();
-              } catch (e) { }
-            } catch (e) { }
+              } catch (e) {}
+            } catch (e) {}
           });
           suggestBox.appendChild(el);
         }
@@ -233,7 +231,7 @@ function create(opts: any) {
       } catch (e) {
         try {
           suggestBox.style.display = "none";
-        } catch (__) { }
+        } catch (__) {}
       }
     }
 
@@ -242,18 +240,21 @@ function create(opts: any) {
         const v = String(input.value || "");
         const lastToken = v.split(/\s+/).pop() || "";
         renderSuggestions(lastToken);
-      } catch (e) { }
+      } catch (e) {}
     });
-
-
 
     // notify callbacks when input changes
     input.addEventListener("input", function () {
       try {
         const cur = String(input.value || "");
-        const matched = new Set(computeMatches(cur, registeredItems, registeredFields));
+        const matched = new Set(
+          computeMatches(cur, registeredItems, registeredFields),
+        );
         try {
-          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+          if (
+            (window as any).__APP_MESSAGING__ &&
+            typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+          ) {
             (window as any).__APP_MESSAGING__.postMessage({
               command: "debugLog",
               level: "debug",
@@ -266,23 +267,23 @@ function create(opts: any) {
               },
             });
           }
-        } catch (e) { }
+        } catch (e) {}
         try {
           if (typeof barApiInternalSetCount === "function")
             barApiInternalSetCount(matched.size);
-        } catch (e) { }
+        } catch (e) {}
         for (let i = 0; i < onFilterCallbacks.length; i++) {
           try {
             onFilterCallbacks[i](matched, cur);
-          } catch (e) { }
+          } catch (e) {}
         }
-      } catch (e) { }
+      } catch (e) {}
     });
     input.addEventListener("blur", function () {
       setTimeout(() => {
         try {
           suggestBox.style.display = "none";
-        } catch (e) { }
+        } catch (e) {}
       }, 150);
     });
     clearBtn.addEventListener("click", function () {
@@ -290,75 +291,83 @@ function create(opts: any) {
         input.value = "";
         try {
           input.dispatchEvent(new Event("input", { bubbles: true }));
-        } catch (e) { }
+        } catch (e) {}
         try {
           if (typeof opts.onChange === "function") opts.onChange("");
-        } catch (e) { }
-      } catch (e) { }
+        } catch (e) {}
+      } catch (e) {}
     });
 
     saveBtn.addEventListener("click", function () {
       try {
         try {
-          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+          if (
+            (window as any).__APP_MESSAGING__ &&
+            typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+          ) {
             (window as any).__APP_MESSAGING__.postMessage({
               command: "setViewFilter",
               viewKey: viewKey,
               filter: input.value,
             });
           }
-        } catch (e) { }
+        } catch (e) {}
         effectiveFilter = String(input.value || "");
         if (typeof opts.onSave === "function")
           try {
             opts.onSave(effectiveFilter);
-          } catch (e) { }
+          } catch (e) {}
         try {
           updateButtonsState();
-        } catch (e) { }
-      } catch (e) { }
+        } catch (e) {}
+      } catch (e) {}
     });
 
     discardBtn.addEventListener("click", function () {
       try {
         try {
-          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+          if (
+            (window as any).__APP_MESSAGING__ &&
+            typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+          ) {
             (window as any).__APP_MESSAGING__.postMessage({
               command: "discardViewFilter",
               viewKey: viewKey,
             });
           }
-        } catch (e) { }
+        } catch (e) {}
         if (typeof opts.onDiscard === "function")
           try {
             opts.onDiscard();
-          } catch (e) { }
+          } catch (e) {}
         try {
           updateButtonsState();
-        } catch (e) { }
-      } catch (e) { }
+        } catch (e) {}
+      } catch (e) {}
     });
 
     loadBtn.addEventListener("click", function () {
       try {
         if (typeof opts.onLoadMore === "function") return opts.onLoadMore();
         try {
-          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+          if (
+            (window as any).__APP_MESSAGING__ &&
+            typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+          ) {
             (window as any).__APP_MESSAGING__.postMessage({
               command: "requestFields",
               first: step,
               viewKey: viewKey,
             });
           }
-        } catch (e) { }
-      } catch (e) { }
+        } catch (e) {}
+      } catch (e) {}
     });
 
     // initial value
     try {
-      input.value =
-        typeof effectiveFilter === "string" ? effectiveFilter : "";
-    } catch (e) { }
+      input.value = typeof effectiveFilter === "string" ? effectiveFilter : "";
+    } catch (e) {}
     updateButtonsState();
 
     return {
@@ -369,17 +378,17 @@ function create(opts: any) {
           const show = Boolean(
             String(input.value || "").trim() ||
             String(effectiveFilter || "").trim() ||
-            cnt
+            cnt,
           );
           countSpan.style.display = show ? "" : "none";
-        } catch (e) { }
+        } catch (e) {}
       },
       setEffectiveFilter: function (f: any) {
         try {
           effectiveFilter = typeof f === "string" ? f : String(f || "");
           input.value = effectiveFilter;
           updateButtonsState();
-        } catch (e) { }
+        } catch (e) {}
       },
       // Provide candidates for a simple autocomplete helper (array of strings)
       setCandidates: function (arr: any) {
@@ -393,19 +402,18 @@ function create(opts: any) {
               .split(/\s+/)
               .pop() || "";
           if (last) renderSuggestions(last);
-        } catch (e) { }
+        } catch (e) {}
       },
       setLoadState: function (enabled: any, text: any) {
         try {
           loadBtn.disabled = !enabled;
-          loadBtn.textContent =
-            text || (enabled ? "Load more" : "All loaded");
-        } catch (e) { }
+          loadBtn.textContent = text || (enabled ? "Load more" : "All loaded");
+        } catch (e) {}
       },
       focusInput: function () {
         try {
           input.focus();
-        } catch (e) { }
+        } catch (e) {}
       },
       inputEl: input,
       saveBtn: saveBtn,
@@ -419,14 +427,14 @@ function create(opts: any) {
             options && Array.isArray(options.fields) ? options.fields : [];
           try {
             barApiInternalSetCount(registeredItems.length);
-          } catch (e) { }
-        } catch (e) { }
+          } catch (e) {}
+        } catch (e) {}
       },
       // subscribe to match changes: callback receives (matchedIdSet, rawFilter)
       onFilterChange: function (cb: any) {
         try {
           if (typeof cb === "function") onFilterCallbacks.push(cb);
-        } catch (e) { }
+        } catch (e) {}
       },
     };
   } catch (e) {
@@ -435,4 +443,3 @@ function create(opts: any) {
 }
 
 window.filterBarHelper = { create: create };
-

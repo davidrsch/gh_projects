@@ -4,18 +4,28 @@ import { GitHubRepository } from "../services/GitHubRepository";
 import logger from "../lib/logger";
 
 export class ViewDataService {
-  public static async fetchProjectViews(project: ProjectEntry): Promise<ProjectView[]> {
-    let views: ProjectView[] = Array.isArray(project.views) ? project.views : [];
+  public static async fetchProjectViews(
+    project: ProjectEntry,
+  ): Promise<ProjectView[]> {
+    let views: ProjectView[] = Array.isArray(project.views)
+      ? project.views
+      : [];
     if (!views.length && project.id) {
       try {
-        views = await GitHubRepository.getInstance().fetchProjectViews(project.id);
+        views = await GitHubRepository.getInstance().fetchProjectViews(
+          project.id,
+        );
         project.views = views;
-        logger.debug(`[ghProjects] Assigned ${views.length} views to project ${project.id}`);
+        logger.debug(
+          `[ghProjects] Assigned ${views.length} views to project ${project.id}`,
+        );
       } catch (e) {
         logger.warn("Failed to fetch project views for panelKey: " + String(e));
       }
     } else {
-      logger.debug(`[ghProjects] Project ${project.id} already has ${views.length} views`);
+      logger.debug(
+        `[ghProjects] Project ${project.id} already has ${views.length} views`,
+      );
     }
     return views;
   }
@@ -23,7 +33,7 @@ export class ViewDataService {
   public static async enrichViewDetails(
     context: vscode.ExtensionContext,
     project: ProjectEntry,
-    views: ProjectView[]
+    views: ProjectView[],
   ) {
     if (project.id && Array.isArray(views) && views.length > 0) {
       try {
@@ -31,12 +41,17 @@ export class ViewDataService {
           const v = views[i];
           if (v && typeof v.number === "number") {
             try {
-              const det = await GitHubRepository.getInstance().getProjectViewDetails(project.id, v.number as number);
+              const det =
+                await GitHubRepository.getInstance().getProjectViewDetails(
+                  project.id,
+                  v.number as number,
+                );
               if (det) {
                 (v as any).details = det;
                 try {
                   const storageKey = `viewFilter:${project.id}:${v.number}`;
-                  const saved = await context.workspaceState.get<string>(storageKey);
+                  const saved =
+                    await context.workspaceState.get<string>(storageKey);
                   if (typeof saved === "string") {
                     (v as any).details.filter = saved;
                   }
@@ -46,14 +61,15 @@ export class ViewDataService {
               }
             } catch (err) {
               logger.debug(
-                `fetchViewDetails failed for project ${project.id} view ${String(v.number)}: ${String((err as any)?.message || err || "")}`
+                `fetchViewDetails failed for project ${project.id} view ${String(v.number)}: ${String((err as any)?.message || err || "")}`,
               );
             }
           }
         }
       } catch (e) {
         logger.debug(
-          "fetchViewDetails loop failed: " + String((e as any)?.message || e || "")
+          "fetchViewDetails loop failed: " +
+            String((e as any)?.message || e || ""),
         );
       }
     }

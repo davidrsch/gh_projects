@@ -20,7 +20,7 @@ export default {
       getChannel().appendLine(
         formatPrefix("INFO") +
           msg +
-          (args.length ? " " + JSON.stringify(args) : "")
+          (args.length ? " " + JSON.stringify(args) : ""),
       );
       try {
         console.info(formatPrefix("INFO") + msg, ...args);
@@ -32,7 +32,7 @@ export default {
       getChannel().appendLine(
         formatPrefix("WARN") +
           msg +
-          (args.length ? " " + JSON.stringify(args) : "")
+          (args.length ? " " + JSON.stringify(args) : ""),
       );
       try {
         console.warn(formatPrefix("WARN") + msg, ...args);
@@ -44,7 +44,7 @@ export default {
       getChannel().appendLine(
         formatPrefix("ERROR") +
           msg +
-          (args.length ? " " + JSON.stringify(args) : "")
+          (args.length ? " " + JSON.stringify(args) : ""),
       );
       try {
         console.error(formatPrefix("ERROR") + msg, ...args);
@@ -59,7 +59,7 @@ export default {
       getChannel().appendLine(
         formatPrefix("DEBUG") +
           msg +
-          (args.length ? " " + JSON.stringify(args) : "")
+          (args.length ? " " + JSON.stringify(args) : ""),
       );
       try {
         console.debug(formatPrefix("DEBUG") + msg, ...args);
