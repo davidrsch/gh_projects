@@ -15,6 +15,8 @@ export class ColumnHeaderRenderer {
 
   /**
    * Helper to get icon SVG from registry
+   * Note: iconName is a runtime string value, so we use 'as any' to bypass
+   * the IconName type check. This is safe because the function validates the icon name.
    */
   private getIconSvg(iconName: string): string {
     if (window.getIconSvg) {
