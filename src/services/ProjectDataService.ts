@@ -1,4 +1,3 @@
-import * as vscode from "vscode";
 import { GitHubRepository } from "./GitHubRepository";
 import {
   ProjectSnapshot,
@@ -7,6 +6,7 @@ import {
   NormalizedValue,
 } from "../lib/types";
 import logger from "../lib/logger";
+import { ConfigReader, getConfigReader } from "../lib/config";
 
 export class ProjectDataService {
   /**
@@ -16,6 +16,7 @@ export class ProjectDataService {
     project: ProjectEntry,
     viewKey: string | undefined,
     forceRefresh: boolean = false,
+    configReader?: ConfigReader,
   ): Promise<{
     snapshot: ProjectSnapshot;
     effectiveFilter?: string;
@@ -24,6 +25,8 @@ export class ProjectDataService {
     if (!project.id) {
       throw new Error("Project ID is missing");
     }
+
+    const config = configReader || getConfigReader();
 
     // 1. Parse View Key
     let viewIdx = 0;
@@ -44,9 +47,7 @@ export class ProjectDataService {
       undefined;
 
     // 3. Fetch Snapshot
-    const first = vscode.workspace
-      .getConfiguration("ghProjects")
-      .get<number>("itemsFirst", 50);
+    const first = config.get("itemsFirst", 50);
 
     logger.debug(
       `[ProjectDataService] Fetching project fields for projectId=${project.id} viewIdx=${viewIdx} first=${first}`,

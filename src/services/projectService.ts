@@ -1,7 +1,5 @@
-import * as vscode from "vscode";
 import findGitRepos from "../treeView/findRepos";
 import getRemotesForPath from "../treeView/getRemotes";
-import { parseOwnerRepoFromUrl } from "../lib/projectUtils";
 import { GitHubRepository } from "./GitHubRepository";
 import { uniqueProjectsFromResults } from "../lib/projectUtils";
 import logger from "../lib/logger";
@@ -12,21 +10,21 @@ import {
   RepoItem,
   ParsedRepoEntry,
 } from "../lib/types";
-import { execFile } from "child_process";
+import { ConfigReader, getConfigReader } from "../lib/config";
 
 export class ProjectService {
   private githubRepository: GitHubRepository;
+  private configReader: ConfigReader;
 
-  constructor() {
+  constructor(configReader?: ConfigReader) {
     this.githubRepository = GitHubRepository.getInstance();
+    this.configReader = configReader || getConfigReader();
   }
 
   public async loadProjects(workspaceRoot: string): Promise<ProjectEntry[]> {
     logger.debug(`loadProjects: starting for workspaceRoot=${workspaceRoot}`);
 
-    const maxDepth = vscode.workspace
-      .getConfiguration("ghProjects")
-      .get<number>("maxDepth", 4);
+    const maxDepth = this.configReader.get("maxDepth", 4);
     let repos: any[] = [];
     try {
       repos = await findGitRepos(workspaceRoot, maxDepth);
@@ -44,9 +42,7 @@ export class ProjectService {
     }
 
     const items: RepoItem[] = [];
-    const maxConcurrency = vscode.workspace
-      .getConfiguration("ghProjects")
-      .get<number>("maxConcurrency", 4);
+    const maxConcurrency = this.configReader.get("maxConcurrency", 4);
 
     const remoteTasks: Array<() => Promise<void>> = repos.map((r) => {
       return async () => {
@@ -111,76 +107,22 @@ export class ProjectService {
   private async getProjectsForReposArray(
     arr: RepoItem[],
   ): Promise<ParsedRepoEntry[]> {
-    const map = new Map<string, { owner: string; name: string }>();
-    const runCmdTasks: Array<() => Promise<void>> = [];
+    const { extractGitHubRepos } = await import("./repositoryDiscovery");
+    const repos = await extractGitHubRepos(arr, this.configReader.get("maxConcurrency", 4));
 
-    for (const item of arr || []) {
-      const remotesRaw = (item && (item.remotes ?? item.remote)) ?? [];
-      const remotes = Array.isArray(remotesRaw) ? remotesRaw : [remotesRaw];
-      if (Array.isArray(remotes) && remotes.length > 0) {
-        for (const r of remotes) {
-          const url =
-            (r && (typeof r === "string" ? r : (r as any).url)) || (r as any);
-          const or = parseOwnerRepoFromUrl(String(url || ""));
-          if (or) {
-            map.set(`${or.owner}/${or.name}`, or);
-          }
-        }
-      }
-      if ((!remotes || remotes.length === 0) && item && item.path) {
-        runCmdTasks.push(async () => {
-          try {
-            const res = await this.runCmd(
-              "git remote get-url origin",
-              item.path,
-            );
-            const or = parseOwnerRepoFromUrl(res.stdout.trim());
-            if (or) map.set(`${or.owner}/${or.name}`, or);
-          } catch (e) {
-            // ignore
-          }
-        });
-      }
-    }
-
-    if (runCmdTasks.length > 0) {
-      await promisePool<void>(runCmdTasks, 4);
-    }
-
-    const owners = Array.from(map.values());
-    const tasks: Array<() => Promise<ParsedRepoEntry>> = owners.map((o) => {
+    const tasks: Array<() => Promise<ParsedRepoEntry>> = repos.map((repo) => {
       return async () => {
         try {
-          return await this.githubRepository.getProjects(o.owner, o.name);
+          return await this.githubRepository.getProjects(repo.owner, repo.name);
         } catch (e: any) {
-          return { owner: o.owner, name: o.name, error: String(e || "") };
+          return { owner: repo.owner, name: repo.name, error: String(e || "") };
         }
       };
     });
 
-    return await promisePool<ParsedRepoEntry>(tasks, 4);
-  }
-
-  private runCmd(
-    cmd: string,
-    cwd?: string,
-  ): Promise<{ stdout: string; stderr: string }> {
-    const parts = String(cmd || "")
-      .trim()
-      .split(/\s+/);
-    if (parts[0] === "git") parts.shift();
-    return new Promise<{ stdout: string; stderr: string }>(
-      (resolve, reject) => {
-        execFile(
-          "git",
-          parts,
-          { cwd, maxBuffer: 10 * 1024 * 1024 },
-          (err, stdout, stderr) => {
-            if (err) return reject({ err, stdout, stderr });
-            resolve({ stdout, stderr });
-          },
-        );
-      },
+    return await promisePool<ParsedRepoEntry>(
+      tasks,
+      this.configReader.get("maxConcurrency", 4)
     );
   }
 }
