@@ -23,52 +23,52 @@ export type NormalizedValue =
   | { type: "date"; fieldId?: string; date: string | null }
   | { type: "number"; fieldId?: string; number: number | null }
   | {
-    type: "single_select";
-    fieldId?: string;
-    option?: {
-      id?: string;
-      name?: string;
-      color?: string;
-      description?: string;
-    };
-  }
+      type: "single_select";
+      fieldId?: string;
+      option?: {
+        id?: string;
+        name?: string;
+        color?: string;
+        description?: string;
+      };
+    }
   | {
-    type: "repository";
-    fieldId?: string;
-    repository?: { nameWithOwner?: string; url?: string };
-  }
+      type: "repository";
+      fieldId?: string;
+      repository?: { nameWithOwner?: string; url?: string };
+    }
   | { type: "pull_request"; fieldId?: string; pullRequests?: PRSummary[] }
   | {
-    type: "labels";
-    fieldId?: string;
-    labels?: Array<{ id?: string; name?: string; color?: string }>;
-  }
+      type: "labels";
+      fieldId?: string;
+      labels?: Array<{ id?: string; name?: string; color?: string }>;
+    }
   | { type: "issue"; fieldId?: string; issues?: IssueSummary[] }
   | { type: "parent_issue"; fieldId?: string; parent?: IssueSummary }
   | { type: "requested_reviewers"; fieldId?: string; reviewers?: any[] }
   | { type: "assignees"; fieldId?: string; assignees?: any[] }
   | {
-    type: "iteration";
-    fieldId?: string;
-    iterationId?: string;
-    title?: string;
-    startDate?: string;
-  }
+      type: "iteration";
+      fieldId?: string;
+      iterationId?: string;
+      title?: string;
+      startDate?: string;
+    }
   | { type: "milestone"; fieldId?: string; milestone?: any }
   | {
-    type: "sub_issues_progress";
-    fieldId?: string;
-    fieldName?: string;
-    total: number;
-    done: number;
-    percent: number;
-  }
+      type: "sub_issues_progress";
+      fieldId?: string;
+      fieldName?: string;
+      total: number;
+      done: number;
+      percent: number;
+    }
   | { type: "missing"; fieldId?: string; fieldName?: string }
   | {
-    type: "title";
-    fieldId?: string;
-    title?: { normalized?: any; raw?: any; content?: any };
-  }
+      type: "title";
+      fieldId?: string;
+      title?: { normalized?: any; raw?: any; content?: any };
+    }
   | { type: "unknown"; raw: any };
 
 export interface Item {
@@ -246,11 +246,11 @@ export interface ItemsQueryData {
 export interface RepoQueryData {
   // keys are dynamic (r0, r1, ...), but each value has optional labels & milestones
   [key: string]:
-  | {
-    labels?: { nodes?: Label[] };
-    milestones?: { nodes?: Milestone[] };
-  }
-  | undefined;
+    | {
+        labels?: { nodes?: Label[] };
+        milestones?: { nodes?: Milestone[] };
+      }
+    | undefined;
 }
 
 // Detailed GraphQL fragment shapes used for ProjectV2 item field values

@@ -12,13 +12,15 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
     this._onDidChangeTreeData.event;
 
   private projects: ProjectEntry[] = [];
-  constructor(private workspaceRoot: string | undefined, private projectService: ProjectService) {
-  }
+  constructor(
+    private workspaceRoot: string | undefined,
+    private projectService: ProjectService,
+  ) {}
 
   refresh(): void {
     // Show progress while loading projects to give user feedback.
     this.loadProjectsWithProgress().then(() =>
-      this._onDidChangeTreeData.fire()
+      this._onDidChangeTreeData.fire(),
     );
   }
 
@@ -34,8 +36,8 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
       return this.loadProjectsWithProgress().then(() =>
         this.projects.map(
           (p) =>
-            new ProjectItem(p, undefined, vscode.TreeItemCollapsibleState.None)
-        )
+            new ProjectItem(p, undefined, vscode.TreeItemCollapsibleState.None),
+        ),
       );
     }
 
@@ -48,15 +50,17 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
     try {
       try {
         vscode.window.showInformationMessage(
-          "ghProjects: scanning workspace for GitHub projects..."
+          "ghProjects: scanning workspace for GitHub projects...",
         );
-      } catch (e) { }
+      } catch (e) {}
 
-      const projects = await this.projectService.loadProjects(this.workspaceRoot);
+      const projects = await this.projectService.loadProjects(
+        this.workspaceRoot,
+      );
 
       if (projects.length === 0) {
         vscode.window.showInformationMessage(
-          `ghProjects: No GitHub Projects found for scanned repositories.`
+          `ghProjects: No GitHub Projects found for scanned repositories.`,
         );
       }
 
@@ -65,9 +69,9 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
       const msg = String(e || "");
       try {
         vscode.window.showErrorMessage(
-          `ghProjects: Failed to load projects: ${msg}`
+          `ghProjects: Failed to load projects: ${msg}`,
         );
-      } catch (e) { }
+      } catch (e) {}
       if (isGhNotFound(e)) {
         vscode.window.showErrorMessage(messages.GH_NOT_FOUND);
       } else {
@@ -89,7 +93,7 @@ export class ProjectsProvider implements vscode.TreeDataProvider<ProjectItem> {
           progress.report({ increment: 0 });
           await this.loadProjects();
           progress.report({ increment: 100 });
-        }
+        },
       );
     } catch (e) {
       // loadProjects handles errors and sets this.projects, so nothing more needed here.
@@ -101,11 +105,11 @@ export class ProjectItem extends vscode.TreeItem {
   constructor(
     public readonly project: ProjectEntry,
     public readonly label: string = ((project) => project.title || project.id)(
-      project
+      project,
     ),
     // projects are not collapsible and do not expose a click command (no hover command title)
     public readonly collapsibleState: vscode.TreeItemCollapsibleState = vscode
-      .TreeItemCollapsibleState.None
+      .TreeItemCollapsibleState.None,
   ) {
     super(label, collapsibleState);
     // Tooltip: show only the short description or label (no command title)

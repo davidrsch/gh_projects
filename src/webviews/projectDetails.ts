@@ -9,7 +9,7 @@ import { ViewDataService } from "./ViewDataService";
 export async function openProjectWebview(
   context: vscode.ExtensionContext,
   project: ProjectEntry,
-  workspaceRoot?: string
+  workspaceRoot?: string,
 ) {
   // Fetch project views
   const views = await ViewDataService.fetchProjectViews(project);
@@ -18,12 +18,13 @@ export async function openProjectWebview(
   await ViewDataService.enrichViewDetails(context, project, views);
 
   // Panels are keyed by workspaceRoot + project id/title for stability
-  const panelMapKey = `${workspaceRoot ?? "<no-workspace>"}::${project.id
-    ? String(project.id)
-    : project.title
-      ? String(project.title)
-      : "<unknown>"
-    }`;
+  const panelMapKey = `${workspaceRoot ?? "<no-workspace>"}::${
+    project.id
+      ? String(project.id)
+      : project.title
+        ? String(project.title)
+        : "<unknown>"
+  }`;
 
   const panelManager = PanelManager.getInstance();
   let panel = panelManager.getPanel(panelMapKey);
@@ -45,10 +46,16 @@ export async function openProjectWebview(
     resources.elementsUri.toString(),
     resources.fetcherUris,
     panelMapKey,
-    resources.vscodeShimUri.toString()
+    resources.vscodeShimUri.toString(),
   );
 
-  const messageHandler = new MessageHandler(panel, project, panelMapKey, context, resources);
+  const messageHandler = new MessageHandler(
+    panel,
+    project,
+    panelMapKey,
+    context,
+    resources,
+  );
   messageHandler.attach();
 
   return panel;

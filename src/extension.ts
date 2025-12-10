@@ -24,7 +24,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window
       .showWarningMessage(
         "No folder is open. Open a folder to use ghProjects.",
-        "Open Folder"
+        "Open Folder",
       )
       .then((sel) => {
         if (sel === "Open Folder")
@@ -39,7 +39,7 @@ export async function activate(context: vscode.ExtensionContext) {
   } else {
     const pick = await vscode.window.showQuickPick(
       folders.map((f) => f.uri.fsPath),
-      { placeHolder: "Select workspace folder for ghProjects" }
+      { placeHolder: "Select workspace folder for ghProjects" },
     );
     if (!pick) return;
     workspaceRoot = pick;
@@ -53,11 +53,13 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     treeView,
     vscode.commands.registerCommand("ghProjects.refresh", () =>
-      provider.refresh()
+      provider.refresh(),
     ),
     vscode.commands.registerCommand("ghProjects.signIn", async () => {
       try {
-        const authManager = (await import('./services/AuthenticationManager')).AuthenticationManager.getInstance();
+        const authManager = (
+          await import("./services/AuthenticationManager")
+        ).AuthenticationManager.getInstance();
         await authManager.ensureAuthenticated();
         vscode.window.showInformationMessage("Signed in to GitHub");
         provider.refresh();
@@ -68,14 +70,14 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "ghProjects.openProject",
       (project: ProjectEntry) =>
-        openProjectWebview(context, project, workspaceRoot)
+        openProjectWebview(context, project, workspaceRoot),
     ),
     vscode.commands.registerCommand(
       "ghProjects.testTableQueries",
       (project: ProjectEntry) => {
         openProjectWebview(context, project as any, workspaceRoot);
-      }
-    )
+      },
+    ),
   );
 
   // Listen for workspace folder changes and refresh provider as needed
@@ -95,14 +97,14 @@ export async function activate(context: vscode.ExtensionContext) {
         logger.error("provider.refresh failed: " + String(err));
       }
       const stillPresent = (vscode.workspace.workspaceFolders || []).some(
-        (f) => f.uri.fsPath === workspaceRoot
+        (f) => f.uri.fsPath === workspaceRoot,
       );
       if (!stillPresent) {
         vscode.window.showWarningMessage(
-          'ghProjects: previously-selected workspace folder is no longer in the workspace. Run "ghProjects.refresh" or re-select a workspace.'
+          'ghProjects: previously-selected workspace folder is no longer in the workspace. Run "ghProjects.refresh" or re-select a workspace.',
         );
       }
-    }
+    },
   );
   context.subscriptions.push(workspaceFoldersChange);
 
@@ -112,13 +114,15 @@ export async function activate(context: vscode.ExtensionContext) {
       logger.info("Skipping initial auth check for testing");
       return;
     }
-    const authManager = (await import('./services/AuthenticationManager')).AuthenticationManager.getInstance();
+    const authManager = (
+      await import("./services/AuthenticationManager")
+    ).AuthenticationManager.getInstance();
     const session = await authManager.getSession(false);
     if (!session) {
       const action = "Sign in to GitHub";
       const choice = await vscode.window.showInformationMessage(
         "ghProjects: Sign in to GitHub to enable authenticated features",
-        action
+        action,
       );
       if (choice === action) {
         await vscode.commands.executeCommand("ghProjects.signIn");
@@ -131,4 +135,4 @@ export async function activate(context: vscode.ExtensionContext) {
 
 // webview handling moved to `src/webviews/projectDetails.ts`
 
-export function deactivate() { }
+export function deactivate() {}

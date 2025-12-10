@@ -1,10 +1,12 @@
 import * as vscode from "vscode";
 
-export async function getWebviewFolder(context: vscode.ExtensionContext): Promise<string> {
+export async function getWebviewFolder(
+  context: vscode.ExtensionContext,
+): Promise<string> {
   const useBundledSetting = vscode.workspace
     .getConfiguration("ghProjects")
     .get<boolean>("useBundledWebviews", false);
-  
+
   if (useBundledSetting) {
     return "dist";
   }
@@ -21,15 +23,15 @@ export async function getWebviewFolder(context: vscode.ExtensionContext): Promis
 export function getWebviewResources(
   context: vscode.ExtensionContext,
   webview: vscode.Webview,
-  webviewFolder: string
+  webviewFolder: string,
 ) {
   const elementsUri = webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
       "third-party",
-      "vscode-elements.js"
-    )
+      "vscode-elements.js",
+    ),
   );
 
   const overviewUri = webview.asWebviewUri(
@@ -37,59 +39,59 @@ export function getWebviewResources(
       context.extensionUri,
       "media",
       webviewFolder,
-      "overviewFetcher.js"
-    )
+      "overviewFetcher.js",
+    ),
   );
   const tableUri = webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
       webviewFolder,
-      "tableViewFetcher.js"
-    )
+      "tableViewFetcher.js",
+    ),
   );
   const helperUri = webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
       webviewFolder,
-      "filterBarHelper.js"
-    )
+      "filterBarHelper.js",
+    ),
   );
   const boardUri = webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
       webviewFolder,
-      "boardViewFetcher.js"
-    )
+      "boardViewFetcher.js",
+    ),
   );
   const roadmapUri = webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
       webviewFolder,
-      "roadmapViewFetcher.js"
-    )
+      "roadmapViewFetcher.js",
+    ),
   );
   const contentUri = webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
       "media",
       webviewFolder,
-      "contentFetcher.js"
-    )
+      "contentFetcher.js",
+    ),
   );
   const patchUri =
     webviewFolder === "dist"
       ? webview.asWebviewUri(
-        vscode.Uri.joinPath(
-          context.extensionUri,
-          "media",
-          "dist",
-          "tableViewFetcher.patch.js"
+          vscode.Uri.joinPath(
+            context.extensionUri,
+            "media",
+            "dist",
+            "tableViewFetcher.patch.js",
+          ),
         )
-      )
       : undefined;
 
   const vscodeShimUri = webview.asWebviewUri(
@@ -97,8 +99,8 @@ export function getWebviewResources(
       context.extensionUri,
       "media",
       "shim",
-      "vscode-webview-shim.js"
-    )
+      "vscode-webview-shim.js",
+    ),
   );
 
   return {

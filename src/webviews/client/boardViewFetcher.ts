@@ -1,23 +1,31 @@
 import { escapeHtml } from "./utils";
-import { logDebug, setLoadingState, setErrorState, createLoadMoreButton, initFilterBar, applyFilterVisibility } from "./viewFetcherUtils";
+import {
+  logDebug,
+  setLoadingState,
+  setErrorState,
+  createLoadMoreButton,
+  initFilterBar,
+  applyFilterVisibility,
+} from "./viewFetcherUtils";
 /// <reference path="./global.d.ts" />
 
 // signal that the board fetcher script executed
 try {
   logDebug("global", "boardViewFetcher.loaded");
-} catch (e) { }
+} catch (e) {}
 try {
   console.log && console.log("boardViewFetcher script loaded");
-} catch (e) { }
+} catch (e) {}
 
 // Expose a global fetcher: window.boardViewFetcher(view, container, viewKey)
 function createBoardFetcher() {
   return function (view: any, container: HTMLElement, viewKey: string) {
-    const viewName = (view && (view.name || view.id)) ? (view.name || view.id) : "Board View";
+    const viewName =
+      view && (view.name || view.id) ? view.name || view.id : "Board View";
 
     try {
       setLoadingState(container, viewName);
-    } catch (e) { }
+    } catch (e) {}
 
     var first = 50;
 
@@ -37,10 +45,16 @@ function createBoardFetcher() {
 
         // If the server returned an effective filter, apply it via the bar API
         try {
-          if (effectiveFilter && barApi && typeof barApi.setEffectiveFilter === "function") {
-            try { barApi.setEffectiveFilter(effectiveFilter); } catch (e) { }
+          if (
+            effectiveFilter &&
+            barApi &&
+            typeof barApi.setEffectiveFilter === "function"
+          ) {
+            try {
+              barApi.setEffectiveFilter(effectiveFilter);
+            } catch (e) {}
           }
-        } catch (e) { }
+        } catch (e) {}
 
         if (!barApi) {
           var header = document.createElement("div");
@@ -73,7 +87,7 @@ function createBoardFetcher() {
           var card = document.createElement("div");
           try {
             card.setAttribute("data-gh-item-id", String(it && it.id));
-          } catch (e) { }
+          } catch (e) {}
           card.style.padding = "8px";
           card.style.border = "1px solid var(--vscode-editorWidget-border)";
           card.style.marginBottom = "8px";
@@ -89,8 +103,8 @@ function createBoardFetcher() {
             "</div>" +
             (it && it.id
               ? '<div style="color:var(--vscode-descriptionForeground);font-size:12px">' +
-              escapeHtml(String(it.id)) +
-              "</div>"
+                escapeHtml(String(it.id)) +
+                "</div>"
               : "");
           content.appendChild(card);
         }
@@ -102,7 +116,7 @@ function createBoardFetcher() {
           if (barApi && typeof barApi.setLoadState === "function")
             barApi.setLoadState(
               items.length < first,
-              items.length >= first ? "Load more" : "All loaded"
+              items.length >= first ? "Load more" : "All loaded",
             );
 
           // Wire local preview filtering via centralized helper: register items and subscribe
@@ -113,7 +127,12 @@ function createBoardFetcher() {
             }
             if (typeof barApi.onFilterChange === "function") {
               barApi.onFilterChange(function (matchedIds: any, rawFilter: any) {
-                applyFilterVisibility(container, "[data-gh-item-id]", matchedIds, "block");
+                applyFilterVisibility(
+                  container,
+                  "[data-gh-item-id]",
+                  matchedIds,
+                  "block",
+                );
 
                 if (barApi && typeof barApi.setCount === "function")
                   barApi.setCount(matchedIds.size);
@@ -126,13 +145,17 @@ function createBoardFetcher() {
               });
             }
           }
-        } catch (e) { }
+        } catch (e) {}
       } catch (err: any) {
         logDebug(viewKey, "boardViewFetcher.render.error", {
           message: String(err && err.message),
           stack: err && err.stack,
         });
-        setErrorState(container, viewName, "Error rendering board view: " + String(err && err.message));
+        setErrorState(
+          container,
+          viewName,
+          "Error rendering board view: " + String(err && err.message),
+        );
       }
     }
 
@@ -140,35 +163,42 @@ function createBoardFetcher() {
       var msg = ev && ev.data ? ev.data : ev;
       try {
         if (msg && msg.command === "fields") {
-          if (
-            msg.viewKey &&
-            viewKey &&
-            String(msg.viewKey) !== String(viewKey)
-          )
+          if (msg.viewKey && viewKey && String(msg.viewKey) !== String(viewKey))
             return;
           if (msg.error) {
             setErrorState(container, viewName, String(msg.error));
           } else {
             render(
               msg.payload || (msg.payload && msg.payload.data) || msg.payload,
-              msg.effectiveFilter
+              msg.effectiveFilter,
             );
           }
         }
-      } catch (e) { }
+      } catch (e) {}
     }
 
     function requestFields() {
       try {
-        if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
-          (window as any).__APP_MESSAGING__.postMessage({ command: 'requestFields', first: first, viewKey: viewKey });
+        if (
+          (window as any).__APP_MESSAGING__ &&
+          typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+        ) {
+          (window as any).__APP_MESSAGING__.postMessage({
+            command: "requestFields",
+            first: first,
+            viewKey: viewKey,
+          });
         }
-      } catch (e) { }
+      } catch (e) {}
     }
-    try { (window as any).__APP_MESSAGING__.onMessage(onMessage); } catch (e) { window.addEventListener("message", onMessage); }
+    try {
+      (window as any).__APP_MESSAGING__.onMessage(onMessage);
+    } catch (e) {
+      window.addEventListener("message", onMessage);
+    }
     requestFields();
   };
 }
 try {
   window.boardViewFetcher = createBoardFetcher();
-} catch (e) { }
+} catch (e) {}

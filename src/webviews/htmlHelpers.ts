@@ -115,7 +115,7 @@ export function getScriptTags(
     helperUri?: vscode.Uri;
   },
   vscodeShimUri?: string,
-  elementsScriptUri?: string
+  elementsScriptUri?: string,
 ): string {
   const scripts: string[] = [];
 
@@ -124,20 +124,36 @@ export function getScriptTags(
   }
 
   if (elementsScriptUri) {
-    scripts.push(`<script nonce="${nonce}" src="${elementsScriptUri}"></script>`);
+    scripts.push(
+      `<script nonce="${nonce}" src="${elementsScriptUri}"></script>`,
+    );
   }
 
   if (fetcherUris) {
     if (fetcherUris.helperUri) {
-      scripts.push(`<script nonce="${nonce}" src="${fetcherUris.helperUri.toString()}"></script>`);
+      scripts.push(
+        `<script nonce="${nonce}" src="${fetcherUris.helperUri.toString()}"></script>`,
+      );
     }
-    scripts.push(`<script nonce="${nonce}" src="${fetcherUris.overviewUri.toString()}"></script>`);
-    scripts.push(`<script nonce="${nonce}" src="${fetcherUris.tableUri.toString()}"></script>`);
-    scripts.push(`<script nonce="${nonce}" src="${fetcherUris.boardUri.toString()}"></script>`);
-    scripts.push(`<script nonce="${nonce}" src="${fetcherUris.roadmapUri.toString()}"></script>`);
-    scripts.push(`<script nonce="${nonce}" src="${fetcherUris.contentUri.toString()}"></script>`);
+    scripts.push(
+      `<script nonce="${nonce}" src="${fetcherUris.overviewUri.toString()}"></script>`,
+    );
+    scripts.push(
+      `<script nonce="${nonce}" src="${fetcherUris.tableUri.toString()}"></script>`,
+    );
+    scripts.push(
+      `<script nonce="${nonce}" src="${fetcherUris.boardUri.toString()}"></script>`,
+    );
+    scripts.push(
+      `<script nonce="${nonce}" src="${fetcherUris.roadmapUri.toString()}"></script>`,
+    );
+    scripts.push(
+      `<script nonce="${nonce}" src="${fetcherUris.contentUri.toString()}"></script>`,
+    );
     if (fetcherUris.patchUri) {
-      scripts.push(`<script nonce="${nonce}" src="${fetcherUris.patchUri.toString()}"></script>`);
+      scripts.push(
+        `<script nonce="${nonce}" src="${fetcherUris.patchUri.toString()}"></script>`,
+      );
     }
   }
 
@@ -290,7 +306,10 @@ export function getInlineScript(nonce: string, projectData: any): string {
 </script>`;
 }
 
-export function getTestHandlerScript(nonce: string, testHandlerCode: string): string {
+export function getTestHandlerScript(
+  nonce: string,
+  testHandlerCode: string,
+): string {
   return `
 <script nonce="${nonce}">
 ${testHandlerCode}

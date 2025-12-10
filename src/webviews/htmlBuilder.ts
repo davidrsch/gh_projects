@@ -26,7 +26,7 @@ export function buildHtml(
     helperUri?: vscode.Uri;
   },
   panelKey?: string,
-  vscodeShimUri?: string
+  vscodeShimUri?: string,
 ): string {
   const nonce = getNonce();
   const csp = webview.cspSource;

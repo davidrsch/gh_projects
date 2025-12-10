@@ -1,14 +1,25 @@
 import { ProjectTable } from "./components/ProjectTable";
-import { setLoadingState, setErrorState, initFilterBar, createLoadMoreButton, logDebug } from "./viewFetcherUtils";
+import {
+  setLoadingState,
+  setErrorState,
+  initFilterBar,
+  createLoadMoreButton,
+  logDebug,
+} from "./viewFetcherUtils";
 import { parseSortByFields, sortItems } from "./utils/tableSorting";
 
 /// <reference path="./global.d.ts" />
 
-window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: any) {
-  const viewName = (view && (view.name || view.id)) ? (view.name || view.id) : "Table View";
+window.tableViewFetcher = function (
+  view: any,
+  container: HTMLElement,
+  viewKey: any,
+) {
+  const viewName =
+    view && (view.name || view.id) ? view.name || view.id : "Table View";
   try {
     setLoadingState(container, viewName);
-  } catch (e) { }
+  } catch (e) {}
 
   let itemsLimit = 30;
 
@@ -50,7 +61,7 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
     // Track unsaved hidden fields changes (shown/hidden via the plus-column menu)
     let unsavedHiddenFields: Set<string> | null = null;
     // Track unsaved slice changes
-    let unsavedSlice: { fieldId: string, value: any } | null = null;
+    let unsavedSlice: { fieldId: string; value: any } | null = null;
     let barApi = initFilterBar(filterWrapper, viewKey, {
       suffix: viewKey ? String(viewKey).split(":").pop() : "",
       step: itemsLimit,
@@ -62,7 +73,11 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
         try {
           // Save grouping if changed
           if (unsavedGrouping !== null) {
-            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+            if (
+              (window as any).__APP_MESSAGING__ &&
+              typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+            ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "setViewGrouping",
                 viewKey: viewKey,
@@ -75,7 +90,11 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
           // Save hidden fields if changed
           if (unsavedHiddenFields !== null) {
             const hiddenArr = Array.from(unsavedHiddenFields);
-            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+            if (
+              (window as any).__APP_MESSAGING__ &&
+              typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+            ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "setViewHiddenFields",
                 viewKey: viewKey,
@@ -84,15 +103,21 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
             }
             // Persist to localStorage as well so UI persists across reloads (server may also return updated snapshot)
             try {
-              const key = viewKey ? `ghProjects.table.${viewKey}.hiddenFields` : null;
+              const key = viewKey
+                ? `ghProjects.table.${viewKey}.hiddenFields`
+                : null;
               if (key) localStorage.setItem(key, JSON.stringify(hiddenArr));
-            } catch (e) { }
+            } catch (e) {}
             unsavedHiddenFields = null;
           }
 
           // Save slice if changed
           if (unsavedSlice !== null) {
-            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+            if (
+              (window as any).__APP_MESSAGING__ &&
+              typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+            ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "setViewSlice",
                 viewKey: viewKey,
@@ -103,16 +128,20 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
             try {
               const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null;
               if (key) localStorage.setItem(key, JSON.stringify(unsavedSlice));
-            } catch (e) { }
+            } catch (e) {}
             unsavedSlice = null;
           }
-        } catch (e) { }
+        } catch (e) {}
       },
       onDiscard: () => {
         try {
           // Discard grouping changes
           if (unsavedGrouping !== null) {
-            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+            if (
+              (window as any).__APP_MESSAGING__ &&
+              typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+            ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "discardViewGrouping",
                 viewKey: viewKey,
@@ -123,7 +152,11 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
 
           // Discard hidden fields changes: request fresh snapshot from extension
           if (unsavedHiddenFields !== null) {
-            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+            if (
+              (window as any).__APP_MESSAGING__ &&
+              typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+            ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "discardViewHiddenFields",
                 viewKey: viewKey,
@@ -136,7 +169,11 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
 
           // Discard slice changes: clear slice and refresh UI
           if (unsavedSlice !== null) {
-            if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+            if (
+              (window as any).__APP_MESSAGING__ &&
+              typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+            ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "discardViewSlice",
                 viewKey: viewKey,
@@ -147,22 +184,28 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
             try {
               const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null;
               if (key) localStorage.removeItem(key);
-            } catch (e) { }
+            } catch (e) {}
             // Re-request fields to refresh UI from server state
             requestFields();
           }
-        } catch (e) { }
-      }
+        } catch (e) {}
+      },
     });
 
     // If the server provided an effective filter, apply it via the bar API
     // rather than passing it in the options object. This avoids typing
     // mismatches while still initializing the input value at runtime.
     try {
-      if (effectiveFilter && barApi && typeof barApi.setEffectiveFilter === "function") {
-        try { barApi.setEffectiveFilter(effectiveFilter); } catch (e) { }
+      if (
+        effectiveFilter &&
+        barApi &&
+        typeof barApi.setEffectiveFilter === "function"
+      ) {
+        try {
+          barApi.setEffectiveFilter(effectiveFilter);
+        } catch (e) {}
       }
-    } catch (e) { }
+    } catch (e) {}
 
     // Fallback Header if Filter Bar fails or returns null
     if (!barApi) {
@@ -193,7 +236,7 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
       if (typeof barApi.setLoadState === "function") {
         barApi.setLoadState(
           allItems.length < itemsLimit,
-          allItems.length >= itemsLimit ? "Load more" : "All loaded"
+          allItems.length >= itemsLimit ? "Load more" : "All loaded",
         );
       }
       // Register items for filtering
@@ -220,9 +263,11 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
     // Check for local override
     if (viewKey) {
       try {
-        const stored = localStorage.getItem(`ghProjects.table.${viewKey}.sortConfig`);
+        const stored = localStorage.getItem(
+          `ghProjects.table.${viewKey}.sortConfig`,
+        );
         if (stored) sortConfig = JSON.parse(stored);
-      } catch (e) { }
+      } catch (e) {}
     }
 
     // Apply sorting
@@ -233,32 +278,51 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
 
     // Render Table
     // Use `allFields` if provided (full project fields), otherwise fall back to `fields` (view-visible fields)
-    const allFields = (snapshot as any).allFields && Array.isArray((snapshot as any).allFields) ? (snapshot as any).allFields : (snapshot.fields || []);
+    const allFields =
+      (snapshot as any).allFields && Array.isArray((snapshot as any).allFields)
+        ? (snapshot as any).allFields
+        : snapshot.fields || [];
 
     // Determine which fields the view exposes (visible). If view details contain a fields.nodes
     // list, compute the hidden fields (allFields - viewFields) and pass them to ProjectTable so
     // it picks up view-default hidden fields.
-    const viewFieldNodes = (snapshot as any).details && (snapshot as any).details.fields && Array.isArray((snapshot as any).details.fields.nodes)
-      ? (snapshot as any).details.fields.nodes
-      : null;
+    const viewFieldNodes =
+      (snapshot as any).details &&
+      (snapshot as any).details.fields &&
+      Array.isArray((snapshot as any).details.fields.nodes)
+        ? (snapshot as any).details.fields.nodes
+        : null;
 
     let viewHiddenFieldIds: string[] | undefined = undefined;
     if (viewFieldNodes && Array.isArray(viewFieldNodes)) {
       const visibleIds = new Set(viewFieldNodes.map((n: any) => String(n.id)));
-      viewHiddenFieldIds = (allFields || []).map((f: any) => String(f.id)).filter((id: string) => !visibleIds.has(id));
+      viewHiddenFieldIds = (allFields || [])
+        .map((f: any) => String(f.id))
+        .filter((id: string) => !visibleIds.has(id));
     }
 
     // Send debug info to extension output (via postMessage) so we can see what the webview computed
     try {
       const dbg = {
         allFieldIds: (allFields || []).map((f: any) => String(f.id)),
-        viewFieldIds: viewFieldNodes ? viewFieldNodes.map((n: any) => String(n.id)) : null,
+        viewFieldIds: viewFieldNodes
+          ? viewFieldNodes.map((n: any) => String(n.id))
+          : null,
         viewHiddenFieldIds,
       };
-      if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
-        (window as any).__APP_MESSAGING__.postMessage({ command: 'debugLog', level: 'debug', message: 'tableViewFetcher field debug', data: dbg, viewKey });
+      if (
+        (window as any).__APP_MESSAGING__ &&
+        typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+      ) {
+        (window as any).__APP_MESSAGING__.postMessage({
+          command: "debugLog",
+          level: "debug",
+          message: "tableViewFetcher field debug",
+          data: dbg,
+          viewKey,
+        });
       }
-    } catch (e) { }
+    } catch (e) {}
 
     const table = new ProjectTable(tableContainer, allFields, displayItems, {
       groupingFieldName: groupingFieldName || undefined,
@@ -267,7 +331,9 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
       hiddenFields: viewHiddenFieldIds,
       onHiddenFieldsChange: (hiddenIds: string[]) => {
         try {
-          unsavedHiddenFields = new Set((hiddenIds || []).map((h: any) => String(h)));
+          unsavedHiddenFields = new Set(
+            (hiddenIds || []).map((h: any) => String(h)),
+          );
           // Enable Save/Discard buttons in the filter bar if present
           if (barApi && barApi.saveBtn && barApi.discardBtn) {
             try {
@@ -277,9 +343,9 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) { }
+            } catch (e) {}
           }
-        } catch (e) { }
+        } catch (e) {}
       },
       onSortChange: () => requestFields(),
       onGroupChange: (fieldName: string) => {
@@ -295,9 +361,9 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) { }
+            } catch (e) {}
           }
-        } catch (e) { }
+        } catch (e) {}
       },
       onSliceChange: (field: any) => {
         // Track slice as unsaved change (requires Save/Discard)
@@ -313,20 +379,25 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) { }
+            } catch (e) {}
           }
 
           // Log for debugging
-          if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+          if (
+            (window as any).__APP_MESSAGING__ &&
+            typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+          ) {
             (window as any).__APP_MESSAGING__.postMessage({
               command: "debugLog",
               level: "debug",
-              message: field ? `Slice activated on field: ${field.name}` : "Slice cleared",
-              viewKey: viewKey
+              message: field
+                ? `Slice activated on field: ${field.name}`
+                : "Slice cleared",
+              viewKey: viewKey,
             });
           }
-        } catch (e) { }
-      }
+        } catch (e) {}
+      },
     });
     table.render();
 
@@ -351,27 +422,31 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
     const msg = ev && ev.data ? ev.data : ev;
     try {
       if (msg && msg.command === "fields") {
-        if (msg.viewKey && viewKey && String(msg.viewKey) !== String(viewKey)) return;
+        if (msg.viewKey && viewKey && String(msg.viewKey) !== String(viewKey))
+          return;
 
         if (msg.error) {
           setErrorState(container, viewName, String(msg.error));
         } else {
-            render(msg.payload, msg.effectiveFilter);
+          render(msg.payload, msg.effectiveFilter);
         }
       }
-    } catch (e) { }
+    } catch (e) {}
   }
 
   function requestFields() {
     try {
-      if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === "function") {
+      if (
+        (window as any).__APP_MESSAGING__ &&
+        typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+      ) {
         (window as any).__APP_MESSAGING__.postMessage({
           command: "requestFields",
           first: itemsLimit,
           viewKey: viewKey,
         });
       }
-    } catch (e) { }
+    } catch (e) {}
   }
 
   try {
@@ -385,12 +460,15 @@ window.tableViewFetcher = function (view: any, container: HTMLElement, viewKey: 
 function getGroupingFieldName(snapshot: any): string | null {
   try {
     if (snapshot && snapshot.details) {
-      const vgb = snapshot.details.verticalGroupByFields && snapshot.details.verticalGroupByFields.nodes;
-      const gb = snapshot.details.groupByFields && snapshot.details.groupByFields.nodes;
+      const vgb =
+        snapshot.details.verticalGroupByFields &&
+        snapshot.details.verticalGroupByFields.nodes;
+      const gb =
+        snapshot.details.groupByFields && snapshot.details.groupByFields.nodes;
 
       if (vgb && vgb.length > 0) return vgb[0].name || null;
       if (gb && gb.length > 0) return gb[0].name || null;
     }
-  } catch (e) { }
+  } catch (e) {}
   return null;
 }

@@ -11,7 +11,7 @@ export class MessageHandler {
     private project: ProjectEntry,
     private panelKey: string,
     private context: vscode.ExtensionContext,
-    private resources: any // Pass resources for re-init
+    private resources: any, // Pass resources for re-init
   ) {}
 
   public attach() {
@@ -20,29 +20,30 @@ export class MessageHandler {
         await this.handleMessage(msg);
       },
       null,
-      this.context.subscriptions
+      this.context.subscriptions,
     );
   }
 
   private async handleMessage(msg: any) {
     // Log all messages for debugging
-    if (msg.command && msg.command.startsWith('test:')) {
-      console.log('[Extension] Received test message:', msg);
+    if (msg.command && msg.command.startsWith("test:")) {
+      console.log("[Extension] Received test message:", msg);
     }
 
     // Special-case: the UI may send a 'ready' handshake when it has initialized.
     try {
-      if (msg && typeof msg === 'object' && msg.command === 'ready') {
+      if (msg && typeof msg === "object" && msg.command === "ready") {
         this.sendInitMessage();
         return;
       }
-    } catch (e) { }
+    } catch (e) {}
 
     // Basic validation
     if (!msg || typeof msg !== "object" || typeof msg.command !== "string") {
       this.panel.webview.postMessage({
         command: "fields",
-        viewKey: msg && (msg as any).viewKey ? String((msg as any).viewKey) : null,
+        viewKey:
+          msg && (msg as any).viewKey ? String((msg as any).viewKey) : null,
         error: "Invalid message format",
         authRequired: false,
       });
@@ -58,7 +59,7 @@ export class MessageHandler {
           vscode.commands.executeCommand(
             "vscode.openFolder",
             vscode.Uri.file(msg.path),
-            { forceNewWindow: false }
+            { forceNewWindow: false },
           );
         }
         break;
@@ -120,11 +121,12 @@ export class MessageHandler {
       return;
     }
     const _reqMsg = `webview.requestFields received viewKey=${String(
-      reqViewKey
+      reqViewKey,
     )} projectId=${this.project.id}`;
     logger.debug(_reqMsg);
     try {
-      const { snapshot, effectiveFilter, itemsCount } = await ProjectDataService.getProjectData(this.project, reqViewKey);
+      const { snapshot, effectiveFilter, itemsCount } =
+        await ProjectDataService.getProjectData(this.project, reqViewKey);
 
       this.panel.webview.postMessage({
         command: "fields",
@@ -154,9 +156,7 @@ export class MessageHandler {
     try {
       let level = (msg as any).level || "debug";
       if (typeof level !== "string") level = "debug";
-      level = (["debug", "info", "warn", "error"] as string[]).includes(
-        level
-      )
+      level = (["debug", "info", "warn", "error"] as string[]).includes(level)
         ? level
         : "debug";
       const vk = (msg as any).viewKey
@@ -183,7 +183,7 @@ export class MessageHandler {
       const newFilter = (msg as any).filter;
       if (!reqViewKey) return;
       const view = this.getViewFromKey(reqViewKey);
-      
+
       // Update in-memory details.filter
       if (view) {
         if (!(view as any).details) (view as any).details = {};
@@ -196,13 +196,14 @@ export class MessageHandler {
         await this.context.workspaceState.update(
           storageKey,
           (view && (view as any).details && (view as any).details.filter) ||
-          undefined
+            undefined,
         );
       } catch (e) {
         logger.debug("workspaceState.update failed: " + String(e));
       }
 
-      const { snapshot, effectiveFilter } = await ProjectDataService.getProjectData(this.project, reqViewKey);
+      const { snapshot, effectiveFilter } =
+        await ProjectDataService.getProjectData(this.project, reqViewKey);
 
       this.panel.webview.postMessage({
         command: "fields",
@@ -233,18 +234,20 @@ export class MessageHandler {
         const storageKey = `viewFilter:${this.project.id}:${view && view.number}`;
         const saved = await this.context.workspaceState.get<string>(storageKey);
         if (typeof saved === "string") {
-          if (!view) (this.project.views as any)[this.getViewIndex(reqViewKey)] = {}; // Should not happen if view found
+          if (!view)
+            (this.project.views as any)[this.getViewIndex(reqViewKey)] = {}; // Should not happen if view found
           // Re-fetch view to be safe or just update
           if (view) {
-             if (!(view as any).details) (view as any).details = {};
-             (view as any).details.filter = saved;
+            if (!(view as any).details) (view as any).details = {};
+            (view as any).details.filter = saved;
           }
         }
       } catch (e) {
         // ignore
       }
 
-      const { snapshot, effectiveFilter } = await ProjectDataService.getProjectData(this.project, reqViewKey);
+      const { snapshot, effectiveFilter } =
+        await ProjectDataService.getProjectData(this.project, reqViewKey);
 
       this.panel.webview.postMessage({
         command: "fields",
@@ -284,14 +287,20 @@ export class MessageHandler {
         const storageKey = `viewGrouping:${this.project.id}:${view && view.number}`;
         await this.context.workspaceState.update(
           storageKey,
-          (view && (view as any).details && (view as any).details.groupByFields && (view as any).details.groupByFields.nodes && (view as any).details.groupByFields.nodes[0] && (view as any).details.groupByFields.nodes[0].name) ||
-          undefined
+          (view &&
+            (view as any).details &&
+            (view as any).details.groupByFields &&
+            (view as any).details.groupByFields.nodes &&
+            (view as any).details.groupByFields.nodes[0] &&
+            (view as any).details.groupByFields.nodes[0].name) ||
+            undefined,
         );
       } catch (e) {
         logger.debug("workspaceState.update (grouping) failed: " + String(e));
       }
 
-      const { snapshot, effectiveFilter } = await ProjectDataService.getProjectData(this.project, reqViewKey);
+      const { snapshot, effectiveFilter } =
+        await ProjectDataService.getProjectData(this.project, reqViewKey);
 
       this.panel.webview.postMessage({
         command: "fields",
@@ -323,15 +332,16 @@ export class MessageHandler {
         const saved = await this.context.workspaceState.get<string>(storageKey);
         if (typeof saved === "string") {
           if (view) {
-             if (!(view as any).details) (view as any).details = {};
-             (view as any).details.groupByFields = { nodes: [{ name: saved }] };
+            if (!(view as any).details) (view as any).details = {};
+            (view as any).details.groupByFields = { nodes: [{ name: saved }] };
           }
         }
       } catch (e) {
         // ignore
       }
 
-      const { snapshot, effectiveFilter } = await ProjectDataService.getProjectData(this.project, reqViewKey);
+      const { snapshot, effectiveFilter } =
+        await ProjectDataService.getProjectData(this.project, reqViewKey);
 
       this.panel.webview.postMessage({
         command: "fields",
@@ -372,7 +382,7 @@ export class MessageHandler {
   private sendInitMessage() {
     try {
       const resend = {
-        command: 'init',
+        command: "init",
         project: {
           title: this.project.title,
           repos: this.project.repos ?? [],
@@ -390,9 +400,9 @@ export class MessageHandler {
           content: this.resources.fetcherUris.contentUri?.toString(),
           patch: this.resources.fetcherUris.patchUri?.toString(),
           elements: this.resources.elementsUri?.toString(),
-        }
+        },
       };
       this.panel.webview.postMessage(resend);
-    } catch (e) { }
+    } catch (e) {}
   }
 }
