@@ -7,6 +7,16 @@ export class GroupRenderer {
     private allItems: any[],
   ) {}
 
+  /**
+   * Helper to get icon SVG from registry
+   */
+  private getIconSvg(iconName: string, size: number = 14): string {
+    if (typeof (window as any).getIconSvg === "function") {
+      return (window as any).getIconSvg(iconName, { size });
+    }
+    return "";
+  }
+
   public renderGroup(
     tbody: HTMLTableSectionElement,
     group: any,
@@ -78,9 +88,9 @@ export class GroupRenderer {
 
     // Toggle Button
     const toggleBtn = document.createElement("span");
-    // SVG Icons for GitHub-like look
-    const iconExpanded = `<svg aria-hidden="true" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-triangle-down"><path d="M4.427 7.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 7H4.604a.25.25 0 00-.177.427z"></path></svg>`;
-    const iconCollapsed = `<svg aria-hidden="true" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-triangle-right"><path d="M8.573 4.604a.25.25 0 01.427-.177l3.396 3.396a.25.25 0 010 .354l-3.396 3.396a.25.25 0 01-.427-.177V4.604z"></path></svg>`;
+    // SVG Icons for GitHub-like look from icon registry
+    const iconExpanded = this.getIconSvg("triangle-down", 16);
+    const iconCollapsed = this.getIconSvg("triangle-right", 16);
 
     toggleBtn.innerHTML = iconExpanded;
     toggleBtn.style.cursor = "pointer";
