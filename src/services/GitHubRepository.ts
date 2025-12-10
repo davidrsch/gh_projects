@@ -1,5 +1,3 @@
-import { graphql } from "@octokit/graphql";
-import { AuthenticationManager } from "./AuthenticationManager";
 import logger from "../lib/logger";
 import * as vscode from "vscode";
 import {
@@ -33,13 +31,14 @@ import {
   ProjectV2SingleSelectField,
   ProjectV2IterationField,
 } from "./graphqlTypes";
+import { GraphQLExecutor, getGraphQLExecutor } from "./graphqlExecutor";
 
 export class GitHubRepository {
   private static instance: GitHubRepository;
-  private authManager: AuthenticationManager;
+  private executor: GraphQLExecutor;
 
-  private constructor() {
-    this.authManager = AuthenticationManager.getInstance();
+  private constructor(executor?: GraphQLExecutor) {
+    this.executor = executor || getGraphQLExecutor();
   }
 
   public static getInstance(): GitHubRepository {
@@ -50,24 +49,13 @@ export class GitHubRepository {
   }
 
   /**
-   * Executes a GraphQL query with the current user's token.
+   * Executes a GraphQL query.
    */
   private async query<T>(
     query: string,
     variables?: Record<string, any>,
   ): Promise<T> {
-    const token = await this.authManager.ensureAuthenticated();
-    try {
-      return await graphql<T>(query, {
-        ...variables,
-        headers: {
-          authorization: `token ${token}`,
-        },
-      });
-    } catch (error: any) {
-      logger.error(`GitHubRepository: Query failed. ${error.message}`);
-      throw error;
-    }
+    return this.executor.execute<T>(query, variables);
   }
 
   /**
