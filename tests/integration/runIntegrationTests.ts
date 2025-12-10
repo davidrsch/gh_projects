@@ -27,6 +27,7 @@ async function main() {
         const launchArgs = [
             '--disable-extensions', // Disable other extensions
             '--remote-debugging-port=9223', // Enable CDP for Playwright
+            '--disable-features=IsolateOrigins,site-per-process', // Disable site isolation for frame access
             // Use a separate user data dir to avoid messing with the user's VS Code
             `--user-data-dir=${path.resolve(__dirname, '../../../.vscode-test/user-data-2')}`,
             `--extensions-dir=${path.resolve(__dirname, '../../../.vscode-test/extensions')}`,

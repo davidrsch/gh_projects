@@ -1,68 +1,8 @@
 /// <reference path="./global.d.ts" />
+import { logDebug } from "./utils/logger";
+import { setLoadingState, setErrorState, createLoadMoreButton } from "./utils/domUtils";
 
-/**
- * Sends a debug log message to the extension host.
- */
-export function logDebug(viewKey: string, message: string, data?: any) {
-    try {
-        if (
-            (window as any).__APP_MESSAGING__ &&
-            typeof (window as any).__APP_MESSAGING__.postMessage === "function"
-        ) {
-            (window as any).__APP_MESSAGING__.postMessage({
-                command: "debugLog",
-                level: "debug",
-                viewKey: viewKey,
-                message: message,
-                data: data,
-            });
-        }
-    } catch (e) { }
-    try {
-        if (console && console.log) {
-            console.log(message, data);
-        }
-    } catch (e) { }
-}
-
-/**
- * Sets the container content to a loading state.
- */
-export function setLoadingState(container: HTMLElement, titleText: string) {
-    container.innerHTML =
-        '<div class="title">' +
-        titleText +
-        '</div><div class="loading"><em>Loading...</em></div>';
-}
-
-/**
- * Sets the container content to an error state.
- */
-export function setErrorState(container: HTMLElement, titleText: string, error: string) {
-    container.innerHTML =
-        '<div class="title">' +
-        titleText +
-        '</div><div style="color:var(--vscode-editor-foreground)">' +
-        error +
-        "</div>";
-}
-
-/**
- * Creates a standardized "Load more" button.
- */
-export function createLoadMoreButton(onClick: () => void): HTMLButtonElement {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = "Load more";
-    btn.style.marginLeft = "8px";
-    btn.style.border = "1px solid var(--vscode-editorWidget-border)";
-    btn.addEventListener("click", () => {
-        onClick();
-        btn.disabled = true;
-        btn.textContent = "Loading...";
-    });
-    return btn;
-}
+export { logDebug, setLoadingState, setErrorState, createLoadMoreButton };
 
 /**
  * Initializes the filter bar using the shared filterBarHelper.

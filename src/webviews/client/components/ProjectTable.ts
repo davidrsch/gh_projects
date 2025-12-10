@@ -1,10 +1,15 @@
 import { renderCell } from "../renderers/cellRenderer";
 import { normalizeColor, getContrastColor, escapeHtml } from "../utils";
 import { ColumnHeaderMenu } from "./ColumnHeaderMenu";
+import { ColumnHeaderRenderer } from "../renderers/columnHeaderRenderer";
 import FieldsMenu from "./FieldsMenu";
 import { SlicePanel } from "./SlicePanel";
 import type { SortConfig } from "../utils/tableSorting";
 import { sortItems } from "../utils/tableSorting";
+import { GroupDataService } from "../services/GroupDataService";
+import { RowRenderer } from "../renderers/RowRenderer";
+import { GroupRenderer } from "../renderers/GroupRenderer";
+import { TableResizer } from "./TableResizer";
 
 export interface TableOptions {
     groupingFieldName?: string;
@@ -30,6 +35,7 @@ export class ProjectTable {
     private activeSlice: { fieldId: string, value: any } | null = null;
     // Track which field the active slice panel is for (panel may be open before a value is selected)
     private activeSlicePanelFieldId: string | null = null;
+    private tableResizer: TableResizer | null = null;
 
     constructor(container: HTMLElement, fields: any[], items: any[], options: TableOptions = {}) {
         this.container = container;
@@ -94,7 +100,17 @@ export class ProjectTable {
         table.style.width = "100%";
 
         this.renderColGroup(table);
-        this.renderHeader(table);
+        new ColumnHeaderRenderer({
+            fields: this.fields,
+            sortConfig: this.options.sortConfig,
+            groupingFieldName: this.options.groupingFieldName,
+            activeSlice: this.activeSlice,
+            activeSlicePanelFieldId: this.activeSlicePanelFieldId,
+            onHeaderMenu: this.showHeaderMenu.bind(this),
+            onShowFieldsMenu: this.showFieldsMenu.bind(this),
+            onClearGroup: this.clearGroup.bind(this),
+            onClearSlice: this.clearSlice.bind(this)
+        }).render(table);
         this.renderBody(table);
 
         tableContainer.appendChild(table);
@@ -103,7 +119,8 @@ export class ProjectTable {
         // Post-render: adjust column widths based on content (simple heuristic)
         // This was in the original code, we can keep it or improve it.
         // For now, let's keep the sticky header logic and resizers.
-        this.setupResizers(table);
+        this.tableResizer = new TableResizer(table, this.fields, this.options);
+        this.tableResizer.setupResizers();
     }
 
     private renderColGroup(table: HTMLTableElement) {
@@ -129,175 +146,7 @@ export class ProjectTable {
         table.appendChild(colgroup);
     }
 
-    private renderHeader(table: HTMLTableElement) {
-        const thead = document.createElement("thead");
-        thead.style.background = "var(--vscode-sideBar-background)";
-        thead.style.position = "sticky";
-        thead.style.top = "0";
-        thead.style.zIndex = "10";
 
-        const tr = document.createElement("tr");
-
-        // Index Header
-        const thIndex = document.createElement("th");
-        thIndex.textContent = "#";
-        this.styleHeaderCell(thIndex);
-        tr.appendChild(thIndex);
-
-        // Field Headers
-        for (const field of this.fields) {
-            const th = document.createElement("th");
-
-            // Create header content wrapper
-            const headerContent = document.createElement('div');
-            headerContent.style.display = 'flex';
-            headerContent.style.alignItems = 'center';
-            headerContent.style.justifyContent = 'space-between';
-            headerContent.style.width = '100%';
-            headerContent.style.gap = '4px';
-
-            // Field name span
-            const nameSpan = document.createElement('span');
-            let headerText = field.name || field.id || "";
-
-            // Add sort indicator if this field is sorted
-            if (this.options.sortConfig?.fieldId === field.id) {
-                const indicator = this.options.sortConfig?.direction === 'ASC' ? ' ↑' : ' ↓';
-                headerText += indicator;
-            }
-
-            nameSpan.textContent = headerText;
-            nameSpan.style.flex = '1';
-            nameSpan.style.overflow = 'hidden';
-            nameSpan.style.textOverflow = 'ellipsis';
-            nameSpan.style.whiteSpace = 'nowrap';
-
-            // Check if this field is grouped
-            const isGrouped = field.name?.toLowerCase() === this.options.groupingFieldName?.toLowerCase();
-
-            // Check if this field is being sliced (either a value selected, or the slice panel is open for this field)
-            const isSliced = (this.activeSlice && this.activeSlice.fieldId === field.id) || (this.activeSlicePanelFieldId && String(this.activeSlicePanelFieldId) === String(field.id));
-
-            // Icons container (for group / slice indicators)
-            const iconsContainer = document.createElement('span');
-            iconsContainer.style.display = 'flex';
-            iconsContainer.style.alignItems = 'center';
-            iconsContainer.style.gap = '6px';
-
-            // Show Group icon when this field is used for grouping
-            if (isGrouped) {
-                const groupIcon = document.createElement('span');
-                groupIcon.className = 'column-group-icon';
-                groupIcon.innerHTML = '<svg class="octicon octicon-rows" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M16 10.75v2.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25v-2.5C0 9.784.784 9 1.75 9h12.5c.966 0 1.75.784 1.75 1.75Zm0-8v2.5A1.75 1.75 0 0 1 14.25 7H1.75A1.75 1.75 0 0 1 0 5.25v-2.5C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75Zm-1.75-.25H1.75a.25.25 0 0 0-.25.25v2.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-2.5a.25.25 0 0 0-.25-.25Zm0 8H1.75a.25.25 0 0 0-.25.25v2.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-2.5a.25.25 0 0 0-.25-.25Z"></path></svg>';
-                groupIcon.style.display = 'inline-flex';
-                groupIcon.style.alignItems = 'center';
-                groupIcon.style.color = 'var(--vscode-foreground)';
-                groupIcon.style.opacity = '0.85';
-                groupIcon.title = 'Grouped by this field (click to clear)';
-                groupIcon.style.cursor = 'pointer';
-                groupIcon.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    this.clearGroup(field);
-                });
-                iconsContainer.appendChild(groupIcon);
-            }
-
-            // Show Slice icon when this field has an active slice
-            if (isSliced) {
-                const sliceIcon = document.createElement('span');
-                sliceIcon.className = 'column-slice-icon';
-                sliceIcon.innerHTML = '<svg class="octicon octicon-sliceby" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M14.5 1.5H6.5V5H10C10.4142 5 10.75 5.33579 10.75 5.75C10.75 6.16421 10.4142 6.5 10 6.5H6.5V7.75C6.5 8.16421 6.16421 8.5 5.75 8.5C5.33579 8.5 5 8.16421 5 7.75V6.5H1.5V14.5H5V12.75C5 12.3358 5.33579 12 5.75 12C6.16421 12 6.5 12.3358 6.5 12.75V14.5H14.5V1.5ZM5 1.5V5H1.5V1.5H5ZM0 14.5V5.75V1.5C0 0.671573 0.671573 0 1.5 0H5.75H14.5C15.3284 0 16 0.671573 16 1.5V14.5C16 15.3284 15.3284 16 14.5 16H5.75H1.5C0.671573 16 0 15.3284 0 14.5ZM9.62012 9.58516C10.8677 9.59206 11.8826 8.58286 11.8826 7.33544V6.32279C11.8826 5.90857 12.2184 5.57279 12.6326 5.57279C13.0468 5.57279 13.3826 5.90857 13.3826 6.32279V7.33544C13.3826 9.4147 11.6909 11.0966 9.61182 11.0851L9.3826 11.0839L9.3826 12.9995C9.3826 13.2178 9.12245 13.3312 8.96248 13.1827L6.07989 10.506C5.97337 10.4071 5.97337 10.2385 6.07989 10.1396L8.96248 7.46291C9.12245 7.31438 9.3826 7.42782 9.3826 7.64611V9.58384L9.62012 9.58516Z"></path></svg>';
-                sliceIcon.style.display = 'inline-flex';
-                sliceIcon.style.alignItems = 'center';
-                sliceIcon.style.color = 'var(--vscode-foreground)';
-                sliceIcon.style.opacity = '0.85';
-                sliceIcon.title = 'Sliced by this field (click to clear)';
-                sliceIcon.style.cursor = 'pointer';
-                sliceIcon.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    this.clearSlice(field);
-                });
-                iconsContainer.appendChild(sliceIcon);
-            }
-
-            // Menu button (⋮)
-            const menuBtn = document.createElement('button');
-            menuBtn.textContent = '⋮';
-            menuBtn.style.background = 'transparent';
-            menuBtn.style.border = 'none';
-            menuBtn.style.cursor = 'pointer';
-            menuBtn.style.fontSize = '16px';
-            menuBtn.style.padding = '2px 4px';
-            menuBtn.style.color = 'var(--vscode-foreground)';
-            menuBtn.style.opacity = '0.6';
-            menuBtn.style.borderRadius = '3px';
-            menuBtn.title = `${field.name} options`;
-
-            // Hover effects
-            menuBtn.addEventListener('mouseenter', () => {
-                menuBtn.style.opacity = '1';
-                menuBtn.style.background = 'var(--vscode-toolbar-hoverBackground)';
-            });
-
-            menuBtn.addEventListener('mouseleave', () => {
-                menuBtn.style.opacity = '0.6';
-                menuBtn.style.background = 'transparent';
-            });
-
-            // Click handler for menu
-            menuBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                // Reset hover background in case a backdrop prevents pointerleave
-                (th as HTMLElement).style.background = 'var(--vscode-sideBar-background)';
-                this.showHeaderMenu(e, field, th);
-            });
-
-            headerContent.appendChild(nameSpan);
-            // Add icon indicator BETWEEN name and menu (only if grouped/sliced)
-            if (isGrouped || isSliced) {
-                headerContent.appendChild(iconsContainer);
-            }
-            headerContent.appendChild(menuBtn);
-            th.appendChild(headerContent);
-
-            // Header hover state (use pointer events and guard against sticky/backdrop interaction)
-            th.addEventListener('pointerenter', () => {
-                th.style.background = 'var(--vscode-list-hoverBackground)';
-            });
-
-            th.addEventListener('pointerleave', () => {
-                th.style.background = 'var(--vscode-sideBar-background)';
-            });
-
-            this.styleHeaderCell(th);
-            tr.appendChild(th);
-        }
-
-        // Add Field column (+)
-        const thAddField = document.createElement("th");
-        const addFieldBtn = document.createElement('button');
-        addFieldBtn.textContent = '+';
-        addFieldBtn.style.background = 'transparent';
-        addFieldBtn.style.border = 'none';
-        addFieldBtn.style.cursor = 'pointer';
-        addFieldBtn.style.fontSize = '18px';
-        addFieldBtn.style.fontWeight = 'bold';
-        addFieldBtn.style.color = 'var(--vscode-foreground)';
-        addFieldBtn.style.width = '100%';
-        addFieldBtn.style.height = '100%';
-        addFieldBtn.title = 'Show hidden fields';
-
-        addFieldBtn.addEventListener('click', () => this.showFieldsMenu(addFieldBtn));
-
-        thAddField.appendChild(addFieldBtn);
-        this.styleHeaderCell(thAddField);
-        thAddField.style.textAlign = 'center';
-        thAddField.style.width = '50px';
-        tr.appendChild(thAddField);
-
-        thead.appendChild(tr);
-        table.appendChild(thead);
-    }
 
     private showFieldsMenu(anchorElement: HTMLElement) {
         // Hide existing menus
@@ -330,21 +179,7 @@ export class ProjectTable {
         menu.show(anchorElement);
     }
 
-    private styleHeaderCell(th: HTMLTableCellElement) {
-        th.style.padding = "8px";
-        th.style.textAlign = "left";
-        th.style.whiteSpace = "nowrap";
-        th.style.overflow = "hidden";
-        th.style.textOverflow = "ellipsis";
-        th.style.borderRight = "1px solid var(--vscode-panel-border)";
-        th.style.borderBottom = "1px solid var(--vscode-panel-border)";
-        th.style.position = "sticky";
-        th.style.top = "0";
-        th.style.zIndex = "11";
-        th.style.background = "var(--vscode-sideBar-background)";
-        th.style.height = "32px"; // Enforce fixed height
-        th.style.boxSizing = "border-box";
-    }
+
 
     private renderBody(table: HTMLTableElement) {
         const tbody = document.createElement("tbody");
@@ -377,11 +212,16 @@ export class ProjectTable {
 
         // Check for grouping
         const groupingField = this.getGroupingField();
+        const rowRenderer = new RowRenderer(this.fields, this.items, (colIndex, pageX, startWidth) => {
+            if (this.tableResizer) {
+                this.tableResizer.beginColumnResize(colIndex, pageX, startWidth);
+            }
+        });
 
         if (groupingField) {
-            this.renderGroupedRows(tbody, groupingField, displayItems);
+            this.renderGroupedRows(tbody, groupingField, displayItems, rowRenderer);
         } else {
-            this.renderFlatRows(tbody, displayItems);
+            this.renderFlatRows(tbody, displayItems, rowRenderer);
         }
 
         table.appendChild(tbody);
@@ -399,615 +239,26 @@ export class ProjectTable {
         return null;
     }
 
-    private renderFlatRows(tbody: HTMLTableSectionElement, items: any[]) {
+    private renderFlatRows(tbody: HTMLTableSectionElement, items: any[], rowRenderer: RowRenderer) {
         items.forEach((item, index) => {
-            const tr = this.createRow(item, index);
+            const tr = rowRenderer.createRow(item, index);
             tbody.appendChild(tr);
         });
     }
 
-    private renderGroupedRows(tbody: HTMLTableSectionElement, groupingField: any, items: any[]) {
+    private renderGroupedRows(tbody: HTMLTableSectionElement, groupingField: any, items: any[], rowRenderer: RowRenderer) {
         // Group items
-        const groups = this.groupItems(items, groupingField);
+        const groups = GroupDataService.groupItems(items, groupingField);
+        const groupRenderer = new GroupRenderer(this.fields, this.items);
 
         for (const group of groups) {
-            // Render Group Header
-            const trHeader = document.createElement("tr");
-            const tdHeader = document.createElement("td");
-            tdHeader.colSpan = this.fields.length + 1;
-            tdHeader.style.padding = "8px";
-            tdHeader.style.background = "var(--vscode-editor-background)"; // Ensure opaque background
-            tdHeader.style.fontWeight = "600";
-            tdHeader.style.borderTop = "1px solid var(--vscode-editorGroup-border)";
-            tdHeader.style.borderBottom = "1px solid var(--vscode-editorGroup-border)";
-            tdHeader.style.position = "sticky";
-            tdHeader.style.top = "32px"; // Matches fixed header height
-            tdHeader.style.zIndex = "9";
-            tdHeader.style.boxShadow = "0 1px 2px rgba(0,0,0,0.1)"; // Add shadow for better separation
-
-            // Group Header Content
-            const headerContent = document.createElement("div");
-            headerContent.style.display = "flex";
-            headerContent.style.alignItems = "center";
-            headerContent.style.gap = "8px";
-            const field = groupingField;
-
-            // Helper: find estimate field id (best-effort)
-            const estimateField = this.fields.find(f => (f.dataType && String(f.dataType).toLowerCase() === 'number') && String(f.name || '').toLowerCase().includes('estimate')) ||
-                this.fields.find(f => (f.dataType && String(f.dataType).toLowerCase() === 'number'));
-            const estimateFieldId = estimateField ? estimateField.id : null;
-
-            const sumEstimate = (itemsArr: any[]) => {
-                if (!estimateFieldId) return 0;
-                let sum = 0;
-                for (const gi of itemsArr) {
-                    const it = gi.item || gi;
-                    if (!it || !Array.isArray(it.fieldValues)) continue;
-                    const fv = it.fieldValues.find((v: any) => (v.fieldId && String(v.fieldId) === String(estimateFieldId)) || (v.fieldName && String(v.fieldName).toLowerCase().includes('estimate')) || v.type === 'number');
-                    if (fv) {
-                        const num = Number(fv.number != null ? fv.number : (fv.value != null ? fv.value : NaN));
-                        if (!isNaN(num)) sum += num;
-                    }
-                }
-                return sum;
-            };
-
-            const formatEstimate = (n: number) => {
-                if (!isFinite(n)) return "";
-                return String(n);
-            };
-
-            // Toggle Button
-            const toggleBtn = document.createElement("span");
-            // SVG Icons for GitHub-like look
-            const iconExpanded = `<svg aria-hidden="true" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-triangle-down"><path d="M4.427 7.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 7H4.604a.25.25 0 00-.177.427z"></path></svg>`;
-            const iconCollapsed = `<svg aria-hidden="true" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-triangle-right"><path d="M8.573 4.604a.25.25 0 01.427-.177l3.396 3.396a.25.25 0 010 .354l-3.396 3.396a.25.25 0 01-.427-.177V4.604z"></path></svg>`;
-
-            toggleBtn.innerHTML = iconExpanded;
-            toggleBtn.style.cursor = "pointer";
-            toggleBtn.style.userSelect = "none";
-            toggleBtn.style.display = "inline-flex";
-            toggleBtn.style.alignItems = "center";
-            toggleBtn.style.justifyContent = "center";
-            toggleBtn.style.width = "16px";
-            toggleBtn.style.height = "16px";
-            toggleBtn.style.fill = "var(--vscode-foreground)";
-            toggleBtn.style.opacity = "0.7";
-
-            // Group Name & Color
-            const colorDot = document.createElement("div");
-            colorDot.style.width = "12px";
-            colorDot.style.height = "12px";
-            colorDot.style.borderRadius = "50%";
-            colorDot.style.backgroundColor = normalizeColor(group.option.color) || "gray";
-
-            const nameSpan = document.createElement("span");
-            nameSpan.textContent = group.option.name || group.option.title || "Unassigned";
-
-            const countBadge = document.createElement("vscode-badge");
-            countBadge.textContent = String(group.items.length);
-
-            // We'll keep the left-hand part of the group header (toggle, avatar/color, name, count)
-            // in a sticky left pane so it remains visible when horizontally scrolling.
-            const leftPane = document.createElement('div');
-            leftPane.style.display = 'flex';
-            leftPane.style.alignItems = 'center';
-            leftPane.style.gap = '8px';
-            leftPane.style.position = 'sticky';
-            leftPane.style.left = '0';
-            leftPane.style.zIndex = '12';
-            leftPane.style.background = tdHeader.style.background;
-            leftPane.style.paddingRight = '8px';
-
-            const rightPane = document.createElement('div');
-            rightPane.style.display = 'flex';
-            rightPane.style.alignItems = 'center';
-            rightPane.style.gap = '8px';
-            rightPane.style.flex = '1';
-
-            leftPane.appendChild(toggleBtn);
-
-            // For parent_issue, try to extract parent metadata from the first child item
-            let parentMeta: any = null;
-            let resolvedParentItem: any = null;
-            if (String(groupingField.dataType || '').toLowerCase() === 'parent_issue') {
-                const first = (group.items && group.items[0]) ? (group.items[0].item || group.items[0]) : null;
-                if (first && Array.isArray(first.fieldValues)) {
-                    const pfv = first.fieldValues.find((v: any) => String(v.fieldId) === String(groupingField.id) || v.fieldName === groupingField.name || v.type === 'parent_issue');
-                    if (pfv) {
-                        parentMeta = pfv.parent || pfv.parentIssue || pfv.issue || pfv.item || pfv.value || null;
-                    }
-                }
-
-                // Try to resolve the full parent item from the current items snapshot (this.items)
-                if (parentMeta && Array.isArray(this.items)) {
-                    try {
-                        const identifiers: string[] = [];
-                        if (parentMeta.number) identifiers.push(String(parentMeta.number));
-                        if (parentMeta.id) identifiers.push(String(parentMeta.id));
-                        if (parentMeta.url) identifiers.push(String(parentMeta.url));
-                        if (parentMeta.title) identifiers.push(String(parentMeta.title));
-                        // search in this.items for a matching content/raw identifiers
-                        const found = this.items.find((A: any) => {
-                            const d = (A && (A.content || (A.raw && A.raw.itemContent))) || null;
-                            if (!d) return false;
-                            const M: string[] = [];
-                            if (d.number) M.push(String(d.number));
-                            if (d.id) M.push(String(d.id));
-                            if (d.url) M.push(String(d.url));
-                            if (d.title) M.push(String(d.title));
-                            if (d.name) M.push(String(d.name));
-                            if (d.raw && d.raw.number) M.push(String(d.raw.number));
-                            if (d.raw && d.raw.id) M.push(String(d.raw.id));
-                            if (d.raw && d.raw.url) M.push(String(d.raw.url));
-                            for (let o of identifiers) {
-                                for (let m of M) {
-                                    if (o && m && String(o) === String(m)) return true;
-                                }
-                            }
-                            return false;
-                        });
-                        if (found) resolvedParentItem = found;
-                    } catch (e) { }
-                }
-            }
-
-            // Avatar / color dot / repo icon depending on field type
-            if ((group.option && group.option.avatarUrl) || (group.option && group.option.login) || (group.option && group.option.name && (String(groupingField.dataType || '').toLowerCase() === 'assignees'))) {
-                // Try to render avatar for assignees
-                const avatarEl = document.createElement('span');
-                const avatarUrl = (group.option && (group.option.avatarUrl || group.option.avatar || group.option.imageUrl)) || (() => {
-                    // try to find in items
-                    for (const gi of group.items) {
-                        const it = gi.item || gi;
-                        if (!it || !Array.isArray(it.fieldValues)) continue;
-                        const fv = it.fieldValues.find((v: any) => v.type === 'assignees' || (String(v.fieldId) === String(groupingField.id)));
-                        if (fv && fv.assignees && Array.isArray(fv.assignees)) {
-                            const match = fv.assignees.find((a: any) => String(a.login || a.name) === String(group.option.name || group.option.id));
-                            if (match && (match.avatarUrl || match.avatar)) return match.avatarUrl || match.avatar;
-                        }
-                    }
-                    return null;
-                })();
-                if (avatarUrl) {
-                    avatarEl.innerHTML = '<span title="' + (escapeHtml((group.option && (group.option.login || group.option.name)) || 'Assignee')) + '" style="display:inline-block;width:20px;height:20px;border-radius:50%;overflow:hidden;background-size:cover;background-position:center;background-image:url(' + escapeHtml(avatarUrl) + ');border:2px solid var(--vscode-editor-background)"></span>';
-                    leftPane.appendChild(avatarEl);
-                } else {
-                    leftPane.appendChild(colorDot);
-                }
-            } else if (String(groupingField.dataType || '').toLowerCase() === 'repository') {
-                // repository icon
-                const repoIcon = document.createElement('span');
-                repoIcon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;color:var(--vscode-icon-foreground)"><path fill="currentColor" d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11A1.5 1.5 0 0 1 12.5 15h-9A1.5 1.5 0 0 1 2 13.5v-11zM3.5 2A.5.5 0 0 0 3 2.5V4h10V2.5a.5.5 0 0 0-.5-.5h-9z"/></svg>';
-                leftPane.appendChild(repoIcon);
-            } else {
-                leftPane.appendChild(colorDot);
-            }
-
-            // Name
-            // For parent_issue, prefer the resolved parent item's title if available, else use parentMeta
-            if (resolvedParentItem) {
-                // Try to extract title and status color from resolved parent
-                const content = resolvedParentItem.content || (resolvedParentItem.raw && resolvedParentItem.raw.itemContent) || null;
-                if (content) {
-                    // title
-                    try {
-                        if (content.title) nameSpan.textContent = String(content.title);
-                        else if (content.name) nameSpan.textContent = String(content.name);
-                        else if (content.number) nameSpan.textContent = String(content.number);
-                    } catch (e) { }
-
-                    // Try to get status color from parent's fieldValues (single_select status)
-                    if (Array.isArray(resolvedParentItem.fieldValues)) {
-                        const statusFV = resolvedParentItem.fieldValues.find((v: any) => v && v.type === 'single_select' && v.option && v.option.name);
-                        if (statusFV && statusFV.option) {
-                            // If option has color, use it; otherwise try map by name
-                            try {
-                                const c = statusFV.option.color || statusFV.option.id || statusFV.option.name || null;
-                                if (c) colorDot.style.backgroundColor = normalizeColor(c) || colorDot.style.backgroundColor;
-                            } catch (e) { }
-                        }
-                    }
-                }
-            } else if (parentMeta) {
-                nameSpan.textContent = parentMeta.title || parentMeta.name || parentMeta.number || parentMeta.id || nameSpan.textContent;
-                if (parentMeta.color) {
-                    try { colorDot.style.backgroundColor = normalizeColor(parentMeta.color) || colorDot.style.backgroundColor; } catch (e) { }
-                }
-            }
-            leftPane.appendChild(nameSpan);
-
-            // Count circle (placed before estimate pill)
-            const countCircle = document.createElement('span');
-            countCircle.style.display = 'inline-flex';
-            countCircle.style.alignItems = 'center';
-            countCircle.style.justifyContent = 'center';
-            countCircle.style.width = '22px';
-            countCircle.style.height = '22px';
-            countCircle.style.borderRadius = '50%';
-            countCircle.style.background = 'var(--vscode-input-background)';
-            countCircle.style.border = '1px solid var(--vscode-panel-border)';
-            countCircle.style.color = 'var(--vscode-foreground)';
-            countCircle.style.fontSize = '12px';
-            countCircle.style.fontWeight = '600';
-            countCircle.style.minWidth = '22px';
-            countCircle.style.boxSizing = 'border-box';
-            countCircle.textContent = String(group.items.length || 0);
-            leftPane.appendChild(countCircle);
-
-            // Estimate pill and optional extra info
-            const estSum = sumEstimate(group.items || []);
-            if (estSum && estSum > 0) {
-                const estEl = document.createElement('div');
-                estEl.style.display = 'inline-block';
-                estEl.style.padding = '2px 8px';
-                estEl.style.borderRadius = '999px';
-                estEl.style.border = '1px solid var(--vscode-panel-border)';
-                estEl.style.background = 'var(--vscode-input-background)';
-                estEl.style.color = 'var(--vscode-foreground)';
-                estEl.style.fontSize = '12px';
-                estEl.style.lineHeight = '18px';
-                estEl.style.marginLeft = '8px';
-                estEl.textContent = 'Estimate: ' + formatEstimate(estSum);
-                // Put estimate pill into the left sticky pane so it remains visible when horizontally scrolling
-                leftPane.appendChild(estEl);
-
-                // If parent_issue, show completed/amount + progress bar (only for real parents)
-                if (String(groupingField.dataType || '').toLowerCase() === 'parent_issue' && !(group.option && (group.option.name === 'Unassigned' || group.option.title === 'Unassigned'))) {
-                    const completedNames = ['done', 'closed', 'completed', 'finished'];
-
-                    // Helper: robust done detection for a single item
-                    const isDoneByHeuristics = (it: any) => {
-                        try {
-                            const content = it && (it.content || (it.raw && it.raw.itemContent));
-                            if (content) {
-                                const state = (content.state || (content.merged ? 'MERGED' : undefined) || '').toString().toUpperCase();
-                                if (state === 'CLOSED' || state === 'MERGED') return true;
-                            }
-
-                            if (Array.isArray(it.fieldValues)) {
-                                // single_select status matching
-                                const ss = it.fieldValues.find((v: any) => v && v.type === 'single_select' && v.option && v.option.name && completedNames.includes(String(v.option.name).toLowerCase()));
-                                if (ss) return true;
-
-                                // numeric percent-like or explicit done flag
-                                const percentFV = it.fieldValues.find((v: any) => v && (String(v.fieldName || '').toLowerCase().includes('progress') || String(v.fieldName || '').toLowerCase().includes('percent') || v.type === 'number' && (String(v.fieldName || '').toLowerCase().includes('progress'))));
-                                if (percentFV && percentFV.number != null) {
-                                    const pct = Number(percentFV.number || 0);
-                                    if (pct >= 100) return true;
-                                }
-                            }
-
-                            if (content && (content.labels && Array.isArray(content.labels.nodes))) {
-                                const labs = content.labels.nodes.map((l: any) => String(l.name || '').toLowerCase());
-                                for (const cn of completedNames) if (labs.includes(cn)) return true;
-                            }
-                        } catch (e) { }
-                        return false;
-                    };
-
-                    // Prefer parent-provided aggregate if available
-                    let done = 0;
-                    let total = 0;
-                    if (resolvedParentItem && Array.isArray(resolvedParentItem.fieldValues)) {
-                        const agg = resolvedParentItem.fieldValues.find((v: any) => v && (v.type === 'sub_issues_progress' || (v.total != null && v.done != null)));
-                        if (agg && agg.total != null) {
-                            total = Number(agg.total || 0);
-                            done = Number(agg.done || 0);
-                        }
-                    }
-
-                    // If no parent aggregate found, compute from children
-                    if (!total) {
-                        for (const gi of group.items) {
-                            const it = gi.item || gi;
-                            if (!it) continue;
-                            total++;
-                            if (isDoneByHeuristics(it)) done++;
-                        }
-                    }
-
-                    // show completed/total BEFORE progress bar
-                    const doneText = document.createElement('div');
-                    doneText.style.color = 'var(--vscode-descriptionForeground)';
-                    doneText.style.fontSize = '12px';
-                    doneText.style.marginLeft = '8px';
-                    doneText.style.fontVariantNumeric = 'tabular-nums';
-                    doneText.textContent = `${done}/${total}`;
-                    // Keep completed/total near the left sticky area so it stays visible
-                    leftPane.appendChild(doneText);
-
-                    // show progress bar
-                    const progWrapper = document.createElement('div');
-                    progWrapper.style.display = 'inline-flex';
-                    progWrapper.style.alignItems = 'center';
-                    progWrapper.style.gap = '8px';
-                    progWrapper.style.marginLeft = '8px';
-                    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                    const bar = document.createElement('div');
-                    bar.style.display = 'inline-block';
-                    bar.style.width = '120px';
-                    bar.style.height = '12px';
-                    bar.style.background = 'transparent';
-                    bar.style.border = '1px solid var(--vscode-focusBorder)';
-                    bar.style.borderRadius = '6px';
-                    bar.style.overflow = 'hidden';
-                    const fill = document.createElement('div');
-                    fill.style.height = '100%';
-                    fill.style.width = String(pct) + '%';
-                    fill.style.background = 'var(--vscode-focusBorder)';
-                    bar.appendChild(fill);
-                    progWrapper.appendChild(bar);
-                    // Progress bar is useful summary info — keep it in the sticky left pane
-                    leftPane.appendChild(progWrapper);
-                }
-            }
-
-            // Single-select: show option description if available
-            if (String(groupingField.dataType || '').toLowerCase() === 'single_select') {
-                try {
-                    const opt = (groupingField.options || []).find((o: any) => String(o.name) === String(group.option && group.option.name));
-                    if (opt && opt.description) {
-                        const descEl = document.createElement('div');
-                        descEl.style.color = 'var(--vscode-descriptionForeground)';
-                        descEl.style.fontSize = '12px';
-                        descEl.style.marginLeft = '8px';
-                        descEl.textContent = String(opt.description).slice(0, 120);
-                        // Keep description fixed in the left sticky pane so it remains visible
-                        leftPane.appendChild(descEl);
-                    }
-                } catch (e) { }
-            }
-
-            // Iteration: append iteration range (start - end) if startDate/duration available, else title
-            if (String(groupingField.dataType || '').toLowerCase() === 'iteration') {
-                try {
-                    const opt = group.option || {};
-                    let iterText: string | null = null;
-                    const start = opt.startDate || (opt.start && opt.startDate) || null;
-                    const duration = opt.duration || opt.length || null;
-                    if (start && duration) {
-                        try {
-                            const s = new Date(start);
-                            const days = Number(duration) || 0;
-                            const e = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
-                            const sStr = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                            const eStr = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                            iterText = `${sStr} — ${eStr}`;
-                        } catch (e) { iterText = null; }
-                    }
-                    if (!iterText) {
-                        iterText = (opt.title || opt.name) ? String(opt.title || opt.name) : null;
-                    }
-                    if (iterText) {
-                        const iterEl = document.createElement('div');
-                        iterEl.style.color = 'var(--vscode-descriptionForeground)';
-                        iterEl.style.fontSize = '12px';
-                        iterEl.style.marginLeft = '8px';
-                        iterEl.textContent = String(iterText).slice(0, 120);
-                        // Keep iteration info fixed in the left sticky pane
-                        leftPane.appendChild(iterEl);
-                    }
-                } catch (e) { }
-            }
-
-            // If this group corresponds to 'Unassigned', rename to 'No <fieldname>'
-            if (group.option && (group.option.name === 'Unassigned' || group.option.title === 'Unassigned')) {
-                nameSpan.textContent = 'No ' + (groupingField.name || 'value');
-            }
-
-            // Compose header: leftPane (sticky) + rightPane (scrolling content)
-            headerContent.appendChild(leftPane);
-            headerContent.appendChild(rightPane);
-
-            tdHeader.appendChild(headerContent);
-            trHeader.appendChild(tdHeader);
-            tbody.appendChild(trHeader);
-
-            // Render Items
-            const groupRows: HTMLTableRowElement[] = [];
-            group.items.forEach((groupItem: any) => {
-                const tr = this.createRow(groupItem.item, groupItem.index);
-                tr.classList.add("group-row-" + group.option.id); // Add class for group toggling
-                tbody.appendChild(tr);
-                groupRows.push(tr);
-            });
-
-            // Toggle Logic
-            let isCollapsed = false;
-            toggleBtn.addEventListener("click", () => {
-                isCollapsed = !isCollapsed;
-                toggleBtn.innerHTML = isCollapsed ? iconCollapsed : iconExpanded;
-                groupRows.forEach(row => {
-                    row.style.display = isCollapsed ? "none" : "table-row";
-                });
-            });
+            groupRenderer.renderGroup(tbody, group, groupingField, rowRenderer);
         }
     }
 
-    private groupItems(items: any[], field: any) {
-        // Normalize options: Single Select uses .options, Iteration uses .configuration.iterations
-        let options: any[] = [];
-        const dType = (field.dataType || "").toLowerCase();
-        if (dType === "single_select") {
-            options = field.options || [];
-        } else if (dType === "iteration") {
-            options = (field.configuration && field.configuration.iterations) || [];
-        }
-        // If we have explicit options (single select/iteration), use them to group.
-        if (options && options.length > 0) {
-            const groups: any[] = options.map((opt: any) => ({ option: opt, items: [] }));
-            const unassigned: any[] = [];
 
-            items.forEach((item, index) => {
-                const fv = item.fieldValues.find((v: any) => String(v.fieldId) === String(field.id) || v.fieldName === field.name);
-                let placed = false;
 
-                if (fv) {
-                    // Match logic
-                    let matchId: string | null = null;
-                    let matchName: string | null = null;
 
-                    if (dType === "single_select") {
-                        matchId = fv.optionId || (fv.option && fv.option.id);
-                        matchName = fv.name || (fv.option && fv.option.name);
-                    } else if (dType === "iteration") {
-                        matchId = fv.iterationId || (fv.iteration && fv.iteration.id) || fv.id;
-                        matchName = fv.title || (fv.iteration && fv.iteration.title);
-                    }
-
-                    if (matchId || matchName) {
-                        const group = groups.find((g: any) =>
-                            (matchId && String(g.option.id) === String(matchId)) ||
-                            (matchName && (String(g.option.name) === String(matchName) || String(g.option.title) === String(matchName)))
-                        );
-                        if (group) {
-                            group.items.push({ item, index });
-                            placed = true;
-                        }
-                    }
-                }
-
-                if (!placed) {
-                    unassigned.push({ item, index });
-                }
-            });
-
-            if (unassigned.length > 0) {
-                groups.push({ option: { name: "Unassigned", title: "Unassigned", color: "GRAY" }, items: unassigned });
-            }
-
-            return groups.filter((g: any) => g.items.length > 0);
-        }
-
-        // Fallback grouping: build groups based on actual item values (useful for assignees, repository, date, number, etc.)
-        const map = new Map<string, { option: any, items: any[] }>();
-        const unassignedFallback: any[] = [];
-
-        items.forEach((item, index) => {
-            const fv = item.fieldValues.find((v: any) => String(v.fieldId) === String(field.id) || v.fieldName === field.name);
-            let val: any = null;
-            if (fv) {
-                // Text/title/number/date straightforward
-                if (fv.text !== undefined) val = fv.text;
-                else if (fv.title !== undefined) val = fv.title;
-                else if (fv.number !== undefined) val = fv.number;
-                else if (fv.date !== undefined) val = fv.date;
-                // single_select / option
-                else if (fv.option) val = fv.option.name || fv.option.title || fv.option.id;
-                // iteration
-                else if (fv.iteration) val = fv.iteration.title || fv.iteration.id;
-                // parent_issue - try parent/parentIssue/issue/item/value/raw
-                else if (fv.parent || fv.parentIssue || fv.issue || fv.item || fv.value) {
-                    const p = fv.parent || fv.parentIssue || fv.issue || fv.item || fv.value;
-                    if (p) {
-                        // Prefer number, then id, then url, then title
-                        val = p.number || p.id || (p.raw && (p.raw.number || p.raw.id)) || p.url || p.title || p.name || null;
-                    }
-                }
-                // assignees
-                else if (fv.assignees) val = Array.isArray(fv.assignees) ? fv.assignees.map((a: any) => a.login || a.name).join(", ") : fv.assignees;
-                // repository
-                else if (fv.repository) val = fv.repository.nameWithOwner || fv.repository.name || fv.repository.full_name || fv.repository.id;
-                // milestone
-                else if (fv.milestone) val = fv.milestone.title || fv.milestone.id || fv.milestone.name;
-                else val = fv.value !== undefined ? fv.value : null;
-            }
-
-            if (val === null || val === undefined || val === "") {
-                unassignedFallback.push({ item, index });
-                return;
-            }
-
-            const key = String(val);
-            if (!map.has(key)) {
-                map.set(key, { option: { id: key, name: key, title: key }, items: [] });
-            }
-            map.get(key)!.items.push({ item, index });
-        });
-
-        const groupsArr = Array.from(map.values());
-        if (unassignedFallback.length > 0) {
-            groupsArr.push({ option: { name: "Unassigned", title: "Unassigned", color: "GRAY" }, items: unassignedFallback });
-        }
-
-        return groupsArr;
-    }
-
-    private createRow(item: any, index: number): HTMLTableRowElement {
-        const tr = document.createElement("tr");
-        tr.setAttribute("data-gh-item-id", item.id);
-
-        // Add row hover effect
-        tr.style.transition = "background-color 0.15s ease";
-        tr.addEventListener('mouseenter', () => {
-            tr.style.backgroundColor = 'var(--vscode-list-hoverBackground)';
-        });
-        tr.addEventListener('mouseleave', () => {
-            tr.style.backgroundColor = 'transparent';
-        });
-
-        // Index Cell
-        const tdIndex = document.createElement("td");
-        tdIndex.textContent = String(index + 1);
-        this.styleCell(tdIndex);
-        tr.appendChild(tdIndex);
-
-        // Field Cells
-        for (let colIndex = 0; colIndex < this.fields.length; colIndex++) {
-            const field = this.fields[colIndex];
-            const td = document.createElement("td");
-            this.styleCell(td);
-
-            const fv = item.fieldValues.find((v: any) => String(v.fieldId) === String(field.id) || v.fieldName === field.name);
-            if (fv) {
-                td.innerHTML = renderCell(fv, field, item, this.items);
-            }
-
-            // Make td position relative so we can position a resizer inside it
-            td.style.position = 'relative';
-
-            // Add a small resizer handle to every cell so columns can be resized from any row
-            const cellResizer = document.createElement('div');
-            cellResizer.className = 'column-resizer';
-            cellResizer.style.position = 'absolute';
-            cellResizer.style.top = '0';
-            cellResizer.style.right = '0';
-            cellResizer.style.width = '6px';
-            cellResizer.style.height = '100%';
-            cellResizer.style.cursor = 'col-resize';
-            cellResizer.style.userSelect = 'none';
-            cellResizer.style.zIndex = '50';
-
-            cellResizer.addEventListener('mouseenter', () => cellResizer.style.background = 'var(--vscode-focusBorder)');
-            cellResizer.addEventListener('mouseleave', () => cellResizer.style.background = 'transparent');
-
-            cellResizer.addEventListener('mousedown', (e: MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const table = this.container.querySelector('table') as HTMLTableElement | null;
-                if (!table) return;
-                const cols = table.querySelectorAll('col');
-                const col = cols[colIndex + 1] as HTMLTableColElement | undefined; // +1 for index column
-                const startWidth = col ? (parseInt(col.style.width) || col.offsetWidth) : (td.offsetWidth);
-                this.beginColumnResize(table, colIndex + 1, e.pageX, startWidth);
-            });
-
-            td.appendChild(cellResizer);
-            tr.appendChild(td);
-        }
-
-        return tr;
-    }
-
-    private styleCell(td: HTMLTableCellElement) {
-        td.style.padding = "8px";
-        td.style.borderRight = "1px solid var(--vscode-panel-border)";
-        td.style.borderBottom = "1px solid var(--vscode-panel-border)";
-        td.style.whiteSpace = "nowrap";
-        td.style.overflow = "hidden";
-        td.style.textOverflow = "ellipsis";
-    }
 
     private showHeaderMenu(event: MouseEvent, field: any, headerElement: HTMLElement) {
         event.stopPropagation();
@@ -1444,126 +695,5 @@ export class ProjectTable {
         }
     }
 
-    private setupResizers(table: HTMLTableElement) {
-        const headers = table.querySelectorAll('th');
 
-        headers.forEach((th, index) => {
-            // Skip index column
-            if (index === 0) return;
-
-            // Create resizer element
-            const resizer = document.createElement('div');
-            resizer.className = 'column-resizer';
-            resizer.style.position = 'absolute';
-            resizer.style.top = '0';
-            resizer.style.right = '0';
-            resizer.style.width = '4px';
-            resizer.style.height = '100%';
-            resizer.style.cursor = 'col-resize';
-            resizer.style.userSelect = 'none';
-            resizer.style.zIndex = '100';
-
-            // Visual feedback on hover
-            resizer.addEventListener('mouseenter', () => {
-                resizer.style.background = 'var(--vscode-focusBorder)';
-            });
-
-            resizer.addEventListener('mouseleave', () => {
-                resizer.style.background = 'transparent';
-            });
-
-            // Resize logic
-            let startX = 0;
-            let startWidth = 0;
-
-            resizer.addEventListener('mousedown', (e: MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const cols = table.querySelectorAll('col');
-                const col = cols[index] as HTMLTableColElement | undefined; // index aligns with th
-                const startW = col ? (parseInt(col.style.width) || col.offsetWidth) : th.offsetWidth;
-                this.beginColumnResize(table, index, e.pageX, startW);
-            });
-
-            // Make th position relative for absolute positioning
-            (th as HTMLElement).style.position = 'relative';
-            th.appendChild(resizer);
-        });
-
-        // Restore column widths from localStorage
-        this.restoreColumnWidths(table);
-    }
-
-    private saveColumnWidth(fieldId: string, width: number) {
-        const key = this.getStorageKey('columnWidths');
-        if (!key) return;
-
-        try {
-            const stored = localStorage.getItem(key);
-            const widths = stored ? JSON.parse(stored) : {};
-            widths[fieldId] = width;
-            localStorage.setItem(key, JSON.stringify(widths));
-        } catch (e) { }
-    }
-
-    /**
-     * Centralized column resizing logic. `colIndex` is the index into the <col> nodeList
-     * (including the index column at 0).
-     */
-    private beginColumnResize(table: HTMLTableElement, colIndex: number, startX: number, startWidth: number) {
-        const onMouseMove = (e: MouseEvent) => {
-            const newWidth = Math.max(20, startWidth + (e.pageX - startX));
-            const cols = table.querySelectorAll('col');
-            const col = cols[colIndex] as HTMLTableColElement | undefined;
-            if (col) {
-                col.style.width = `${newWidth}px`;
-                col.style.minWidth = `${newWidth}px`;
-                col.style.maxWidth = `${newWidth}px`;
-            }
-        };
-
-        const onMouseUp = (e?: MouseEvent) => {
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-
-            // Save mapping to field id (colIndex - 1 => fields)
-            const fieldIndex = colIndex - 1;
-            if (fieldIndex >= 0 && fieldIndex < this.fields.length) {
-                const cols = table.querySelectorAll('col');
-                const col = cols[colIndex] as HTMLTableColElement | undefined;
-                const widthToSave = col ? (parseInt(col.style.width) || col.offsetWidth) : undefined;
-                if (widthToSave) {
-                    this.saveColumnWidth(this.fields[fieldIndex].id, widthToSave);
-                }
-            }
-        };
-
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-    }
-
-    private restoreColumnWidths(table: HTMLTableElement) {
-        const key = this.getStorageKey('columnWidths');
-        if (!key) return;
-
-        try {
-            const stored = localStorage.getItem(key);
-            if (!stored) return;
-
-            const widths = JSON.parse(stored);
-            const cols = table.querySelectorAll('col');
-
-            this.fields.forEach((field, index) => {
-                const width = widths[field.id];
-                if (width) {
-                    const col = cols[index + 1] as HTMLTableColElement; // +1 for index column
-                    if (col) {
-                        col.style.width = `${width}px`;
-                        col.style.minWidth = `${width}px`;
-                        col.style.maxWidth = `${width}px`;
-                    }
-                }
-            });
-        } catch (e) { }
-    }
 }
