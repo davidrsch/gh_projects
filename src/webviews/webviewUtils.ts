@@ -58,6 +58,14 @@ export function getWebviewResources(
       "filterBarHelper.js",
     ),
   );
+  const iconHelperUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "media",
+      webviewFolder,
+      "iconHelper.js",
+    ),
+  );
   const boardUri = webview.asWebviewUri(
     vscode.Uri.joinPath(
       context.extensionUri,
@@ -113,6 +121,7 @@ export function getWebviewResources(
       contentUri,
       patchUri,
       helperUri,
+      iconHelperUri,
     },
     vscodeShimUri,
   };

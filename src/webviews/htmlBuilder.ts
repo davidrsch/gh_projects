@@ -24,6 +24,7 @@ export function buildHtml(
     contentUri: vscode.Uri;
     patchUri?: vscode.Uri;
     helperUri?: vscode.Uri;
+    iconHelperUri?: vscode.Uri;
   },
   panelKey?: string,
   vscodeShimUri?: string,
