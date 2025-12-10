@@ -352,14 +352,44 @@ User changes filter/group
 2. Multiple overlapping settings for webview mode
 3. Configuration handling spread across modules
 
-## Refactoring Strategy
+## Refactoring Progress
 
-See [GitHub Issue](https://github.com/davidrsch/gh_projects/issues/XXX) for the full phased refactor plan.
+The codebase is undergoing a phased refactor to improve structure, maintainability, and testability. Key improvements made:
 
-Key principles:
+### Completed Improvements
+
+#### Configuration Management (`src/lib/config.ts`)
+- **ConfigReader interface**: Abstraction for dependency injection and testing
+- **VSCodeConfigReader**: Clean wrapper around VS Code configuration API
+- **Benefits**: Services no longer directly depend on vscode.workspace, improving testability
+
+#### Repository Discovery (`src/services/repositoryDiscovery.ts`)
+- **Extracted from ProjectService**: Separated GitHub repo extraction logic
+- **GitHubRepo type**: Clear interface for owner/repo pairs
+- **extractGitHubRepos function**: Handles remote parsing and fallback to git commands
+- **Benefits**: Single responsibility, easier to test, reusable across services
+
+#### GraphQL Execution (`src/services/graphqlExecutor.ts`)
+- **GraphQLExecutor interface**: Abstraction for query execution
+- **GitHubGraphQLExecutor**: Implementation using @octokit/graphql
+- **Benefits**: GitHubRepository no longer directly coupled to graphql library, easier mocking
+
+#### ProjectService Refactoring
+- **Uses ConfigReader**: No direct VS Code API dependencies
+- **Uses repositoryDiscovery**: Cleaner separation of concerns
+- **Improved testability**: Now has comprehensive test coverage (5 tests)
+
+#### Dead Code Removal
+- **PanelManager.getWebviewContent**: Removed incomplete, unused method
+- **Cleaner interfaces**: Removed misleading incomplete implementations
+
+### Architectural Principles
+
+Key principles applied during refactoring:
 - **Incremental changes** - Small, testable commits
-- **Tests first** - Lock in behavior before refactoring
+- **Tests first** - Lock in behavior before refactoring (18 test suites, 75 tests)
 - **Preserve public APIs** - No breaking changes to commands, tree view, or message contracts
 - **Improve layering** - Clearer separation between extension, services, and UI
-- **Simplify** - Extract smaller, composable functions
-- **Document** - Make intent clear through code structure and comments
+- **Dependency injection** - Interfaces for testability (ConfigReader, GraphQLExecutor)
+- **Single responsibility** - Smaller, focused modules
+- **Document** - Clear intent through code structure and comments

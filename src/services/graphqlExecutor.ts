@@ -20,10 +20,7 @@ export class GitHubGraphQLExecutor implements GraphQLExecutor {
     this.authManager = authManager || AuthenticationManager.getInstance();
   }
 
-  async execute<T>(
-    query: string,
-    variables?: Record<string, any>
-  ): Promise<T> {
+  async execute<T>(query: string, variables?: Record<string, any>): Promise<T> {
     const token = await this.authManager.ensureAuthenticated();
     try {
       return await graphql<T>(query, {

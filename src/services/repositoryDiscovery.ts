@@ -18,7 +18,7 @@ export interface GitHubRepo {
  */
 export async function extractGitHubRepos(
   items: RepoItem[],
-  maxConcurrency: number = 4
+  maxConcurrency: number = 4,
 ): Promise<GitHubRepo[]> {
   const map = new Map<string, GitHubRepo>();
   const fallbackTasks: Array<() => Promise<void>> = [];
@@ -27,7 +27,7 @@ export async function extractGitHubRepos(
   for (const item of items || []) {
     const remotesRaw = (item && (item.remotes ?? (item as any).remote)) ?? [];
     const remotes = Array.isArray(remotesRaw) ? remotesRaw : [remotesRaw];
-    
+
     if (Array.isArray(remotes) && remotes.length > 0) {
       for (const r of remotes) {
         const url =
@@ -38,7 +38,7 @@ export async function extractGitHubRepos(
         }
       }
     }
-    
+
     // If no remotes found, queue a task to query git directly
     if ((!remotes || remotes.length === 0) && item?.path) {
       const repoPath = item.path;
@@ -69,7 +69,7 @@ export async function extractGitHubRepos(
  */
 async function getRemoteUrl(
   repoPath: string,
-  remoteName: string = "origin"
+  remoteName: string = "origin",
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     execFile(
@@ -81,7 +81,7 @@ async function getRemoteUrl(
           return reject(new Error(stderr || err.message));
         }
         resolve(stdout.trim());
-      }
+      },
     );
   });
 }

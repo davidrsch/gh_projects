@@ -108,7 +108,10 @@ export class ProjectService {
     arr: RepoItem[],
   ): Promise<ParsedRepoEntry[]> {
     const { extractGitHubRepos } = await import("./repositoryDiscovery");
-    const repos = await extractGitHubRepos(arr, this.configReader.get("maxConcurrency", 4));
+    const repos = await extractGitHubRepos(
+      arr,
+      this.configReader.get("maxConcurrency", 4),
+    );
 
     const tasks: Array<() => Promise<ParsedRepoEntry>> = repos.map((repo) => {
       return async () => {
@@ -122,7 +125,7 @@ export class ProjectService {
 
     return await promisePool<ParsedRepoEntry>(
       tasks,
-      this.configReader.get("maxConcurrency", 4)
+      this.configReader.get("maxConcurrency", 4),
     );
   }
 }
