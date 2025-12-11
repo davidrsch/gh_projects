@@ -124,4 +124,66 @@ describe('ProjectTable', () => {
         expect(itemRow).toBeTruthy();
         expect(itemRow?.classList.contains('group-row-it1')).toBe(true);
     });
+
+    test('sorts items within groups by title', () => {
+        const fields = [
+            { id: 'f1', name: 'Title', dataType: 'TEXT' },
+            {
+                id: 'f2',
+                name: 'Status',
+                dataType: 'SINGLE_SELECT',
+                options: [
+                    { id: 'todo', name: 'Todo' },
+                    { id: 'inprogress', name: 'In Progress' }
+                ]
+            }
+        ];
+
+        const items = [
+            {
+                id: 'i1',
+                fieldValues: [
+                    { fieldId: 'f1', text: 'Zebra' },
+                    { fieldId: 'f2', option: { id: 'todo', name: 'Todo' } }
+                ]
+            },
+            {
+                id: 'i2',
+                fieldValues: [
+                    { fieldId: 'f1', text: 'Apple' },
+                    { fieldId: 'f2', option: { id: 'todo', name: 'Todo' } }
+                ]
+            },
+            {
+                id: 'i3',
+                fieldValues: [
+                    { fieldId: 'f1', text: 'Zebra' },
+                    { fieldId: 'f2', option: { id: 'inprogress', name: 'In Progress' } }
+                ]
+            },
+            {
+                id: 'i4',
+                fieldValues: [
+                    { fieldId: 'f1', text: 'Apple' },
+                    { fieldId: 'f2', option: { id: 'inprogress', name: 'In Progress' } }
+                ]
+            }
+        ];
+
+        const table = new ProjectTable(container, fields, items, {
+            groupingFieldName: 'Status',
+            sortConfig: { fieldId: 'f1', direction: 'ASC' }
+        } as any);
+        table.render();
+
+        const rows = Array.from(
+            container.querySelectorAll('tr[data-gh-item-id]'),
+        ) as HTMLTableRowElement[];
+        const idsInOrder = rows.map((r) => r.getAttribute('data-gh-item-id'));
+
+        // Within Todo group, Apple (i2) should come before Zebra (i1)
+        expect(idsInOrder.indexOf('i2')).toBeLessThan(idsInOrder.indexOf('i1'));
+        // Within In Progress group, Apple (i4) should come before Zebra (i3)
+        expect(idsInOrder.indexOf('i4')).toBeLessThan(idsInOrder.indexOf('i3'));
+    });
 });

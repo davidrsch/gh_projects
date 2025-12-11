@@ -4,6 +4,7 @@ import {
   getContrastColor,
   addAlpha,
 } from "../../client/utils";
+import { getIconSvg } from "../icons/iconRegistry";
 
 export interface CellRendererStrategy {
   render(value: any, field: any, item: any, allItems: any): string;
@@ -68,12 +69,138 @@ export class TitleRenderer implements CellRendererStrategy {
       p = a && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(a) ? a : "#666666",
       g = escapeHtml(String(t || "")),
       f = o ? escapeHtml(String(o)) : "";
+
+    // Determine high-level content type (issue vs pull request) and state
+    const content =
+      (value && value.title && value.title.content) ||
+      (value && value.raw && value.raw.itemContent) ||
+      (item && item.content) ||
+      null;
+
+    let isPullRequest = false;
+    let isDraft = false;
+    let isClosed = false;
+    let isMerged = false;
+    let isBlocked = false;
+
+    let parentIsDoneByStatus = false;
+    try {
+      if (content && typeof content.__typename === "string") {
+        const tname = String(content.__typename).toLowerCase();
+        if (tname.includes("pullrequest")) isPullRequest = true;
+      }
+      if (!isPullRequest && content && typeof content.state === "string") {
+        const st = String(content.state).toUpperCase();
+        if (st === "CLOSED") isClosed = true;
+        if (st === "MERGED") isMerged = true;
+      }
+      if (isPullRequest) {
+        if (typeof (content as any).isDraft === "boolean") {
+          isDraft = !!(content as any).isDraft;
+        }
+        const st =
+          (content as any).state &&
+          String((content as any).state).toUpperCase();
+        if (st === "CLOSED") isClosed = true;
+        if ((content as any).merged) isMerged = true;
+      }
+      const completedNames = ["done", "closed", "completed", "finished"];
+
+      // Heuristic for blocked: label named "blocked" or status option named "blocked"
+      const hasBlockedLabel = !!(
+        content &&
+        content.labels &&
+        Array.isArray(content.labels.nodes) &&
+        content.labels.nodes.some(
+          (l: any) =>
+            l &&
+            typeof l.name === "string" &&
+            String(l.name).toLowerCase() === "blocked",
+        )
+      );
+      let hasBlockedStatus = false;
+      let hasDoneFromStatus = false;
+      if (Array.isArray(item && item.fieldValues)) {
+        const statusFv = (item.fieldValues as any[]).find((fv: any) => {
+          if (!fv || fv.type !== "single_select") return false;
+          const fname =
+            (fv.raw && fv.raw.field && fv.raw.field.name) ||
+            fv.fieldName ||
+            (fv.field && fv.field.name) ||
+            "";
+          return String(fname || "").toLowerCase() === "status";
+        });
+        if (statusFv && statusFv.option && statusFv.option.name) {
+          const optNameLower = String(statusFv.option.name).toLowerCase();
+          hasBlockedStatus = optNameLower === "blocked";
+          if (completedNames.includes(optNameLower)) {
+            hasDoneFromStatus = true;
+          }
+        }
+      }
+      isBlocked = hasBlockedLabel || hasBlockedStatus;
+
+      // Treat issues/PRs as effectively closed when status or labels indicate "done"-like states
+      const hasDoneLabel = !!(
+        content &&
+        content.labels &&
+        Array.isArray(content.labels.nodes) &&
+        content.labels.nodes.some((l: any) =>
+          completedNames.includes(
+            String((l && l.name) || "").toLowerCase(),
+          ),
+        )
+      );
+
+      if (hasDoneFromStatus || hasDoneLabel) {
+        // Do not override "merged" (PRs still show merge icon),
+        // but otherwise consider this effectively closed for icon purposes.
+        if (!isMerged) {
+          isClosed = true;
+        }
+      }
+    } catch (e) {}
+
+    // Choose base icon based on type/state
+    let iconName = "issue-opened";
+    if (isPullRequest) {
+      if (isMerged) iconName = "git-merge";
+      else if (isClosed) iconName = "git-pull-request-closed";
+      else if (isDraft) iconName = "git-pull-request-draft";
+      else iconName = "git-pull-request";
+    } else {
+      if (isClosed) iconName = "issue-closed";
+      else if (isDraft) iconName = "issue-draft";
+      else iconName = "issue-opened";
+    }
+
+    const baseIcon = getIconSvg(iconName as any, {
+      size: 14,
+      className: "field-icon title-icon",
+      fill: p,
+    });
+
+    const blockedIcon = isBlocked
+      ? getIconSvg("blocked" as any, {
+          size: 10,
+          className: "field-icon blocked-icon",
+          fill: "#dc3545",
+        })
+      : "";
+
     return (
       '<a href="' +
       escapeHtml(String(l || "")) +
-      '" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;color:' +
-      escapeHtml(p) +
-      '"><circle cx="8" cy="8" r="6" fill="currentColor" /></svg><span style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block">' +
+      '" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
+      "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>" +
+      baseIcon +
+      (blockedIcon
+        ? "<span class='blocked-overlay' style='position:absolute;right:-2px;bottom:-2px'>" +
+          blockedIcon +
+          "</span>"
+        : "") +
+      "</span>" +
+      '<span style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block">' +
       g +
       "</span>" +
       (f
@@ -140,14 +267,20 @@ export class SingleSelectRenderer implements CellRendererStrategy {
       (value && value.option && (value.option.color || value.option.id)) ||
       (value && value.color) ||
       null;
-    let bg = normalizeColor(c) || "var(--vscode-badge-background)";
-    let fg = getContrastColor(bg);
+    // Match visual style of label field pills
+    let p = normalizeColor(c) || null,
+      hasHex = !!(p && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(p)),
+      border = p || "#999999",
+      bg = (hasHex && addAlpha(p, 0.12)) || "rgba(0,0,0,0.06)",
+      fg = p || "#333333";
     return (
-      '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;line-height:18px;background-color:' +
+      "<span style='display:inline-block;padding:2px 8px;margin-right:6px;border-radius:999px;border:1px solid " +
+      escapeHtml(border) +
+      ";background:" +
       escapeHtml(bg) +
       ";color:" +
       escapeHtml(fg) +
-      '">' +
+      ";font-size:12px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" +
       escapeHtml(n) +
       "</span>"
     );
@@ -158,21 +291,50 @@ export class IterationRenderer implements CellRendererStrategy {
   render(value: any): string {
     let i = value.iteration || value;
     if (!i || !i.title) return "<div></div>";
+    // Use same pill design as labels/single-select fields
+    const name = String(i.title || "");
+    const rawColor = i.color || i.colour || null;
+    let p = normalizeColor(rawColor) || null,
+      hasHex = !!(p && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(p)),
+      border = p || "#999999",
+      bg = (hasHex && addAlpha(p, 0.12)) || "rgba(0,0,0,0.06)",
+      // Ensure text color matches the pill border color
+      fg = border;
     return (
-      '<div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid var(--vscode-charts-blue);box-sizing:border-box"></span><span>' +
-      escapeHtml(i.title) +
-      "</span></div>"
+      "<span style='display:inline-block;padding:2px 8px;margin-right:6px;border-radius:999px;border:1px solid " +
+      escapeHtml(border) +
+      ";background:" +
+      escapeHtml(bg) +
+      ";color:" +
+      escapeHtml(fg) +
+      ";font-size:12px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" +
+      escapeHtml(name) +
+      "</span>"
     );
   }
 }
 
 export class RepositoryRenderer implements CellRendererStrategy {
   render(value: any): string {
-    let r = value.repository || value;
-    if (!r || !r.name) return "<div></div>";
+    const r = value && (value.repository || value);
+    if (!r) return "<div></div>";
+
+    const name =
+      (r && (r.nameWithOwner || r.full_name || r.name || r.id || "")) || "";
+
+    if (!name) return "<div></div>";
+
+    const icon = getIconSvg("repo", {
+      size: 16,
+      className: "field-icon",
+      ariaLabel: "Repository",
+    });
+
     return (
-      '<div style="display:flex;align-items:center;gap:6px"><svg aria-hidden="true" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-repo" style="color:var(--vscode-textLink-foreground)"><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11A1.5 1.5 0 0 1 12.5 15h-9A1.5 1.5 0 0 1 2 13.5v-11zM3.5 2A.5.5 0 0 0 3 2.5V4h10V2.5a.5.5 0 0 0-.5-.5h-9z"></path></svg><span>' +
-      escapeHtml(r.name) +
+      '<div style="display:flex;align-items:center;gap:6px">' +
+      icon +
+      "<span>" +
+      escapeHtml(String(name)) +
       "</span></div>"
     );
   }
@@ -249,6 +411,42 @@ export class PullRequestRenderer implements CellRendererStrategy {
       let border = normColor || "#999999";
       let bg = (hasHex && addAlpha(normColor, 0.12)) || "rgba(0,0,0,0.06)";
       let fg = getContrastColor(normColor) || "#333333";
+      const isDraft = !!(p && (p as any).isDraft);
+      const state = (p && p.state && String(p.state).toUpperCase()) || "";
+      const isMerged = !!(p && p.merged);
+      const isClosed = !isMerged && state === "CLOSED";
+
+      let iconName = "git-pull-request";
+      if (isMerged) iconName = "git-merge";
+      else if (isClosed) iconName = "git-pull-request-closed";
+      else if (isDraft) iconName = "git-pull-request-draft";
+
+      const baseIcon = getIconSvg(iconName as any, {
+        size: 12,
+        className: "field-icon pr-icon",
+        fill: normColor || "#666",
+      });
+
+      // Blocked heuristic for PR: label named "blocked"
+      const hasBlockedLabel = !!(
+        p &&
+        Array.isArray(p.labels) &&
+        p.labels.some(
+          (l: any) =>
+            l &&
+            typeof l.name === "string" &&
+            String(l.name).toLowerCase() === "blocked",
+        )
+      );
+
+      const blockedIcon = hasBlockedLabel
+        ? getIconSvg("blocked" as any, {
+            size: 9,
+            className: "field-icon blocked-icon",
+            fill: "#dc3545",
+          })
+        : "";
+
       out +=
         "<a href='" +
         url +
@@ -262,9 +460,14 @@ export class PullRequestRenderer implements CellRendererStrategy {
         ";color:" +
         escapeHtml(fg) +
         ";font-size:12px;line-height:18px;overflow:hidden;box-sizing:border-box;max-width:160px'>" +
-        "<svg width='12' height='12' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg' style='flex-shrink:0;color:" +
-        escapeHtml(normColor || "#666") +
-        "'><circle cx='8' cy='8' r='6' fill='currentColor' /></svg>" +
+        "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center'>" +
+        baseIcon +
+        (blockedIcon
+          ? "<span class='blocked-overlay' style='position:absolute;right:-2px;bottom:-2px'>" +
+            blockedIcon +
+            "</span>"
+          : "") +
+        "</span>" +
         "<span style='flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>#" +
         num +
         "</span></span></a>";
@@ -411,6 +614,9 @@ export class SubIssuesProgressRenderer implements CellRendererStrategy {
 
 export class ParentIssueRenderer implements CellRendererStrategy {
   render(value: any, field: any, item: any, allItems: any): string {
+    const completedNames = ["done", "closed", "completed", "finished"];
+    let parentIsDoneByStatus = false;
+
     let t =
         (value &&
           (value.parent ||
@@ -503,11 +709,21 @@ export class ParentIssueRenderer implements CellRendererStrategy {
                   d.field.name &&
                   String(d.field.name || "").toLowerCase() === "status")),
           );
-          A &&
-            (f =
+          if (A) {
+            f =
               (A.option && (A.option.color || A.option.id || A.option.name)) ||
               (A.raw && A.raw.color) ||
-              null);
+              null;
+
+            // If the parent issue's Status option is a completed-like state,
+            // treat it as closed for icon purposes.
+            if (A.option && A.option.name) {
+              const optNameLower = String(A.option.name).toLowerCase();
+              if (completedNames.includes(optNameLower)) {
+                parentIsDoneByStatus = true;
+              }
+            }
+          }
         }
       }
     } catch (e) {}
@@ -522,28 +738,93 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       w = !!(h && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(h)),
       x = h || "#999999",
       k = (w && addAlpha(h, 0.12)) || "rgba(0,0,0,0.06)",
-      L = getContrastColor(h) || "#333333",
-      q =
-        "<span style='display:block;width:100%;box-sizing:border-box'>" +
-        "<div style='display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid " +
-        escapeHtml(x) +
-        ";border-radius:999px;color:" +
-        escapeHtml(L) +
-        ";background:" +
-        escapeHtml(k) +
-        ";font-size:12px;line-height:18px;overflow:hidden;box-sizing:border-box;width:100%'>" +
-        "<svg width='14' height='14' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg' style='flex-shrink:0;color:" +
-        escapeHtml(h || "#666") +
-        "'><circle cx='8' cy='8' r='6' fill='currentColor' /></svg>" +
-        "<span class='parent-issue-title' style='flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block'>" +
-        a +
-        "</span>" +
-        (p
-          ? "<span style='margin-left:6px;color:var(--vscode-descriptionForeground);white-space:nowrap'>#" +
-            p +
-            "</span>"
-          : "") +
-        "</div></span>";
+      L = getContrastColor(h) || "#333333";
+
+    // Determine icon for parent issue based on state and blocked heuristics
+    let isClosed = false;
+    let isDraft = false;
+    let isBlocked = false;
+    try {
+      const state =
+        (t && t.state && String(t.state).toUpperCase()) ||
+        (t &&
+          t.parent &&
+          t.parent.state &&
+          String(t.parent.state).toUpperCase()) ||
+        "";
+      if (state === "CLOSED") isClosed = true;
+
+      const hasBlockedLabel = !!(
+        t &&
+        Array.isArray(t.labels) &&
+        t.labels.some(
+          (l: any) =>
+            l &&
+            typeof l.name === "string" &&
+            String(l.name).toLowerCase() === "blocked",
+        )
+      );
+      isBlocked = hasBlockedLabel;
+
+      // Treat parent issue as effectively closed when status or labels indicate
+      // "done"-like states, mirroring the TitleRenderer heuristics.
+      const hasDoneLabel = !!(
+        t &&
+        Array.isArray(t.labels) &&
+        t.labels.some((l: any) =>
+          completedNames.includes(String((l && l.name) || "").toLowerCase()),
+        )
+      );
+
+      if (hasDoneLabel || parentIsDoneByStatus) {
+        isClosed = true;
+      }
+    } catch (e) {}
+
+    let parentIconName = "issue-opened";
+    if (isClosed) parentIconName = "issue-closed";
+    else if (isDraft) parentIconName = "issue-draft";
+
+    const parentIcon = getIconSvg(parentIconName as any, {
+      size: 14,
+      className: "field-icon parent-issue-icon",
+      fill: h || "#666",
+    });
+
+    const blockedIcon = isBlocked
+      ? getIconSvg("blocked" as any, {
+          size: 9,
+          className: "field-icon blocked-icon",
+          fill: "#dc3545",
+        })
+      : "";
+
+    let q =
+      "<span style='display:block;width:100%;box-sizing:border-box'>" +
+      "<div style='display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid " +
+      escapeHtml(x) +
+      ";border-radius:999px;color:" +
+      escapeHtml(L) +
+      ";background:" +
+      escapeHtml(k) +
+      ";font-size:12px;line-height:18px;overflow:hidden;box-sizing:border-box;width:100%'>" +
+      "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center'>" +
+      parentIcon +
+      (blockedIcon
+        ? "<span class='blocked-overlay' style='position:absolute;right:-2px;bottom:-2px'>" +
+          blockedIcon +
+          "</span>"
+        : "") +
+      "</span>" +
+      "<span class='parent-issue-title' style='flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block'>" +
+      a +
+      "</span>" +
+      (p
+        ? "<span style='margin-left:6px;color:var(--vscode-descriptionForeground);white-space:nowrap'>#" +
+          p +
+          "</span>"
+        : "") +
+      "</div></span>";
     const parentWrapper =
       "<span data-gh-open='" +
       (g || "") +

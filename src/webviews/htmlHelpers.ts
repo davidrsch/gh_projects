@@ -113,6 +113,7 @@ export function getScriptTags(
     contentUri: vscode.Uri;
     patchUri?: vscode.Uri;
     helperUri?: vscode.Uri;
+    iconHelperUri?: vscode.Uri;
   },
   vscodeShimUri?: string,
   elementsScriptUri?: string,
@@ -130,6 +131,12 @@ export function getScriptTags(
   }
 
   if (fetcherUris) {
+    // Icon helper must be loaded first so other scripts can use icon functions
+    if (fetcherUris.iconHelperUri) {
+      scripts.push(
+        `<script nonce="${nonce}" src="${fetcherUris.iconHelperUri.toString()}"></script>`,
+      );
+    }
     if (fetcherUris.helperUri) {
       scripts.push(
         `<script nonce="${nonce}" src="${fetcherUris.helperUri.toString()}"></script>`,
@@ -193,16 +200,18 @@ export function getInlineScript(nonce: string, projectData: any): string {
         const iconWrapper = document.createElement('span');
         iconWrapper.className = 'tab-icon';
 
-        // Inline lightweight SVGs approximating octicons so they render without external deps
+        // Use icon registry for consistent GitHub-style icons
+        let iconName = null;
         if (layout === 'table') {
-          // octicon-table (official path)
-          iconWrapper.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path xmlns="http://www.w3.org/2000/svg" d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25ZM6.5 6.5v8h7.75a.25.25 0 0 0 .25-.25V6.5Zm8-1.5V1.75a.25.25 0 0 0-.25-.25H6.5V5Zm-13 1.5v7.75c0 .138.112.25.25.25H5v-8ZM5 5V1.5H1.75a.25.25 0 0 0-.25.25V5Z"/></path></svg>';
+          iconName = 'table';
         } else if (layout === 'board' || layout === 'project') {
-          // octicon-project (official path)
-          iconWrapper.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25V1.75C0 .784.784 0 1.75 0ZM1.5 1.75v12.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25H1.75a.25.25 0 0 0-.25.25ZM11.75 3a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75Zm-8.25.75a.75.75 0 0 1 1.5 0v5.5a.75.75 0 0 1-1.5 0ZM8 3a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 3Z"></path></svg>';
+          iconName = 'project';
         } else if (layout === 'roadmap') {
-          // octicon-project-roadmap (official path)
-          iconWrapper.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M4.75 7a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-4.5ZM5 4.75A.75.75 0 0 1 5.75 4h5.5a.75.75 0 0 1 0 1.5h-5.5A.75.75 0 0 1 5 4.75ZM6.75 10a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-4.5Z"></path><path d="M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v12.5A1.75 1.75 0 0 1 14.25 16H1.75A1.75 1.75 0 0 1 0 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V1.75a.25.25 0 0 0-.25-.25Z"></path></svg>';
+          iconName = 'roadmap';
+        }
+
+        if (iconName && window.getIconSvg) {
+          iconWrapper.innerHTML = window.getIconSvg(iconName);
         } else {
           iconWrapper.innerHTML = '';
         }

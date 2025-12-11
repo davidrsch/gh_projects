@@ -108,6 +108,53 @@ describe('tableSorting', () => {
             });
         });
 
+        describe('title fields', () => {
+            test('sorts title fields by content string', () => {
+                const fields = [createField('f1', 'Title', 'TITLE')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', type: 'title', title: { content: 'Zebra' } }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', type: 'title', title: { content: 'Apple' } }] },
+                    { id: '3', fieldValues: [{ fieldId: 'f1', type: 'title', title: { content: 'Mango' } }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '3', '1']); // Apple, Mango, Zebra
+            });
+
+            test('sorts runtime-shaped TITLE values (raw + content)', () => {
+                const fields = [createField('f1', 'Title', 'TITLE')];
+
+                const makeItem = (id: string, titleText: string) => {
+                    const itemContent = { title: titleText, number: Number(id) } as any;
+                    const rawNode = { text: titleText, itemContent } as any;
+                    return {
+                        id,
+                        content: itemContent,
+                        fieldValues: [
+                            {
+                                fieldId: 'f1',
+                                type: 'title',
+                                title: { raw: rawNode, content: itemContent },
+                                raw: rawNode,
+                                content: itemContent,
+                            },
+                        ],
+                    };
+                };
+
+                const items = [
+                    makeItem('1', 'Zebra'),
+                    makeItem('2', 'Apple'),
+                    makeItem('3', 'Mango'),
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map((i) => i.id)).toEqual(['2', '3', '1']); // Apple, Mango, Zebra
+            });
+        });
+
         describe('number fields', () => {
             test('sorts number fields numerically', () => {
                 const fields = [createField('f1', 'Points', 'NUMBER')];
@@ -206,6 +253,158 @@ describe('tableSorting', () => {
                 expect(result[0].id).toBe('2'); // Sprint 1
                 expect(result[1].id).toBe('3'); // Sprint 2
                 expect(result[2].id).toBe('1'); // Sprint 3
+            });
+        });
+
+        describe('label fields', () => {
+            test('sorts by first label name', () => {
+                const fields = [createField('f1', 'Labels', 'LABELS')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', labels: [{ name: 'Zebra' }] }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', labels: [{ name: 'Apple' }] }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+        });
+
+        describe('assignees fields', () => {
+            test('sorts by first assignee login', () => {
+                const fields = [createField('f1', 'Assignees', 'ASSIGNEES')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', assignees: [{ login: 'zeta' }] }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', assignees: [{ login: 'alpha' }] }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+        });
+
+        describe('repository fields', () => {
+            test('sorts by repository nameWithOwner', () => {
+                const fields = [createField('f1', 'Repository', 'REPOSITORY')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', repository: { nameWithOwner: 'z-org/z-repo' } }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', repository: { nameWithOwner: 'a-org/a-repo' } }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+        });
+
+        describe('milestone fields', () => {
+            test('sorts by due date or title', () => {
+                const fields = [createField('f1', 'Milestone', 'MILESTONE')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', milestone: { title: 'v2', dueOn: '2024-12-31' } }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', milestone: { title: 'v1', dueOn: '2024-01-01' } }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+        });
+
+        describe('issue type fields', () => {
+            test('sorts by text or option name', () => {
+                const fields = [createField('f1', 'Issue Type', 'ISSUE_TYPE')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', text: 'Z-bug' }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', text: 'A-task' }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+        });
+
+        describe('parent issue fields', () => {
+            test('sorts by parent title', () => {
+                const fields = [createField('f1', 'Parent', 'PARENT_ISSUE')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', parent: { title: 'Z-parent', number: 2 } }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', parent: { title: 'A-parent', number: 1 } }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+        });
+
+        describe('linked pull requests fields', () => {
+            test('sorts by first pull request number', () => {
+                const fields = [createField('f1', 'Linked PRs', 'LINKED_PULL_REQUESTS')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', pullRequests: [{ number: 10 }] }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', pullRequests: [{ number: 2 }] }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+        });
+
+        describe('reviewers fields', () => {
+            test('sorts by first reviewer login/name', () => {
+                const fields = [createField('f1', 'Reviewers', 'REVIEWERS')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', reviewers: [{ login: 'zeta' }] }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', reviewers: [{ login: 'alpha' }] }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+        });
+
+        describe('sub issues progress fields', () => {
+            test('sorts by percent completed', () => {
+                const fields = [createField('f1', 'Progress', 'SUB_ISSUES_PROGRESS')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', total: 10, done: 8, percent: 80 }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', total: 10, done: 2, percent: 20 }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+        });
+
+        describe('tracked by / tracks fields', () => {
+            test('sorts TRACKED_BY by first issue title', () => {
+                const fields = [createField('f1', 'Tracked by', 'TRACKED_BY')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', issues: [{ title: 'Z-issue', number: 2 }] }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', issues: [{ title: 'A-issue', number: 1 }] }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
+            });
+
+            test('sorts TRACKS by first issue title', () => {
+                const fields = [createField('f1', 'Tracks', 'TRACKS')];
+                const items = [
+                    { id: '1', fieldValues: [{ fieldId: 'f1', issues: [{ title: 'Z-track', number: 2 }] }] },
+                    { id: '2', fieldValues: [{ fieldId: 'f1', issues: [{ title: 'A-track', number: 1 }] }] }
+                ];
+
+                const result = sortItems(items, fields, { fieldId: 'f1', direction: 'ASC' });
+
+                expect(result.map(i => i.id)).toEqual(['2', '1']);
             });
         });
 

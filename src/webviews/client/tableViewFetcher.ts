@@ -7,6 +7,7 @@ import {
   logDebug,
 } from "./viewFetcherUtils";
 import { parseSortByFields, sortItems } from "./utils/tableSorting";
+import type { SortConfig } from "./utils/tableSorting";
 
 /// <reference path="./global.d.ts" />
 
@@ -62,6 +63,9 @@ window.tableViewFetcher = function (
     let unsavedHiddenFields: Set<string> | null = null;
     // Track unsaved slice changes
     let unsavedSlice: { fieldId: string; value: any } | null = null;
+    // Track unsaved sort changes (local-only view state). We use
+    // `undefined` = no pending change, non-null = new sort, null = clear sort.
+    let unsavedSort: SortConfig | null | undefined = undefined;
     let barApi = initFilterBar(filterWrapper, viewKey, {
       suffix: viewKey ? String(viewKey).split(":").pop() : "",
       step: itemsLimit,
@@ -131,6 +135,25 @@ window.tableViewFetcher = function (
             } catch (e) {}
             unsavedSlice = null;
           }
+
+          // Save sort if changed (persist local override only)
+          if (unsavedSort !== undefined) {
+            try {
+              const key = viewKey
+                ? `ghProjects.table.${viewKey}.sortConfig`
+                : null;
+              if (key) {
+                if (unsavedSort === null) {
+                  // User cleared sort: remove override
+                  localStorage.removeItem(key);
+                } else {
+                  // User set a new sort: store override
+                  localStorage.setItem(key, JSON.stringify(unsavedSort));
+                }
+              }
+            } catch (e) {}
+            unsavedSort = undefined;
+          }
         } catch (e) {}
       },
       onDiscard: () => {
@@ -186,6 +209,14 @@ window.tableViewFetcher = function (
               if (key) localStorage.removeItem(key);
             } catch (e) {}
             // Re-request fields to refresh UI from server state
+            requestFields();
+          }
+
+          // Discard sort changes: forget pending change and
+          // refresh UI from persisted server/local override state.
+          if (unsavedSort !== undefined) {
+            unsavedSort = undefined;
+            // Re-request fields to refresh UI from server/default + stored sort
             requestFields();
           }
         } catch (e) {}
@@ -347,7 +378,22 @@ window.tableViewFetcher = function (
           }
         } catch (e) {}
       },
-      onSortChange: () => requestFields(),
+      onSortChange: (config: SortConfig | null) => {
+        try {
+          unsavedSort = config || null;
+          // Enable Save/Discard buttons in the filter bar if present
+          if (barApi && barApi.saveBtn && barApi.discardBtn) {
+            try {
+              barApi.saveBtn.disabled = false;
+              barApi.discardBtn.disabled = false;
+              barApi.saveBtn.style.opacity = "1";
+              barApi.saveBtn.style.cursor = "pointer";
+              barApi.discardBtn.style.opacity = "1";
+              barApi.discardBtn.style.cursor = "pointer";
+            } catch (e) {}
+          }
+        } catch (e) {}
+      },
       onGroupChange: (fieldName: string) => {
         // Defer persistence of grouping until user explicitly Saves from the filter bar
         try {
