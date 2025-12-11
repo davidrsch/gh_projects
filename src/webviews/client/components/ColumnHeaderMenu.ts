@@ -37,10 +37,12 @@ export class ColumnHeaderMenu {
 
   /**
    * Helper to get icon SVG from registry
+   * Note: iconName is a runtime string value, so we use 'as any' to bypass
+   * the IconName type check. This is safe because the function validates the icon name.
    */
   private getIconSvg(iconName: string): string {
-    if (typeof (window as any).getIconSvg === "function") {
-      return (window as any).getIconSvg(iconName);
+    if (window.getIconSvg) {
+      return window.getIconSvg(iconName as any);
     }
     return "";
   }
