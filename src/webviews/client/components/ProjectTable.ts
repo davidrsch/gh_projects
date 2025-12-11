@@ -443,9 +443,9 @@ export class ProjectTable {
   }
 
   private clearSort(field: any) {
-    // Remove sort from storage and options; notify parent
-    const key = this.getStorageKey("sortConfig");
-    if (key) localStorage.removeItem(key);
+    // Clear local sort state; persistence and discard are managed by the caller
+    this.options.sortConfig = undefined;
+    this.render();
     if (this.options.onSortChange) {
       this.options.onSortChange(null as any);
     }
@@ -571,10 +571,11 @@ export class ProjectTable {
       direction,
     };
 
-    // Save to localStorage
-    this.saveSortConfig(sortConfig);
+    // Update local sort state so the UI reflects the change immediately
+    this.options.sortConfig = sortConfig;
+    this.render();
 
-    // Notify parent component
+    // Notify parent component so it can track unsaved sort state
     if (this.options.onSortChange) {
       this.options.onSortChange(sortConfig);
     }

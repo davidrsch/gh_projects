@@ -137,9 +137,26 @@ export function compareFieldValues(
       result = compareLabels(aValue, bValue);
       break;
 
+    case "assignees":
+    case "repository":
+    case "milestone":
+    case "issue_type":
+    case "parent_issue":
+    case "tracked_by":
+    case "tracks":
+    case "reviewers":
+      result = compareText(aValue, bValue);
+      break;
+
+    case "linked_pull_requests":
+    case "sub_issues_progress":
+      result = compareNumber(aValue, bValue);
+      break;
+
     default:
-      // Fallback to string comparison
-      result = String(aValue).localeCompare(String(bValue));
+      // For unsupported data types, do not apply custom sorting
+      // and treat items as equal so their relative order is preserved.
+      result = 0;
   }
 
   return direction === "ASC" ? result : -result;
@@ -158,9 +175,17 @@ function getFieldValue(item: any, field: FieldConfig): any {
   const dataType = (field.dataType || "").toLowerCase();
 
   switch (dataType) {
-    case "text":
-    case "title":
-      return fieldValue.text || fieldValue.title || null;
+    case "text": {
+      // Normal text fields use .text, but some Title-like fields may be
+      // mis-typed as TEXT while still carrying a structured title object.
+      if (fieldValue.text != null) return fieldValue.text;
+      return extractTitleLikeString(fieldValue, item);
+    }
+
+    case "title": {
+      // Title fields store a structured object; prefer a human-friendly string
+      return extractTitleLikeString(fieldValue, item);
+    }
 
     case "number":
       return fieldValue.number !== undefined ? fieldValue.number : null;
@@ -179,9 +204,138 @@ function getFieldValue(item: any, field: FieldConfig): any {
     case "labels":
       return fieldValue.labels || [];
 
+    case "assignees": {
+      const list = fieldValue.assignees;
+      if (Array.isArray(list) && list.length > 0) {
+        const first = list[0];
+        return first.login || first.name || null;
+      }
+      return null;
+    }
+
+    case "repository": {
+      const repo = fieldValue.repository;
+      if (!repo) return null;
+      return (
+        repo.nameWithOwner ||
+        repo.name ||
+        repo.full_name ||
+        repo.id ||
+        null
+      );
+    }
+
+    case "milestone": {
+      const m = fieldValue.milestone;
+      if (!m) return null;
+      // Prefer due date when present (ISO date strings sort lexicographically),
+      // otherwise fall back to title/name.
+      return m.dueOn || m.title || m.name || null;
+    }
+
+    case "issue_type": {
+      if (fieldValue.text) return fieldValue.text;
+      if (fieldValue.option) {
+        return fieldValue.option.name || fieldValue.option.title || null;
+      }
+      return null;
+    }
+
+    case "parent_issue": {
+      const parent = fieldValue.parent;
+      if (!parent) return null;
+      if (parent.title) return parent.title;
+      if (typeof parent.number === "number") return String(parent.number);
+      return parent.id || null;
+    }
+
+    case "linked_pull_requests": {
+      const prs = fieldValue.pullRequests;
+      if (Array.isArray(prs) && prs.length > 0) {
+        const first = prs[0];
+        if (typeof first.number === "number") return first.number;
+        return first.title || null;
+      }
+      return null;
+    }
+
+    case "reviewers": {
+      const list = fieldValue.reviewers;
+      if (Array.isArray(list) && list.length > 0) {
+        const first = list[0];
+        return first.login || first.name || first.id || null;
+      }
+      return null;
+    }
+
+    case "sub_issues_progress": {
+      if (typeof fieldValue.percent === "number") return fieldValue.percent;
+      if (
+        typeof fieldValue.done === "number" &&
+        typeof fieldValue.total === "number" &&
+        fieldValue.total > 0
+      ) {
+        return (fieldValue.done / fieldValue.total) * 100;
+      }
+      return null;
+    }
+
+    case "tracked_by":
+    case "tracks": {
+      const issues = fieldValue.issues;
+      if (Array.isArray(issues) && issues.length > 0) {
+        const first = issues[0];
+        if (first.title) return first.title;
+        if (typeof first.number === "number") return String(first.number);
+        return first.id || null;
+      }
+      return null;
+    }
+
     default:
       return fieldValue;
   }
+}
+
+function extractTitleLikeString(fieldValue: any, item: any): string | null {
+  if (!fieldValue) return null;
+
+  // Prefer the underlying raw node's text when present
+  const rawNode =
+    (fieldValue.title && fieldValue.title.raw) || fieldValue.raw || null;
+  if (rawNode && typeof rawNode.text === "string" && rawNode.text.trim()) {
+    return rawNode.text;
+  }
+
+  // Then look at the content object which often carries title/name
+  const content =
+    (fieldValue.title && fieldValue.title.content) ||
+    fieldValue.content ||
+    (rawNode && rawNode.itemContent) ||
+    (item && item.content) ||
+    null;
+
+  if (content) {
+    if (typeof content === "string" && content.trim()) {
+      return content;
+    }
+    if (typeof content.title === "string" && content.title.trim()) {
+      return content.title;
+    }
+    if (typeof content.name === "string" && content.name.trim()) {
+      return content.name;
+    }
+  }
+
+  // Fallbacks: occasionally a plain text field is reused
+  if (typeof fieldValue.text === "string" && fieldValue.text.trim()) {
+    return fieldValue.text;
+  }
+  if (rawNode && typeof rawNode.title === "string" && rawNode.title.trim()) {
+    return rawNode.title;
+  }
+
+  return null;
 }
 
 /**
