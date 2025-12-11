@@ -140,14 +140,20 @@ export class SingleSelectRenderer implements CellRendererStrategy {
       (value && value.option && (value.option.color || value.option.id)) ||
       (value && value.color) ||
       null;
-    let bg = normalizeColor(c) || "var(--vscode-badge-background)";
-    let fg = getContrastColor(bg);
+    // Match visual style of label field pills
+    let p = normalizeColor(c) || null,
+      hasHex = !!(p && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(p)),
+      border = p || "#999999",
+      bg = (hasHex && addAlpha(p, 0.12)) || "rgba(0,0,0,0.06)",
+      fg = p || "#333333";
     return (
-      '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;line-height:18px;background-color:' +
+      "<span style='display:inline-block;padding:2px 8px;margin-right:6px;border-radius:999px;border:1px solid " +
+      escapeHtml(border) +
+      ";background:" +
       escapeHtml(bg) +
       ";color:" +
       escapeHtml(fg) +
-      '">' +
+      ";font-size:12px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" +
       escapeHtml(n) +
       "</span>"
     );
@@ -158,10 +164,25 @@ export class IterationRenderer implements CellRendererStrategy {
   render(value: any): string {
     let i = value.iteration || value;
     if (!i || !i.title) return "<div></div>";
+    // Use same pill design as labels/single-select fields
+    const name = String(i.title || "");
+    const rawColor = i.color || i.colour || null;
+    let p = normalizeColor(rawColor) || null,
+      hasHex = !!(p && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(p)),
+      border = p || "#999999",
+      bg = (hasHex && addAlpha(p, 0.12)) || "rgba(0,0,0,0.06)",
+      // Ensure text color matches the pill border color
+      fg = border;
     return (
-      '<div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid var(--vscode-charts-blue);box-sizing:border-box"></span><span>' +
-      escapeHtml(i.title) +
-      "</span></div>"
+      "<span style='display:inline-block;padding:2px 8px;margin-right:6px;border-radius:999px;border:1px solid " +
+      escapeHtml(border) +
+      ";background:" +
+      escapeHtml(bg) +
+      ";color:" +
+      escapeHtml(fg) +
+      ";font-size:12px;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" +
+      escapeHtml(name) +
+      "</span>"
     );
   }
 }
