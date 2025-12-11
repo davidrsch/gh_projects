@@ -4,6 +4,7 @@ import {
   getContrastColor,
   addAlpha,
 } from "../../client/utils";
+import { getIconSvg } from "../icons/iconRegistry";
 
 export interface CellRendererStrategy {
   render(value: any, field: any, item: any, allItems: any): string;
@@ -189,11 +190,27 @@ export class IterationRenderer implements CellRendererStrategy {
 
 export class RepositoryRenderer implements CellRendererStrategy {
   render(value: any): string {
-    let r = value.repository || value;
-    if (!r || !r.name) return "<div></div>";
+    const r = value && (value.repository || value);
+    if (!r) return "<div></div>";
+
+    const name =
+      (r &&
+        (r.nameWithOwner || r.full_name || r.name || r.id || "")) ||
+      "";
+
+    if (!name) return "<div></div>";
+
+    const icon = getIconSvg("repo", {
+      size: 16,
+      className: "field-icon",
+      ariaLabel: "Repository",
+    });
+
     return (
-      '<div style="display:flex;align-items:center;gap:6px"><svg aria-hidden="true" height="16" viewBox="0 0 16 16" version="1.1" width="16" data-view-component="true" class="octicon octicon-repo" style="color:var(--vscode-textLink-foreground)"><path d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11A1.5 1.5 0 0 1 12.5 15h-9A1.5 1.5 0 0 1 2 13.5v-11zM3.5 2A.5.5 0 0 0 3 2.5V4h10V2.5a.5.5 0 0 0-.5-.5h-9z"></path></svg><span>' +
-      escapeHtml(r.name) +
+      '<div style="display:flex;align-items:center;gap:6px">' +
+      icon +
+      "<span>" +
+      escapeHtml(String(name)) +
       "</span></div>"
     );
   }
