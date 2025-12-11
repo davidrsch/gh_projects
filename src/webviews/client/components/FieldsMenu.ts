@@ -273,7 +273,10 @@ export class FieldsMenu {
     const dataType = (field.dataType || "").toString().toLowerCase();
 
     // If getIconNameForDataType is available from the icon registry, use it
-    if (typeof (window as any).getIconNameForDataType === "function" && typeof (window as any).getIconSvg === "function") {
+    if (
+      typeof (window as any).getIconNameForDataType === "function" &&
+      typeof (window as any).getIconSvg === "function"
+    ) {
       const iconName = (window as any).getIconNameForDataType(dataType);
       return (window as any).getIconSvg(iconName);
     }
@@ -284,7 +287,7 @@ export class FieldsMenu {
     }
 
     // Ultimate fallback: empty span
-    return '<span></span>';
+    return "<span></span>";
   }
 }
 

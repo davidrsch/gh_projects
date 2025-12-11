@@ -85,7 +85,9 @@ export class ColumnHeaderRenderer {
         const sortIcon = document.createElement("span");
         sortIcon.className = "column-sort-icon";
         const direction =
-          this.options.sortConfig?.direction === "ASC" ? "sort-asc" : "sort-desc";
+          this.options.sortConfig?.direction === "ASC"
+            ? "sort-asc"
+            : "sort-desc";
         sortIcon.innerHTML = this.getIconSvg(direction);
         sortIcon.style.display = "inline-flex";
         sortIcon.style.alignItems = "center";

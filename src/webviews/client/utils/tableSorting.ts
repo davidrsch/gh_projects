@@ -217,11 +217,7 @@ function getFieldValue(item: any, field: FieldConfig): any {
       const repo = fieldValue.repository;
       if (!repo) return null;
       return (
-        repo.nameWithOwner ||
-        repo.name ||
-        repo.full_name ||
-        repo.id ||
-        null
+        repo.nameWithOwner || repo.name || repo.full_name || repo.id || null
       );
     }
 

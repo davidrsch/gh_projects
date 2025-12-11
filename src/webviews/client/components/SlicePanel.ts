@@ -306,13 +306,16 @@ export class SlicePanel {
    */
   private getIconForDataType(dataType: string): string {
     // Use the icon registry if available (shared with FieldsMenu)
-    if (typeof (window as any).getIconNameForDataType === "function" && typeof (window as any).getIconSvg === "function") {
+    if (
+      typeof (window as any).getIconNameForDataType === "function" &&
+      typeof (window as any).getIconSvg === "function"
+    ) {
       const iconName = (window as any).getIconNameForDataType(dataType);
       return (window as any).getIconSvg(iconName);
     }
 
     // Fallback: empty span
-    return '<span></span>';
+    return "<span></span>";
   }
 
   /**
