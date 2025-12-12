@@ -154,7 +154,8 @@ export class ReviewersPicker extends BasePicker {
     } else {
       // Show initials or team icon
       if (isTeam) {
-        avatar.innerHTML = "&#128101;"; // Team icon
+        const TEAM_ICON = "&#128101;"; // 👥 Two person silhouette emoji
+        avatar.innerHTML = TEAM_ICON;
         avatar.style.background = "#555";
         avatar.style.color = "#fff";
       } else {
