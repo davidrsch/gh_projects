@@ -1,6 +1,9 @@
 import { renderCell } from "../renderers/cellRenderer";
+import { EditorManager } from "../editors/EditorManager";
 
 export class RowRenderer {
+  private editorManager: EditorManager | null = null;
+
   constructor(
     private fields: any[],
     private allItems: any[],
@@ -9,7 +12,14 @@ export class RowRenderer {
       pageX: number,
       startWidth: number,
     ) => void,
-  ) {}
+    private projectId?: string,
+    private viewKey?: string,
+  ) {
+    // Initialize editor manager if we have the required data
+    if (projectId && viewKey) {
+      this.editorManager = new EditorManager(projectId, viewKey, allItems);
+    }
+  }
 
   public createRow(item: any, index: number): HTMLTableRowElement {
     const tr = document.createElement("tr");
@@ -43,6 +53,11 @@ export class RowRenderer {
       );
       if (fv) {
         td.innerHTML = renderCell(fv, field, item, this.allItems);
+
+        // Make cell editable if editor manager is available
+        if (this.editorManager) {
+          this.editorManager.makeEditable(td, fv, field, item);
+        }
       }
 
       // Make td position relative so we can position a resizer inside it

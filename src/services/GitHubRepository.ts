@@ -472,4 +472,69 @@ export class GitHubRepository {
     }
     return repoOptionsMap;
   }
+
+  /**
+   * Updates a field value for a project item.
+   */
+  public async updateFieldValue(
+    projectId: string,
+    itemId: string,
+    fieldId: string,
+    value: any,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // GitHub Projects V2 uses different mutations for different field types
+      // For text, number, and date fields, we use updateProjectV2ItemFieldValue
+      const mutation = `
+        mutation($input: UpdateProjectV2ItemFieldValueInput!) {
+          updateProjectV2ItemFieldValue(input: $input) {
+            projectV2Item {
+              id
+            }
+          }
+        }
+      `;
+
+      const input: any = {
+        projectId,
+        itemId,
+        fieldId,
+      };
+
+      // Set the value based on type
+      if (value === null || value === undefined) {
+        // Clear the field by setting it to null (not all field types support this)
+        input.value = { text: null };
+      } else if (typeof value === "string") {
+        // Could be text or date (ISO 8601)
+        if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+          // ISO date string
+          input.value = { date: value };
+        } else {
+          // Text value
+          input.value = { text: value };
+        }
+      } else if (typeof value === "number") {
+        // Number value
+        input.value = { number: value };
+      } else {
+        return {
+          success: false,
+          error: "Unsupported value type",
+        };
+      }
+
+      await this.query(mutation, { input });
+
+      return { success: true };
+    } catch (error: any) {
+      logger.error(
+        `Failed to update field value: ${error.message || error}`,
+      );
+      return {
+        success: false,
+        error: error.message || "Failed to update field value",
+      };
+    }
+  }
 }
