@@ -524,6 +524,9 @@ describe("ReviewersPicker", () => {
 
     const messaging = (window as any).APP_MESSAGING;
 
+    // Clear any previous calls before asserting
+    (messaging.postMessage as jest.Mock).mockClear();
+
     openBtn?.click();
 
     expect(messaging.postMessage).toHaveBeenCalledWith(
