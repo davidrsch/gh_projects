@@ -978,4 +978,50 @@ export class GitHubRepository {
       };
     }
   }
+
+  /**
+   * Adds an issue or pull request to a project.
+   * @param projectId - The global ID of the project
+   * @param contentId - The global ID of the issue or pull request to add
+   * @returns Result object with success status and optional error message
+   */
+  public async addItemToProject(
+    projectId: string,
+    contentId: string,
+  ): Promise<{ success: boolean; error?: string; itemId?: string }> {
+    try {
+      const mutation = `
+        mutation($input: AddProjectV2ItemByIdInput!) {
+          addProjectV2ItemById(input: $input) {
+            item {
+              id
+            }
+          }
+        }
+      `;
+
+      const result = await this.query<any>(mutation, {
+        input: {
+          projectId,
+          contentId,
+        },
+      });
+
+      const itemId = result?.addProjectV2ItemById?.item?.id;
+      if (!itemId) {
+        throw new Error("No item ID returned from mutation");
+      }
+
+      logger.info(
+        `Successfully added item ${contentId} to project ${projectId}`,
+      );
+      return { success: true, itemId };
+    } catch (error: any) {
+      logger.error(`Failed to add item to project: ${error.message || error}`);
+      return {
+        success: false,
+        error: error.message || "Failed to add item to project",
+      };
+    }
+  }
 }

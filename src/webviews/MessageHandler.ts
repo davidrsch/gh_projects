@@ -132,10 +132,26 @@ export class MessageHandler {
 
   private async handleAddItemCreateIssue(msg: any) {
     try {
-      // For now, this is a stub that simply opens the project URL
-      // (or a generic GitHub Projects page) using vscode.open so that
-      // other extensions, like the GitHub Pull Requests extension,
-      // can participate in handling the link when installed.
+      // Check if GitHub Pull Requests & Issues extension is installed
+      const ghExtension = vscode.extensions.getExtension(
+        "GitHub.vscode-pull-request-github",
+      );
+
+      if (ghExtension) {
+        // Extension is installed - try to use its command to create an issue
+        try {
+          // The GitHub extension provides commands for creating issues
+          // Try to execute the create issue command if available
+          await vscode.commands.executeCommand("github.createIssue");
+          return;
+        } catch (commandError) {
+          logger.debug(
+            "GitHub extension command not available, falling back to URL",
+          );
+        }
+      }
+
+      // Fallback: open the project URL in browser
       const target =
         (this.project && (this.project as any).url) ||
         "https://github.com/projects";
@@ -153,20 +169,162 @@ export class MessageHandler {
 
   private async handleAddItemAddFromRepo(msg: any) {
     try {
-      // Stub: Open the project URL as a placeholder until a richer
-      // in-extension picker is implemented.
-      const target =
-        (this.project && (this.project as any).url) ||
-        "https://github.com/projects";
-      const uri = vscode.Uri.parse(String(target));
-      try {
-        await vscode.commands.executeCommand("vscode.open", uri);
-      } catch (primaryError) {
-        await vscode.env.openExternal(uri);
+      // Get repositories linked to this project
+      const repos = this.project.repos || [];
+
+      if (repos.length === 0) {
+        vscode.window.showWarningMessage(
+          "No repositories are linked to this project. Please add repositories to the project first.",
+        );
+        return;
       }
+
+      // Step 1: Show repository picker
+      const repoItems = repos.map((repo) => ({
+        label: `$(repo) ${repo.nameWithOwner}`,
+        description: repo.url || "",
+        repo: repo,
+      }));
+
+      const selectedRepo = await vscode.window.showQuickPick(repoItems, {
+        placeHolder: "Select a repository",
+        matchOnDescription: true,
+      });
+
+      if (!selectedRepo) {
+        return; // User cancelled
+      }
+
+      // Parse owner and name from nameWithOwner
+      const [owner, name] = selectedRepo.repo.nameWithOwner.split("/");
+      if (!owner || !name) {
+        vscode.window.showErrorMessage("Invalid repository format");
+        return;
+      }
+
+      // Step 2: Fetch issues and PRs from the selected repository
+      const { GitHubRepository } = await import("../services/GitHubRepository");
+      const ghRepo = GitHubRepository.getInstance();
+
+      // Show progress indicator while fetching
+      const result = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Fetching issues and pull requests...",
+          cancellable: false,
+        },
+        async () => {
+          return await ghRepo.getOpenIssuesAndPullRequests(owner, name, 50);
+        },
+      );
+
+      const { issues, pullRequests } = result;
+
+      // Step 3: Create quick pick items for issues and PRs
+      const items: any[] = [];
+
+      // Add issues
+      if (issues.length > 0) {
+        items.push({
+          label: "Issues",
+          kind: vscode.QuickPickItemKind.Separator,
+        });
+
+        for (const issue of issues) {
+          items.push({
+            label: `$(issue-opened) #${issue.number}: ${issue.title}`,
+            description: issue.author?.login || "",
+            detail: issue.repository?.nameWithOwner,
+            contentId: issue.id,
+            type: "issue",
+          });
+        }
+      }
+
+      // Add pull requests
+      if (pullRequests.length > 0) {
+        items.push({
+          label: "Pull Requests",
+          kind: vscode.QuickPickItemKind.Separator,
+        });
+
+        for (const pr of pullRequests) {
+          items.push({
+            label: `$(git-pull-request) #${pr.number}: ${pr.title}`,
+            description: pr.author?.login || "",
+            detail: pr.repository?.nameWithOwner,
+            contentId: pr.id,
+            type: "pr",
+          });
+        }
+      }
+
+      if (items.length === 0) {
+        vscode.window.showInformationMessage(
+          "No open issues or pull requests found in this repository.",
+        );
+        return;
+      }
+
+      // Step 4: Show picker for issues/PRs
+      const selectedItem = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select an issue or pull request to add",
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+
+      if (!selectedItem || !selectedItem.contentId) {
+        return; // User cancelled or separator selected
+      }
+
+      // Step 5: Add the selected item to the project
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Adding item to project...",
+          cancellable: false,
+        },
+        async () => {
+          const addResult = await ghRepo.addItemToProject(
+            this.project.id,
+            selectedItem.contentId,
+          );
+
+          if (addResult.success) {
+            vscode.window.showInformationMessage(
+              `Successfully added ${selectedItem.type === "issue" ? "issue" : "PR"} to project`,
+            );
+
+            // Refresh the webview to show the new item
+            try {
+              const data = await ProjectDataService.getProjectData(
+                this.project,
+                msg.viewKey,
+                true,
+              );
+
+              this.panel.webview.postMessage({
+                command: "fields",
+                viewKey: msg.viewKey,
+                payload: data.snapshot,
+                effectiveFilter: data.effectiveFilter,
+              });
+            } catch (refreshError) {
+              logger.debug(
+                "Failed to refresh after adding item: " + String(refreshError),
+              );
+            }
+          } else {
+            vscode.window.showErrorMessage(
+              `Failed to add item to project: ${addResult.error || "Unknown error"}`,
+            );
+          }
+        },
+      );
     } catch (e) {
       const sanitized = String((e as any)?.message || e || "");
       logger.error("webview.addItem:addFromRepo failed: " + sanitized);
+      vscode.window.showErrorMessage(`Failed to add item: ${sanitized}`);
     }
   }
 

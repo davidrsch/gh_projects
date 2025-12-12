@@ -43,7 +43,7 @@ export class AssigneesPicker extends BasePicker {
 
     this.field = options.field;
     this.item = options.item;
-  this.currentAssignees = options.currentAssignees || [];
+    this.currentAssignees = options.currentAssignees || [];
     this.onUpdate = options.onUpdate;
     this.onError = options.onError;
 

@@ -44,7 +44,7 @@ export class ReviewersPicker extends BasePicker {
 
     this.field = options.field;
     this.item = options.item;
-  this.currentReviewers = options.currentReviewers || [];
+    this.currentReviewers = options.currentReviewers || [];
     this.onUpdate = options.onUpdate;
     this.onError = options.onError;
 
@@ -247,9 +247,7 @@ export class ReviewersPicker extends BasePicker {
       openBtn.type = "button";
       openBtn.className = "reviewer-open-button";
       openBtn.textContent = "↗";
-      openBtn.title = isTeam
-        ? "Open GitHub team page"
-        : "Open GitHub profile";
+      openBtn.title = isTeam ? "Open GitHub team page" : "Open GitHub profile";
       openBtn.style.fontSize = "11px";
       openBtn.style.padding = "2px 4px";
       openBtn.style.cursor = "pointer";
