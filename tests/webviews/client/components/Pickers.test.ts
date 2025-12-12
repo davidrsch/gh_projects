@@ -7,11 +7,16 @@ import { ReviewersPicker } from "../../../../src/webviews/client/components/Revi
 import { MilestonePicker } from "../../../../src/webviews/client/components/MilestonePicker";
 
 // Mock window.getIconSvg and webview messaging bridge
+const messagingMock = {
+  postMessage: jest.fn(),
+};
+
 (global as any).window = {
   getIconSvg: jest.fn().mockReturnValue("<svg></svg>"),
-  __APP_MESSAGING__: {
-    postMessage: jest.fn(),
-  },
+  // New preferred bridge
+  APP_MESSAGING: messagingMock,
+  // Backwards-compatible alias used in other parts of the codebase/tests
+  __APP_MESSAGING__: messagingMock,
 };
 
 describe("LabelsPicker", () => {
@@ -308,7 +313,7 @@ describe("AssigneesPicker", () => {
     ) as HTMLButtonElement | null;
     expect(openBtn).toBeTruthy();
 
-    const messaging = (window as any).__APP_MESSAGING__;
+    const messaging = (window as any).APP_MESSAGING;
     (messaging.postMessage as jest.Mock).mockClear();
 
     openBtn?.click();

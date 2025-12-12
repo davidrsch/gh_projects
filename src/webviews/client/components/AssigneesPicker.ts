@@ -232,7 +232,7 @@ export class AssigneesPicker extends BasePicker {
       openBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         try {
-          const messaging = (window as any).__APP_MESSAGING__;
+          const messaging = (window as any).APP_MESSAGING;
           if (messaging && typeof messaging.postMessage === "function") {
             messaging.postMessage({ command: "openUrl", url: profileUrl });
           }
