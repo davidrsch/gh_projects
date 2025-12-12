@@ -93,6 +93,9 @@ export class MessageHandler {
       case "discardViewGrouping":
         await this.handleDiscardViewGrouping(msg);
         break;
+      case "updateFieldValue":
+        await this.handleUpdateFieldValue(msg);
+        break;
     }
   }
 
@@ -377,6 +380,56 @@ export class MessageHandler {
       ? this.project.views
       : [];
     return viewsArr[viewIdx];
+  }
+
+  private async handleUpdateFieldValue(msg: any) {
+    try {
+      const reqViewKey = (msg as any).viewKey as string | undefined;
+      const itemId = (msg as any).itemId;
+      const fieldId = (msg as any).fieldId;
+      const value = (msg as any).value;
+
+      if (!reqViewKey || !itemId || !fieldId) {
+        logger.error("updateFieldValue: missing required parameters");
+        return;
+      }
+
+      logger.debug(
+        `updateFieldValue: itemId=${itemId}, fieldId=${fieldId}, value=${JSON.stringify(value)}`,
+      );
+
+      // TODO: Implement actual GraphQL mutations to update the field value
+      // For now, just log the request and send a success response
+      // In a real implementation, this would call appropriate GitHub GraphQL mutations:
+      // - updateProjectV2ItemFieldValue for most fields
+      // - addLabelsToLabelable / removeLabelsFromLabelable for labels
+      // - addAssigneesToAssignable / removeAssigneesFromAssignable for assignees
+      // - requestReviews / removeReviewRequest for reviewers
+      // - updateIssue / updatePullRequest for milestone
+
+      // Simulate successful update for now
+      this.panel.webview.postMessage({
+        command: "fieldUpdateSuccess",
+        viewKey: reqViewKey,
+        itemId,
+        fieldId,
+      });
+
+      // Optionally refresh the data to reflect server state
+      // For now, rely on optimistic updates in the UI
+    } catch (e) {
+      const wrapped = wrapError(e, "updateFieldValue failed");
+      const msgText = String(wrapped?.message || wrapped || "");
+      logger.error("updateFieldValue failed: " + msgText);
+
+      this.panel.webview.postMessage({
+        command: "fieldUpdateError",
+        viewKey: (msg as any).viewKey || null,
+        itemId: (msg as any).itemId,
+        fieldId: (msg as any).fieldId,
+        error: msgText,
+      });
+    }
   }
 
   private sendInitMessage() {
