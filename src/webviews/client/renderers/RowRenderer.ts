@@ -54,6 +54,9 @@ export class RowRenderer {
     const tr = document.createElement("tr");
     tr.classList.add("table-row");
     tr.setAttribute("data-gh-item-id", item.id);
+    tr.setAttribute("role", "row");
+    // aria-rowindex is 1-based and accounts for header row (header is row 1, data starts at 2)
+    tr.setAttribute("aria-rowindex", String(index + 2));
 
     tr.style.transition = "background-color 0.15s ease";
     tr.addEventListener("mouseenter", () => {
@@ -65,6 +68,9 @@ export class RowRenderer {
 
     const tdIndex = document.createElement("td");
     tdIndex.textContent = String(index + 1);
+    tdIndex.setAttribute("role", "gridcell");
+    tdIndex.setAttribute("aria-colindex", "1");
+    tdIndex.setAttribute("aria-label", `Row ${index + 1}`);
     this.styleCell(tdIndex);
     tr.appendChild(tdIndex);
 
@@ -73,6 +79,14 @@ export class RowRenderer {
       const field = this.fields[colIndex];
       const td = document.createElement("td");
       this.styleCell(td);
+      
+      // Add ARIA attributes for accessibility
+      td.setAttribute("role", "gridcell");
+      td.setAttribute("aria-colindex", String(colIndex + 2)); // +2 because index column is 1
+      
+      // Add field label for screen readers
+      const fieldLabel = field.name || field.id || "Field";
+      td.setAttribute("aria-label", fieldLabel);
 
       const fv = item.fieldValues.find(
         (v: any) =>
@@ -86,6 +100,15 @@ export class RowRenderer {
         // Main branch editor system
         if (this.editorManager) {
           this.editorManager.makeEditable(td, fv, field, item);
+        }
+        
+        // Indicate if cell is editable
+        const fieldType = field.dataType || field.type;
+        const isEditable = fieldType === "SINGLE_SELECT" || fieldType === "ITERATION";
+        if (isEditable) {
+          td.setAttribute("aria-readonly", "false");
+        } else {
+          td.setAttribute("aria-readonly", "true");
         }
       }
 

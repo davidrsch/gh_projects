@@ -83,6 +83,11 @@ export class FieldDropdown {
     dropdown.style.overflowY = "auto";
     dropdown.style.zIndex = "1000";
     dropdown.style.fontSize = "13px";
+    
+    // Add ARIA attributes for accessibility
+    dropdown.setAttribute("role", "listbox");
+    dropdown.setAttribute("aria-label", this.config.title || "Select option");
+    dropdown.setAttribute("aria-activedescendant", ""); // Will be updated as selection changes
 
     // Add title if provided
     if (this.config.title) {
@@ -128,6 +133,7 @@ export class FieldDropdown {
     const item = document.createElement("div");
     item.className = "field-dropdown-option";
     item.dataset.index = String(index);
+    item.id = `dropdown-option-${index}`;
     item.style.padding = "8px 12px";
     item.style.cursor = "pointer";
     item.style.display = "flex";
@@ -135,12 +141,22 @@ export class FieldDropdown {
     item.style.gap = "8px";
     item.style.color = "var(--vscode-menu-foreground)";
     item.style.transition = "background-color 0.1s ease";
+    
+    // Add ARIA attributes
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-label", option.label);
+    if (option.description) {
+      item.setAttribute("aria-description", option.description);
+    }
 
     // Highlight if selected
     if (option.id === this.config.currentValue) {
       item.style.background = "var(--vscode-menu-selectionBackground)";
       item.style.color = "var(--vscode-menu-selectionForeground)";
       item.classList.add("selected");
+      item.setAttribute("aria-selected", "true");
+    } else {
+      item.setAttribute("aria-selected", "false");
     }
 
     // Color swatch (for single-select options)
@@ -215,9 +231,16 @@ export class FieldDropdown {
     // Highlight the new option
     this.selectedIndex = index;
     const targetItem = items[index] as HTMLElement;
-    if (targetItem && !targetItem.classList.contains("selected")) {
-      targetItem.style.background = "var(--vscode-list-hoverBackground)";
-      targetItem.style.color = "var(--vscode-menu-foreground)";
+    if (targetItem) {
+      if (!targetItem.classList.contains("selected")) {
+        targetItem.style.background = "var(--vscode-list-hoverBackground)";
+        targetItem.style.color = "var(--vscode-menu-foreground)";
+      }
+    }
+    
+    // Update ARIA activedescendant for screen readers on the listbox element
+    if (targetItem) {
+      this.container.setAttribute("aria-activedescendant", targetItem.id);
     }
   }
 

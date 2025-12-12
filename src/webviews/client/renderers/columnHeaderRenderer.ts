@@ -31,18 +31,37 @@ export class ColumnHeaderRenderer {
     thead.style.position = "sticky";
     thead.style.top = "0";
     thead.style.zIndex = "10";
+    thead.setAttribute("role", "rowgroup");
 
     const tr = document.createElement("tr");
+    tr.setAttribute("role", "row");
 
     // Index Header
     const thIndex = document.createElement("th");
     thIndex.textContent = "#";
+    thIndex.setAttribute("role", "columnheader");
+    thIndex.setAttribute("aria-colindex", "1");
+    thIndex.setAttribute("aria-label", "Row number");
+    thIndex.setAttribute("scope", "col");
     this.styleHeaderCell(thIndex);
     tr.appendChild(thIndex);
 
     // Field Headers
-    for (const field of this.options.fields) {
+    for (let fieldIndex = 0; fieldIndex < this.options.fields.length; fieldIndex++) {
+      const field = this.options.fields[fieldIndex];
       const th = document.createElement("th");
+      
+      // Add ARIA attributes
+      th.setAttribute("role", "columnheader");
+      th.setAttribute("aria-colindex", String(fieldIndex + 2)); // +2 for index column
+      th.setAttribute("scope", "col");
+      
+      // Add sort state to ARIA
+      const isSorted = this.options.sortConfig?.fieldId === field.id;
+      if (isSorted) {
+        const sortDirection = this.options.sortConfig?.direction === "ASC" ? "ascending" : "descending";
+        th.setAttribute("aria-sort", sortDirection);
+      }
 
       // Create header content wrapper
       const headerContent = document.createElement("div");
@@ -72,9 +91,6 @@ export class ColumnHeaderRenderer {
           this.options.activeSlice.fieldId === field.id) ||
         (this.options.activeSlicePanelFieldId &&
           String(this.options.activeSlicePanelFieldId) === String(field.id));
-
-      // Check if this field is sorted
-      const isSorted = this.options.sortConfig?.fieldId === field.id;
 
       // Icons container (for sort / group / slice indicators)
       const iconsContainer = document.createElement("span");

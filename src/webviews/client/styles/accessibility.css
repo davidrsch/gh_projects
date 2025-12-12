@@ -1,0 +1,135 @@
+/**
+ * Accessibility styles for keyboard navigation and screen readers
+ */
+
+/* Focus indicators for table cells */
+table td:focus,
+table th:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+  position: relative;
+  z-index: 1;
+}
+
+/* Additional visual indicator for focused cells */
+table td.focused {
+  box-shadow: inset 0 0 0 2px var(--vscode-focusBorder);
+}
+
+/* Interactive cells hover and focus states */
+.interactive-cell:hover {
+  background-color: var(--vscode-list-hoverBackground);
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.interactive-cell:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+/* Loading state for updating cells */
+.interactive-cell.updating {
+  opacity: 0.6;
+  pointer-events: none;
+  cursor: wait;
+}
+
+/* Dropdown focus state */
+.field-dropdown:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+/* Dropdown option focus states */
+.field-dropdown-option:focus {
+  outline: none;
+  background: var(--vscode-list-hoverBackground);
+}
+
+.field-dropdown-option[aria-selected="true"] {
+  font-weight: 600;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  table td:focus,
+  table th:focus,
+  .interactive-cell:focus,
+  .field-dropdown:focus {
+    outline-width: 3px;
+    outline-style: solid;
+  }
+}
+
+/* Screen reader only text */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0); /* Fallback for older browsers */
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip to content link for keyboard users */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  padding: 8px;
+  text-decoration: none;
+  border: 1px solid var(--vscode-focusBorder);
+  z-index: 100;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* Ensure sufficient color contrast for status pills */
+.status-pill,
+.iteration-pill,
+.label-pill {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .status-pill,
+  .iteration-pill,
+  .label-pill {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+}
+
+/* Column header menu button accessibility */
+th button {
+  position: relative;
+}
+
+th button:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+/* Improve visibility of resizer handles */
+.column-resizer:focus,
+.column-resizer:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  background: var(--vscode-focusBorder) !important;
+}
+
+/* Group and slice icons keyboard focus */
+.column-group-icon:focus,
+.column-slice-icon:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
