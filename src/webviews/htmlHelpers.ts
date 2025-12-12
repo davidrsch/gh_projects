@@ -100,6 +100,101 @@ html, body {
 .repo-item { padding: 6px 8px; border: 1px solid var(--vscode-editorWidget-border); border-radius: 4px; cursor: pointer; }
 .repo-item:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-list-hoverForeground); }
 .title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+
+/* Editable cell styles */
+td[data-editable="true"] {
+  position: relative;
+  cursor: pointer;
+}
+
+td[data-editable="true"]:hover {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+td[data-editable="true"]:focus {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+}
+
+/* Editing state */
+td.editing {
+  padding: 0 !important;
+  background: var(--vscode-input-background);
+}
+
+td.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+td.error {
+  outline: 2px solid var(--vscode-inputValidation-errorBorder);
+}
+
+/* Cell editor input styles */
+.cell-editor-input {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--vscode-focusBorder);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: var(--vscode-font-family);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.cell-editor-input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+/* Date editor specific styles */
+.cell-editor-date {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+}
+
+.cell-editor-clear {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--vscode-button-border);
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cell-editor-clear:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* Error tooltip */
+.cell-editor-error {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  color: var(--vscode-inputValidation-errorForeground);
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  z-index: 1000;
+  white-space: nowrap;
+  margin-top: 2px;
+}
 </style>`;
 }
 
