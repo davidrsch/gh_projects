@@ -519,7 +519,7 @@ describe("ReviewersPicker", () => {
     ) as HTMLButtonElement | null;
     expect(openBtn).toBeTruthy();
 
-    const messaging = (window as any).__APP_MESSAGING__;
+    const messaging = (window as any).APP_MESSAGING;
     (messaging.postMessage as jest.Mock).mockClear();
 
     openBtn?.click();
