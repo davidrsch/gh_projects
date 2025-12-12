@@ -389,7 +389,11 @@ export class MessageHandler {
       const projectId = (msg as any).projectId || this.project.id;
       const itemId = (msg as any).itemId;
       const fieldId = (msg as any).fieldId;
-      const newValue = (msg as any).newValue;
+      // Support both newValue (CellEditor) and value (tableViewFetcher)
+      const newValue =
+        (msg as any).newValue !== undefined
+          ? (msg as any).newValue
+          : (msg as any).value;
       const fieldType = (msg as any).fieldType; // Optional field type hint
 
       // Validate required fields
@@ -418,34 +422,60 @@ export class MessageHandler {
       );
 
       if (result.success) {
-        // Send success response
+        // Send success response for CellEditor-style callers
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
           id: messageId,
           success: true,
         });
 
-        // Optionally refresh the view to reflect changes
-        // This ensures the UI is in sync with the backend
+        // Refresh the project data to get updated snapshot
+        // and notify tableViewFetcher-style callers via updateFieldValueResult
+        let updatedSnapshot: any | undefined;
+        let effectiveFilter: any | undefined;
         try {
-          const { snapshot, effectiveFilter } =
-            await ProjectDataService.getProjectData(this.project, reqViewKey);
+          const data = await ProjectDataService.getProjectData(
+            this.project,
+            reqViewKey,
+            true,
+          );
+          updatedSnapshot = data.snapshot;
+          effectiveFilter = data.effectiveFilter;
+
+          // Broadcast updated fields snapshot
           this.panel.webview.postMessage({
             command: "fields",
             viewKey: reqViewKey,
-            payload: snapshot,
-            effectiveFilter: effectiveFilter,
+            payload: updatedSnapshot,
+            effectiveFilter,
+          });
+
+          // Backwards-compatible message used by tableViewFetcher
+          this.panel.webview.postMessage({
+            command: "updateFieldValueResult",
+            success: true,
+            viewKey: reqViewKey,
+            payload: updatedSnapshot,
+            effectiveFilter,
           });
         } catch (e) {
           // Log but don't fail the update
           logger.debug("Failed to refresh after update: " + String(e));
         }
       } else {
-        // Send error response
+        // Send error response for CellEditor-style callers
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
           id: messageId,
           success: false,
+          error: result.error || "Update failed",
+        });
+
+        // Also notify tableViewFetcher-style callers
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResult",
+          success: false,
+          viewKey: reqViewKey,
           error: result.error || "Update failed",
         });
       }
@@ -457,6 +487,14 @@ export class MessageHandler {
         command: "updateFieldValueResponse",
         id: (msg as any).id,
         success: false,
+        error: msgText,
+      });
+
+      // Also notify tableViewFetcher-style callers
+      this.panel.webview.postMessage({
+        command: "updateFieldValueResult",
+        success: false,
+        viewKey: (msg as any).viewKey || null,
         error: msgText,
       });
     }

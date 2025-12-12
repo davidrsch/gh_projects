@@ -10,6 +10,7 @@ import { GroupDataService } from "../services/GroupDataService";
 import { RowRenderer } from "../renderers/RowRenderer";
 import { GroupRenderer } from "../renderers/GroupRenderer";
 import { TableResizer } from "./TableResizer";
+import { InteractiveCellManager, CellUpdateRequest } from "./InteractiveCellManager";
 
 export interface TableOptions {
   groupingFieldName?: string;
@@ -21,6 +22,7 @@ export interface TableOptions {
   onGroupChange?: (fieldName: string) => void;
   onSliceChange?: (field: any) => void;
   onHiddenFieldsChange?: (hiddenIds: string[]) => void;
+  onFieldUpdate?: (request: CellUpdateRequest) => Promise<void>; // Callback for field value updates
 }
 
 export class ProjectTable {
@@ -37,6 +39,7 @@ export class ProjectTable {
   // Track which field the active slice panel is for (panel may be open before a value is selected)
   private activeSlicePanelFieldId: string | null = null;
   private tableResizer: TableResizer | null = null;
+  private interactiveCellManager: InteractiveCellManager | null = null;
 
   constructor(
     container: HTMLElement,
@@ -102,6 +105,26 @@ export class ProjectTable {
 
     // Load and apply field order if stored
     this.applyFieldOrder();
+
+    // Initialize interactive cell manager if field updates are supported
+    if (this.options.onFieldUpdate) {
+      this.interactiveCellManager = new InteractiveCellManager({
+        onUpdateRequest: async (request: CellUpdateRequest) => {
+          if (this.options.onFieldUpdate) {
+            await this.options.onFieldUpdate(request);
+          }
+        },
+        onUpdateSuccess: (request: CellUpdateRequest) => {
+          // Refresh the table to show updated value
+          // The snapshot should be updated by the parent component before this is called
+          this.render();
+        },
+        onUpdateError: (request: CellUpdateRequest, error: string) => {
+          console.error("Field update error:", error);
+          // Error is already shown by the InteractiveCellManager
+        },
+      });
+    }
   }
 
   public render() {
@@ -278,8 +301,18 @@ export class ProjectTable {
           this.tableResizer.beginColumnResize(colIndex, pageX, startWidth);
         }
       },
-      this.options.projectId,
-      this.options.viewKey,
+      (cell, field, item, fieldValue) => {
+        if (this.interactiveCellManager && this.options.projectId && this.options.viewKey) {
+          this.interactiveCellManager.attachToCell(
+            cell,
+            field,
+            item,
+            fieldValue,
+            this.options.projectId,
+            this.options.viewKey
+          );
+        }
+      }
     );
 
     if (groupingField) {
