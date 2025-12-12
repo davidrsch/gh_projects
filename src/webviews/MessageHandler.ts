@@ -279,6 +279,11 @@ export class MessageHandler {
       }
 
       // Step 5: Add the selected item to the project
+      if (!this.project.id) {
+        vscode.window.showErrorMessage("Project ID is missing");
+        return;
+      }
+
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,

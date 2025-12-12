@@ -1009,7 +1009,9 @@ export class GitHubRepository {
 
       const itemId = result?.addProjectV2ItemById?.item?.id;
       if (!itemId) {
-        throw new Error("No item ID returned from mutation");
+        throw new Error(
+          "Failed to add item to project - no item ID returned from GraphQL mutation",
+        );
       }
 
       logger.info(
