@@ -339,11 +339,13 @@ export class RepositoryRenderer implements CellRendererStrategy {
 
     // If we have a URL, make it clickable via data-gh-open
     if (url) {
+      // Create tooltip with name and URL separated by a dash for better HTML rendering
+      const tooltip = name + " - " + url;
       return (
         '<div data-gh-open="' +
         escapeHtml(url) +
         '" title="' +
-        escapeHtml(name + (url ? "\n" + url : "")) +
+        escapeHtml(tooltip) +
         '" style="display:flex;align-items:center;gap:6px;cursor:pointer">' +
         icon +
         "<span>" +
