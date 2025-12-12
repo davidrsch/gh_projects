@@ -472,4 +472,77 @@ export class GitHubRepository {
     }
     return repoOptionsMap;
   }
+
+  /**
+   * Updates a field value for a project item.
+   * @param fieldType - The type of field being updated (text, number, date)
+   */
+  public async updateFieldValue(
+    projectId: string,
+    itemId: string,
+    fieldId: string,
+    value: any,
+    fieldType?: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // GitHub Projects V2 uses different mutations for different field types
+      // For text, number, and date fields, we use updateProjectV2ItemFieldValue
+      const mutation = `
+        mutation($input: UpdateProjectV2ItemFieldValueInput!) {
+          updateProjectV2ItemFieldValue(input: $input) {
+            projectV2Item {
+              id
+            }
+          }
+        }
+      `;
+
+      const input: any = {
+        projectId,
+        itemId,
+        fieldId,
+      };
+
+      // Set the value based on type
+      // Note: GitHub Projects V2 API doesn't support clearing field values to null
+      // via updateProjectV2ItemFieldValue mutation. To clear a field, use
+      // clearProjectV2ItemFieldValue mutation instead.
+      if (value === null || value === undefined) {
+        return {
+          success: false,
+          error: "Clearing fields to null is not supported via this mutation",
+        };
+      }
+
+      // Use explicit field type if provided, otherwise infer from value
+      const type = fieldType?.toLowerCase();
+      if (type === "text" || (type === undefined && typeof value === "string")) {
+        // Text value (default for strings if type not specified)
+        input.value = { text: String(value) };
+      } else if (type === "date" || (type === undefined && typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value))) {
+        // ISO 8601 date string (more strict pattern)
+        input.value = { date: value };
+      } else if (type === "number" || (type === undefined && typeof value === "number")) {
+        // Number value
+        input.value = { number: value };
+      } else {
+        return {
+          success: false,
+          error: "Unsupported value type",
+        };
+      }
+
+      await this.query(mutation, { input });
+
+      return { success: true };
+    } catch (error: any) {
+      logger.error(
+        `Failed to update field value: ${error.message || error}`,
+      );
+      return {
+        success: false,
+        error: error.message || "Failed to update field value",
+      };
+    }
+  }
 }

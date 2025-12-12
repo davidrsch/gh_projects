@@ -22,6 +22,11 @@ window.tableViewFetcher = function (
     setLoadingState(container, viewName);
   } catch (e) {}
 
+  // Extract projectId from global project data
+  const projectId =
+    ((window as any).__project_data__ && (window as any).__project_data__.id) ||
+    undefined;
+
   let itemsLimit = 30;
 
   function render(payload: any, effectiveFilter?: string) {
@@ -359,6 +364,7 @@ window.tableViewFetcher = function (
       groupingFieldName: groupingFieldName || undefined,
       sortConfig,
       viewKey,
+      projectId,
       hiddenFields: viewHiddenFieldIds,
       onHiddenFieldsChange: (hiddenIds: string[]) => {
         try {

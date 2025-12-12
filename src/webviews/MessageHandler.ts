@@ -93,6 +93,9 @@ export class MessageHandler {
       case "discardViewGrouping":
         await this.handleDiscardViewGrouping(msg);
         break;
+      case "updateFieldValue":
+        await this.handleUpdateFieldValue(msg);
+        break;
     }
   }
 
@@ -377,6 +380,86 @@ export class MessageHandler {
       ? this.project.views
       : [];
     return viewsArr[viewIdx];
+  }
+
+  private async handleUpdateFieldValue(msg: any) {
+    try {
+      const reqViewKey = (msg as any).viewKey as string | undefined;
+      const messageId = (msg as any).id;
+      const projectId = (msg as any).projectId || this.project.id;
+      const itemId = (msg as any).itemId;
+      const fieldId = (msg as any).fieldId;
+      const newValue = (msg as any).newValue;
+      const fieldType = (msg as any).fieldType; // Optional field type hint
+
+      // Validate required fields
+      if (!projectId || !itemId || !fieldId) {
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResponse",
+          id: messageId,
+          success: false,
+          error: "Missing required fields: projectId, itemId, or fieldId",
+        });
+        return;
+      }
+
+      logger.debug(
+        `webview.updateFieldValue projectId=${projectId} itemId=${itemId} fieldId=${fieldId} type=${fieldType}`,
+      );
+
+      // Call GitHubRepository to update the field
+      const { GitHubRepository } = await import("../services/GitHubRepository");
+      const result = await GitHubRepository.getInstance().updateFieldValue(
+        projectId,
+        itemId,
+        fieldId,
+        newValue,
+        fieldType,
+      );
+
+      if (result.success) {
+        // Send success response
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResponse",
+          id: messageId,
+          success: true,
+        });
+
+        // Optionally refresh the view to reflect changes
+        // This ensures the UI is in sync with the backend
+        try {
+          const { snapshot, effectiveFilter } =
+            await ProjectDataService.getProjectData(this.project, reqViewKey);
+          this.panel.webview.postMessage({
+            command: "fields",
+            viewKey: reqViewKey,
+            payload: snapshot,
+            effectiveFilter: effectiveFilter,
+          });
+        } catch (e) {
+          // Log but don't fail the update
+          logger.debug("Failed to refresh after update: " + String(e));
+        }
+      } else {
+        // Send error response
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResponse",
+          id: messageId,
+          success: false,
+          error: result.error || "Update failed",
+        });
+      }
+    } catch (e) {
+      const wrapped = wrapError(e, "updateFieldValue failed");
+      const msgText = String(wrapped?.message || wrapped || "");
+      logger.error("updateFieldValue failed: " + msgText);
+      this.panel.webview.postMessage({
+        command: "updateFieldValueResponse",
+        id: (msg as any).id,
+        success: false,
+        error: msgText,
+      });
+    }
   }
 
   private sendInitMessage() {

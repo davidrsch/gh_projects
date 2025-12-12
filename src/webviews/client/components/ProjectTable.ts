@@ -15,6 +15,7 @@ export interface TableOptions {
   groupingFieldName?: string;
   sortConfig?: SortConfig | null;
   viewKey?: string;
+  projectId?: string;
   hiddenFields?: string[];
   onSortChange?: (config: SortConfig) => void;
   onGroupChange?: (fieldName: string) => void;
@@ -277,6 +278,8 @@ export class ProjectTable {
           this.tableResizer.beginColumnResize(colIndex, pageX, startWidth);
         }
       },
+      this.options.projectId,
+      this.options.viewKey,
     );
 
     if (groupingField) {
