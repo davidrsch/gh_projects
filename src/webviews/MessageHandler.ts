@@ -364,118 +364,6 @@ export class MessageHandler {
     }
   }
 
-  private async handleUpdateFieldValue(msg: any) {
-    try {
-      const { itemId, fieldId, value, projectId, viewKey } = msg;
-
-      // Validate required fields
-      if (!itemId || !fieldId || !projectId) {
-        logger.error("updateFieldValue: missing required fields");
-        this.panel.webview.postMessage({
-          command: "updateFieldValueResult",
-          success: false,
-          error: "Missing required fields",
-          viewKey,
-        });
-        return;
-      }
-
-      logger.debug(
-        `updateFieldValue: itemId=${itemId}, fieldId=${fieldId}, value=${value}`,
-      );
-
-      // Fetch current snapshot once to determine field type
-      const snapshot = await ProjectDataService.getProjectData(
-        this.project,
-        viewKey,
-      );
-      const field = snapshot.snapshot.fields.find((f: any) => f.id === fieldId);
-
-      // Use GitHubRepository to execute the mutation
-      const GitHubRepository = (
-        await import("../services/GitHubRepository")
-      ).GitHubRepository;
-      const repo = GitHubRepository.getInstance();
-
-      // Build the mutation based on field type
-      // For single_select and iteration fields, we use updateProjectV2ItemFieldValue
-      // with the singleSelectOptionId or iterationId parameter
-      const mutation = `
-        mutation UpdateFieldValue($input: UpdateProjectV2ItemFieldValueInput!) {
-          updateProjectV2ItemFieldValue(input: $input) {
-            projectV2Item {
-              id
-            }
-          }
-        }
-      `;
-
-      const input: any = {
-        projectId: projectId,
-        itemId: itemId,
-        fieldId: fieldId,
-      };
-
-      // Determine the appropriate value parameter based on field type
-      if (field) {
-        const fieldType = field.dataType;
-        if (value === null || value === undefined) {
-          // Clear the field value
-          if (fieldType === "SINGLE_SELECT") {
-            input.value = { singleSelectOptionId: null };
-          } else if (fieldType === "ITERATION") {
-            input.value = { iterationId: null };
-          } else {
-            input.value = { text: "" };
-          }
-        } else {
-          // Set the field value
-          if (fieldType === "SINGLE_SELECT") {
-            input.value = { singleSelectOptionId: value };
-          } else if (fieldType === "ITERATION") {
-            input.value = { iterationId: value };
-          } else {
-            input.value = { text: String(value) };
-          }
-        }
-      } else {
-        // Field not found, use text as fallback
-        input.value = value === null || value === undefined
-          ? { text: "" }
-          : { text: String(value) };
-      }
-
-      // Execute mutation
-      await (repo as any).query(mutation, { input });
-
-      logger.info(`Field value updated successfully for item ${itemId}`);
-
-      // Refresh the project data to get updated snapshot
-      const { snapshot: updatedSnapshot, effectiveFilter } =
-        await ProjectDataService.getProjectData(this.project, viewKey, true);
-
-      // Send success response with updated snapshot
-      this.panel.webview.postMessage({
-        command: "updateFieldValueResult",
-        success: true,
-        viewKey,
-        payload: updatedSnapshot,
-        effectiveFilter,
-      });
-    } catch (e: any) {
-      const wrapped = wrapError(e, "updateFieldValue failed");
-      const msgText = String(wrapped?.message || wrapped || "");
-      logger.error("updateFieldValue failed: " + msgText);
-
-      this.panel.webview.postMessage({
-        command: "updateFieldValueResult",
-        success: false,
-        error: msgText,
-        viewKey: (msg as any).viewKey || null,
-      });
-    }
-  }
-
   private getViewIndex(viewKey: string): number {
     let localKey = String(viewKey).split(":").pop();
     let viewIdx = 0;
@@ -501,7 +389,11 @@ export class MessageHandler {
       const projectId = (msg as any).projectId || this.project.id;
       const itemId = (msg as any).itemId;
       const fieldId = (msg as any).fieldId;
-      const newValue = (msg as any).newValue;
+      // Support both newValue (CellEditor) and value (tableViewFetcher)
+      const newValue =
+        (msg as any).newValue !== undefined
+          ? (msg as any).newValue
+          : (msg as any).value;
       const fieldType = (msg as any).fieldType; // Optional field type hint
 
       // Validate required fields
@@ -530,34 +422,60 @@ export class MessageHandler {
       );
 
       if (result.success) {
-        // Send success response
+        // Send success response for CellEditor-style callers
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
           id: messageId,
           success: true,
         });
 
-        // Optionally refresh the view to reflect changes
-        // This ensures the UI is in sync with the backend
+        // Refresh the project data to get updated snapshot
+        // and notify tableViewFetcher-style callers via updateFieldValueResult
+        let updatedSnapshot: any | undefined;
+        let effectiveFilter: any | undefined;
         try {
-          const { snapshot, effectiveFilter } =
-            await ProjectDataService.getProjectData(this.project, reqViewKey);
+          const data = await ProjectDataService.getProjectData(
+            this.project,
+            reqViewKey,
+            true,
+          );
+          updatedSnapshot = data.snapshot;
+          effectiveFilter = data.effectiveFilter;
+
+          // Broadcast updated fields snapshot
           this.panel.webview.postMessage({
             command: "fields",
             viewKey: reqViewKey,
-            payload: snapshot,
-            effectiveFilter: effectiveFilter,
+            payload: updatedSnapshot,
+            effectiveFilter,
+          });
+
+          // Backwards-compatible message used by tableViewFetcher
+          this.panel.webview.postMessage({
+            command: "updateFieldValueResult",
+            success: true,
+            viewKey: reqViewKey,
+            payload: updatedSnapshot,
+            effectiveFilter,
           });
         } catch (e) {
           // Log but don't fail the update
           logger.debug("Failed to refresh after update: " + String(e));
         }
       } else {
-        // Send error response
+        // Send error response for CellEditor-style callers
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
           id: messageId,
           success: false,
+          error: result.error || "Update failed",
+        });
+
+        // Also notify tableViewFetcher-style callers
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResult",
+          success: false,
+          viewKey: reqViewKey,
           error: result.error || "Update failed",
         });
       }
@@ -569,6 +487,14 @@ export class MessageHandler {
         command: "updateFieldValueResponse",
         id: (msg as any).id,
         success: false,
+        error: msgText,
+      });
+
+      // Also notify tableViewFetcher-style callers
+      this.panel.webview.postMessage({
+        command: "updateFieldValueResult",
+        success: false,
+        viewKey: (msg as any).viewKey || null,
         error: msgText,
       });
     }

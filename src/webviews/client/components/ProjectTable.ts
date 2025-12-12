@@ -18,7 +18,6 @@ export interface TableOptions {
   viewKey?: string;
   projectId?: string;
   hiddenFields?: string[];
-  projectId?: string; // Project ID for field updates
   onSortChange?: (config: SortConfig) => void;
   onGroupChange?: (fieldName: string) => void;
   onSliceChange?: (field: any) => void;
