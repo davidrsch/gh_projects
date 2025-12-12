@@ -161,6 +161,12 @@ export interface IssueSummary {
     percentCompleted?: number;
     completed?: number;
   } | null;
+  issueDependenciesSummary?: {
+    blockedBy?: number;
+    blocking?: number;
+    totalBlockedBy?: number;
+    totalBlocking?: number;
+  } | null;
 }
 
 export interface FieldOption {
@@ -304,6 +310,12 @@ export interface IssueNode {
   } | null;
   subIssues?: { nodes?: IssueNode[] } | null;
   labels?: { nodes?: LabelNode[] } | null;
+  issueDependenciesSummary?: {
+    blockedBy?: number;
+    blocking?: number;
+    totalBlockedBy?: number;
+    totalBlocking?: number;
+  } | null;
 }
 
 export interface IssueConnection {
