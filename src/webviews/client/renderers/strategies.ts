@@ -105,20 +105,19 @@ export class TitleRenderer implements CellRendererStrategy {
         if ((content as any).merged) isMerged = true;
       }
       const completedNames = ["done", "closed", "completed", "finished"];
+      // Canonical blocked state from GraphQL Issue dependencies
+      try {
+        const deps =
+          content && (content as any).issueDependenciesSummary
+            ? (content as any).issueDependenciesSummary
+            : null;
+        const blockedByCount =
+          deps && typeof deps.blockedBy === "number" ? deps.blockedBy : 0;
+        isBlocked = blockedByCount > 0;
+      } catch (_) {
+        isBlocked = false;
+      }
 
-      // Heuristic for blocked: label named "blocked" or status option named "blocked"
-      const hasBlockedLabel = !!(
-        content &&
-        content.labels &&
-        Array.isArray(content.labels.nodes) &&
-        content.labels.nodes.some(
-          (l: any) =>
-            l &&
-            typeof l.name === "string" &&
-            String(l.name).toLowerCase() === "blocked",
-        )
-      );
-      let hasBlockedStatus = false;
       let hasDoneFromStatus = false;
       if (Array.isArray(item && item.fieldValues)) {
         const statusFv = (item.fieldValues as any[]).find((fv: any) => {
@@ -132,14 +131,11 @@ export class TitleRenderer implements CellRendererStrategy {
         });
         if (statusFv && statusFv.option && statusFv.option.name) {
           const optNameLower = String(statusFv.option.name).toLowerCase();
-          hasBlockedStatus = optNameLower === "blocked";
           if (completedNames.includes(optNameLower)) {
             hasDoneFromStatus = true;
           }
         }
       }
-      isBlocked = hasBlockedLabel || hasBlockedStatus;
-
       // Treat issues/PRs as effectively closed when status or labels indicate "done"-like states
       const hasDoneLabel = !!(
         content &&
@@ -182,7 +178,7 @@ export class TitleRenderer implements CellRendererStrategy {
 
     const blockedIcon = isBlocked
       ? getIconSvg("blocked" as any, {
-          size: 10,
+          size: 9,
           className: "field-icon blocked-icon",
           fill: "#dc3545",
         })
@@ -195,7 +191,7 @@ export class TitleRenderer implements CellRendererStrategy {
       "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>" +
       baseIcon +
       (blockedIcon
-        ? "<span class='blocked-overlay' style='position:absolute;right:-2px;bottom:-2px'>" +
+        ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
           blockedIcon +
           "</span>"
         : "") +
@@ -441,7 +437,7 @@ export class PullRequestRenderer implements CellRendererStrategy {
 
       const blockedIcon = hasBlockedLabel
         ? getIconSvg("blocked" as any, {
-            size: 9,
+            size: 8,
             className: "field-icon blocked-icon",
             fill: "#dc3545",
           })
@@ -463,7 +459,7 @@ export class PullRequestRenderer implements CellRendererStrategy {
         "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center'>" +
         baseIcon +
         (blockedIcon
-          ? "<span class='blocked-overlay' style='position:absolute;right:-2px;bottom:-2px'>" +
+          ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
             blockedIcon +
             "</span>"
           : "") +
@@ -811,7 +807,7 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center'>" +
       parentIcon +
       (blockedIcon
-        ? "<span class='blocked-overlay' style='position:absolute;right:-2px;bottom:-2px'>" +
+        ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
           blockedIcon +
           "</span>"
         : "") +

@@ -111,13 +111,34 @@ export function buildItemsQuery(
 ): string {
   const qArg =
     query && String(query).trim() ? `, query: ${JSON.stringify(query)}` : "";
-  return `query{\n  node(id:${JSON.stringify(
-    projectId,
-  )}){\n    ... on ProjectV2{\n      items(first:${
-    LIMITS.itemsFirst
-  }${qArg}){\n        nodes{\n          id\n          content{ __typename\n            ... on Issue{ \n              id\n              number\n              url\n              title\n              repository{ nameWithOwner }\n              parent { id number url title repository{ nameWithOwner } }\n              subIssuesSummary { total percentCompleted completed }\n              subIssues(first:${
-    LIMITS.subIssuesFirst
-  }){ nodes{ id number url title repository{ nameWithOwner } } }\n            }\n            ... on PullRequest{ id number url title repository{ nameWithOwner } }\n          }\n          ${aliasSelections}\n        }\n      }\n    }\n  }\n}`;
+  return `query{
+  node(id:${JSON.stringify(projectId)}){
+    ... on ProjectV2{
+      items(first:${LIMITS.itemsFirst}${qArg}){
+        nodes{
+          id
+          content{ __typename
+            ... on Issue{ 
+              id
+              number
+              url
+              title
+              state
+              issueDependenciesSummary { blockedBy totalBlockedBy }
+              repository{ nameWithOwner }
+              parent { id number url title repository{ nameWithOwner } }
+              subIssuesSummary { total percentCompleted completed }
+              subIssues(first:${LIMITS.subIssuesFirst}){ nodes{ id number url title repository{ nameWithOwner } } }
+              labels(first:${LIMITS.labelsFirst}){ nodes{ id name color } }
+            }
+            ... on PullRequest{ id number url title repository{ nameWithOwner } }
+          }
+          ${aliasSelections}
+        }
+      }
+    }
+  }
+}`;
 }
 
 export function buildFieldsQuery(
