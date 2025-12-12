@@ -184,11 +184,18 @@ export class MessageHandler {
       }
 
       // Step 1: Show repository picker
-      const repoItems = repos.map((repo) => ({
-        label: `$(repo) ${repo.nameWithOwner}`,
-        description: repo.url || "",
-        repo: repo,
-      }));
+      const repoItems = repos.map((repo) => {
+        const nameWithOwner =
+          repo.owner && repo.name
+            ? `${repo.owner}/${repo.name}`
+            : repo.path || "Unknown repo";
+        return {
+          label: `$(repo) ${nameWithOwner}`,
+          description: repo.path || "",
+          owner: repo.owner,
+          name: repo.name,
+        };
+      });
 
       const selectedRepo = await vscode.window.showQuickPick(repoItems, {
         placeHolder: "Select a repository",
@@ -199,15 +206,15 @@ export class MessageHandler {
         return; // User cancelled
       }
 
-      // Parse owner and name from nameWithOwner
-      const parts = selectedRepo.repo.nameWithOwner.split("/");
-      if (parts.length !== 2 || !parts[0]?.trim() || !parts[1]?.trim()) {
+      // Validate owner and name
+      if (!selectedRepo.owner || !selectedRepo.name) {
         vscode.window.showErrorMessage(
           "Invalid repository format. Expected owner/repository format.",
         );
         return;
       }
-      const [owner, name] = parts;
+      const owner = selectedRepo.owner;
+      const name = selectedRepo.name;
 
       // Step 2: Fetch issues and PRs from the selected repository
       const ghRepo = GitHubRepository.getInstance();
