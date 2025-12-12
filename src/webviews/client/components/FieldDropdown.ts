@@ -33,11 +33,13 @@ export class FieldDropdown {
     this.config = config;
     this.container = this.createDropdown();
     this.backdrop = this.createBackdrop();
-    
+
     // Find currently selected index
     this.selectedIndex = Math.max(
       0,
-      this.config.options.findIndex((opt) => opt.id === this.config.currentValue)
+      this.config.options.findIndex(
+        (opt) => opt.id === this.config.currentValue,
+      ),
     );
   }
 
@@ -83,7 +85,7 @@ export class FieldDropdown {
     dropdown.style.overflowY = "auto";
     dropdown.style.zIndex = "1000";
     dropdown.style.fontSize = "13px";
-    
+
     // Add ARIA attributes for accessibility
     dropdown.setAttribute("role", "listbox");
     dropdown.setAttribute("aria-label", this.config.title || "Select option");
@@ -96,7 +98,8 @@ export class FieldDropdown {
       title.textContent = this.config.title;
       title.style.padding = "8px 12px";
       title.style.fontWeight = "600";
-      title.style.borderBottom = "1px solid var(--vscode-menu-separatorBackground)";
+      title.style.borderBottom =
+        "1px solid var(--vscode-menu-separatorBackground)";
       title.style.color = "var(--vscode-descriptionForeground)";
       title.style.fontSize = "11px";
       title.style.textTransform = "uppercase";
@@ -129,7 +132,10 @@ export class FieldDropdown {
     return dropdown;
   }
 
-  private createOptionElement(option: DropdownOption, index: number): HTMLElement {
+  private createOptionElement(
+    option: DropdownOption,
+    index: number,
+  ): HTMLElement {
     const item = document.createElement("div");
     item.className = "field-dropdown-option";
     item.dataset.index = String(index);
@@ -141,7 +147,7 @@ export class FieldDropdown {
     item.style.gap = "8px";
     item.style.color = "var(--vscode-menu-foreground)";
     item.style.transition = "background-color 0.1s ease";
-    
+
     // Add ARIA attributes
     item.setAttribute("role", "option");
     item.setAttribute("aria-label", option.label);
@@ -191,7 +197,7 @@ export class FieldDropdown {
     if (option.description || option.metadata) {
       const desc = document.createElement("div");
       desc.className = "field-dropdown-description";
-      desc.textContent = option.description || (option.metadata?.dateRange || "");
+      desc.textContent = option.description || option.metadata?.dateRange || "";
       desc.style.fontSize = "11px";
       desc.style.color = "var(--vscode-descriptionForeground)";
       desc.style.overflow = "hidden";
@@ -237,7 +243,7 @@ export class FieldDropdown {
         targetItem.style.color = "var(--vscode-menu-foreground)";
       }
     }
-    
+
     // Update ARIA activedescendant for screen readers on the listbox element
     if (targetItem) {
       this.container.setAttribute("aria-activedescendant", targetItem.id);
@@ -250,7 +256,7 @@ export class FieldDropdown {
         e.preventDefault();
         this.selectedIndex = Math.min(
           this.selectedIndex + 1,
-          this.config.options.length - 1
+          this.config.options.length - 1,
         );
         this.highlightOption(this.selectedIndex);
         this.scrollToOption(this.selectedIndex);
@@ -298,20 +304,20 @@ export class FieldDropdown {
   private close() {
     if (!this.mounted) return;
     this.mounted = false;
-    
+
     if (this.container.parentElement) {
       this.container.remove();
     }
     if (this.backdrop.parentElement) {
       this.backdrop.remove();
     }
-    
+
     this.config.onClose();
   }
 
   public show() {
     if (this.mounted) return;
-    
+
     this.mounted = true;
     document.body.appendChild(this.backdrop);
     document.body.appendChild(this.container);
@@ -351,7 +357,10 @@ export class FieldDropdown {
     let left = anchorRect.left;
 
     // Flip above if not enough space below
-    if (top + dropdownRect.height > viewportHeight && anchorRect.top > dropdownRect.height) {
+    if (
+      top + dropdownRect.height > viewportHeight &&
+      anchorRect.top > dropdownRect.height
+    ) {
       top = anchorRect.top - dropdownRect.height - 4;
     }
 

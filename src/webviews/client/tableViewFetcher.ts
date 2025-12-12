@@ -366,10 +366,10 @@ window.tableViewFetcher = function (
       groupingFieldName: groupingFieldName || undefined,
       sortConfig,
       viewKey,
-      
+
       // merged logic: projectId from top-level, fallback to snapshot.project.id
       projectId: projectId || snapshot.project?.id,
-      
+
       hiddenFields: viewHiddenFieldIds,
       onFieldUpdate: async (request) => {
         // Send update request to extension

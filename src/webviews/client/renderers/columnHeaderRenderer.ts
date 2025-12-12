@@ -47,19 +47,26 @@ export class ColumnHeaderRenderer {
     tr.appendChild(thIndex);
 
     // Field Headers
-    for (let fieldIndex = 0; fieldIndex < this.options.fields.length; fieldIndex++) {
+    for (
+      let fieldIndex = 0;
+      fieldIndex < this.options.fields.length;
+      fieldIndex++
+    ) {
       const field = this.options.fields[fieldIndex];
       const th = document.createElement("th");
-      
+
       // Add ARIA attributes
       th.setAttribute("role", "columnheader");
       th.setAttribute("aria-colindex", String(fieldIndex + 2)); // +2 for index column
       th.setAttribute("scope", "col");
-      
+
       // Add sort state to ARIA
       const isSorted = this.options.sortConfig?.fieldId === field.id;
       if (isSorted) {
-        const sortDirection = this.options.sortConfig?.direction === "ASC" ? "ascending" : "descending";
+        const sortDirection =
+          this.options.sortConfig?.direction === "ASC"
+            ? "ascending"
+            : "descending";
         th.setAttribute("aria-sort", sortDirection);
       }
 

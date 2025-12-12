@@ -146,7 +146,9 @@ export class LabelsPicker extends BasePicker {
     // Color swatch
     const normalizedColor = normalizeColor(label.color) || "#999999";
     const hasHex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(normalizedColor);
-    const bg = hasHex ? addAlpha(normalizedColor, 0.12) || "rgba(0,0,0,0.06)" : "rgba(0,0,0,0.06)";
+    const bg = hasHex
+      ? addAlpha(normalizedColor, 0.12) || "rgba(0,0,0,0.06)"
+      : "rgba(0,0,0,0.06)";
 
     const swatch = document.createElement("span");
     swatch.style.width = "16px";

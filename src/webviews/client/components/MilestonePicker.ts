@@ -6,8 +6,10 @@
 import { BasePicker, BasePickerOptions } from "./BasePicker";
 import { escapeHtml } from "../utils";
 
-export interface MilestonePickerOptions
-  extends Omit<BasePickerOptions, "title"> {
+export interface MilestonePickerOptions extends Omit<
+  BasePickerOptions,
+  "title"
+> {
   field: any;
   item: any;
   currentMilestone: any;

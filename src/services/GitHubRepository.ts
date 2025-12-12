@@ -564,9 +564,7 @@ export class GitHubRepository {
           };
       }
     } catch (error: any) {
-      logger.error(
-        `Failed to update field value: ${error.message || error}`,
-      );
+      logger.error(`Failed to update field value: ${error.message || error}`);
       return {
         success: false,
         error: error.message || "Failed to update field value",

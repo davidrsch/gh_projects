@@ -1,16 +1,33 @@
-# TODO: GraphQL Mutation Implementation
+# ✅ COMPLETED: GraphQL Mutation Implementation
 
 ## Overview
 
-The interactive picker UI is complete and functional. However, the backend integration that persists changes to GitHub via GraphQL mutations needs to be implemented. This document outlines what needs to be done.
+The backend integration for persisting field changes to GitHub via GraphQL mutations has been **fully implemented and tested**.
 
-## Current State
+## Implementation Status
 
-The `handleUpdateFieldValue` method in `src/webviews/MessageHandler.ts` currently:
+The `handleUpdateFieldValue` method in `src/webviews/MessageHandler.ts`:
 - ✅ Validates incoming update requests
 - ✅ Logs the update details
 - ✅ Sends success/error responses to webview
-- ❌ Does NOT persist changes to GitHub (placeholder only)
+- ✅ **Persists changes to GitHub via GraphQL mutations**
+- ✅ Refreshes project data after successful updates
+- ✅ Handles errors gracefully
+
+The `updateFieldValue` method in `src/services/GitHubRepository.ts`:
+- ✅ Supports all field types: text, number, date, single_select, iteration, labels, assignees, reviewers, milestone
+- ✅ Implements clearing field values (set to null)
+- ✅ Proper error handling and logging
+- ✅ Comprehensive unit test coverage
+
+## Documentation
+
+See [docs/MESSAGE_CONTRACT.md](docs/MESSAGE_CONTRACT.md) for complete API documentation including:
+- Message format specifications
+- All supported field types with examples
+- GraphQL mutations used
+- Error handling
+- Testing information
 
 ## Implementation Needed
 
