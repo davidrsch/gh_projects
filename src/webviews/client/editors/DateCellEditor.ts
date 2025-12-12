@@ -1,4 +1,5 @@
 import { CellEditor } from "./CellEditor";
+import { DatePicker } from "../components/DatePicker";
 
 /**
  * Inline editor for date fields.
@@ -8,6 +9,8 @@ export class DateCellEditor extends CellEditor {
   private container: HTMLDivElement | null = null;
   private input: HTMLInputElement | null = null;
   private clearBtn: HTMLButtonElement | null = null;
+  private calendarBtn: HTMLButtonElement | null = null;
+  private datePicker: DatePicker | null = null;
 
   protected async createEditor(): Promise<HTMLElement> {
     this.container = document.createElement("div");
@@ -18,10 +21,12 @@ export class DateCellEditor extends CellEditor {
     this.container.style.width = "100%";
     this.container.style.height = "100%";
 
-    // Create date input
+    // Create date input (text-based so we can control the calendar UI)
     this.input = document.createElement("input");
-    this.input.type = "date"; // HTML5 date picker
+    this.input.type = "text";
     this.input.className = "cell-editor-input";
+    this.input.placeholder = "YYYY-MM-DD";
+    this.input.autocomplete = "off";
 
     // Parse original value
     const dateValue =
@@ -52,8 +57,52 @@ export class DateCellEditor extends CellEditor {
     this.input.style.outline = "none";
     this.input.style.boxSizing = "border-box";
 
+    // Create calendar button
+    this.calendarBtn = document.createElement("button");
+    this.calendarBtn.type = "button";
+    this.calendarBtn.title = "Open calendar";
+    this.calendarBtn.className = "cell-editor-clear";
+    this.calendarBtn.style.flex = "0 0 auto";
+    this.calendarBtn.style.width = "24px";
+    this.calendarBtn.style.height = "24px";
+    this.calendarBtn.style.border = "1px solid var(--vscode-button-border)";
+    this.calendarBtn.style.background =
+      "var(--vscode-button-secondaryBackground)";
+    this.calendarBtn.style.color =
+      "var(--vscode-button-secondaryForeground)";
+    this.calendarBtn.style.borderRadius = "3px";
+    this.calendarBtn.style.cursor = "pointer";
+    this.calendarBtn.style.fontSize = "14px";
+    this.calendarBtn.style.lineHeight = "1";
+    this.calendarBtn.style.padding = "0";
+    this.calendarBtn.style.display = "flex";
+    this.calendarBtn.style.alignItems = "center";
+    this.calendarBtn.style.justifyContent = "center";
+    this.calendarBtn.textContent = "📅";
+
+    this.calendarBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openDatePicker();
+    });
+
+    this.calendarBtn.addEventListener("mouseenter", () => {
+      if (this.calendarBtn) {
+        this.calendarBtn.style.background =
+          "var(--vscode-button-secondaryHoverBackground)";
+      }
+    });
+
+    this.calendarBtn.addEventListener("mouseleave", () => {
+      if (this.calendarBtn) {
+        this.calendarBtn.style.background =
+          "var(--vscode-button-secondaryBackground)";
+      }
+    });
+
     // Create clear button
     this.clearBtn = document.createElement("button");
+    this.clearBtn.type = "button";
     this.clearBtn.textContent = "×";
     this.clearBtn.title = "Clear date";
     this.clearBtn.className = "cell-editor-clear";
@@ -61,8 +110,10 @@ export class DateCellEditor extends CellEditor {
     this.clearBtn.style.width = "24px";
     this.clearBtn.style.height = "24px";
     this.clearBtn.style.border = "1px solid var(--vscode-button-border)";
-    this.clearBtn.style.background = "var(--vscode-button-secondaryBackground)";
-    this.clearBtn.style.color = "var(--vscode-button-secondaryForeground)";
+    this.clearBtn.style.background =
+      "var(--vscode-button-secondaryBackground)";
+    this.clearBtn.style.color =
+      "var(--vscode-button-secondaryForeground)";
     this.clearBtn.style.borderRadius = "3px";
     this.clearBtn.style.cursor = "pointer";
     this.clearBtn.style.fontSize = "18px";
@@ -96,6 +147,7 @@ export class DateCellEditor extends CellEditor {
     });
 
     this.container.appendChild(this.input);
+    this.container.appendChild(this.calendarBtn);
     this.container.appendChild(this.clearBtn);
 
     return this.container;
@@ -162,5 +214,33 @@ export class DateCellEditor extends CellEditor {
       valid: false,
       message: "Please enter a valid date or leave empty",
     };
+  }
+
+  private openDatePicker(): void {
+    if (!this.input || this.datePicker) {
+      return;
+    }
+
+    const initial = this.input.value ||
+      this.originalValue?.date ||
+      this.originalValue?.startDate ||
+      this.originalValue?.dueOn ||
+      null;
+
+    this.datePicker = new DatePicker({
+      anchorElement: this.input,
+      initialDate: typeof initial === "string" ? initial : null,
+      onSelect: (value) => {
+        if (this.input) {
+          this.input.value = value || "";
+          this.input.focus();
+        }
+      },
+      onClose: () => {
+        this.datePicker = null;
+      },
+    });
+
+    this.datePicker.show();
   }
 }
