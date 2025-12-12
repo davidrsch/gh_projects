@@ -6,6 +6,9 @@ import logger from "../lib/logger";
 import { wrapError } from "../lib/errors";
 import messages, { isGhNotFound } from "../lib/messages";
 
+// GitHub Pull Requests & Issues extension ID
+const GITHUB_PR_EXTENSION_ID = "GitHub.vscode-pull-request-github";
+
 export class MessageHandler {
   constructor(
     private panel: vscode.WebviewPanel,
@@ -135,7 +138,7 @@ export class MessageHandler {
     try {
       // Check if GitHub Pull Requests & Issues extension is installed
       const ghExtension = vscode.extensions.getExtension(
-        "GitHub.vscode-pull-request-github",
+        GITHUB_PR_EXTENSION_ID,
       );
 
       if (ghExtension) {
@@ -199,7 +202,9 @@ export class MessageHandler {
       // Parse owner and name from nameWithOwner
       const parts = selectedRepo.repo.nameWithOwner.split("/");
       if (parts.length !== 2 || !parts[0]?.trim() || !parts[1]?.trim()) {
-        vscode.window.showErrorMessage("Invalid repository format");
+        vscode.window.showErrorMessage(
+          "Invalid repository format. Expected owner/repository format.",
+        );
         return;
       }
       const [owner, name] = parts;

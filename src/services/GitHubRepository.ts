@@ -1009,9 +1009,10 @@ export class GitHubRepository {
 
       const itemId = result?.addProjectV2ItemById?.item?.id;
       if (!itemId) {
-        throw new Error(
-          "Failed to add item to project - no item ID returned from GraphQL mutation",
-        );
+        const technicalError =
+          "Failed to add item to project - no item ID returned from GraphQL mutation";
+        logger.error(technicalError);
+        throw new Error("Failed to add item to project");
       }
 
       logger.info(
@@ -1019,10 +1020,20 @@ export class GitHubRepository {
       );
       return { success: true, itemId };
     } catch (error: any) {
-      logger.error(`Failed to add item to project: ${error.message || error}`);
+      const technicalError = error.message || String(error);
+      logger.error(`Failed to add item to project: ${technicalError}`);
+      // Return a user-friendly error message
+      const userMessage =
+        technicalError.includes("not found") ||
+        technicalError.includes("does not exist")
+          ? "Item or project not found"
+          : technicalError.includes("permission") ||
+              technicalError.includes("unauthorized")
+            ? "Permission denied"
+            : "Failed to add item to project";
       return {
         success: false,
-        error: error.message || "Failed to add item to project",
+        error: userMessage,
       };
     }
   }
