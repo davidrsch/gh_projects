@@ -307,7 +307,8 @@ export abstract class CellEditor {
     tooltip.style.top = "100%";
     tooltip.style.left = "0";
     tooltip.style.background = "var(--vscode-inputValidation-errorBackground)";
-    tooltip.style.border = "1px solid var(--vscode-inputValidation-errorBorder)";
+    tooltip.style.border =
+      "1px solid var(--vscode-inputValidation-errorBorder)";
     tooltip.style.color = "var(--vscode-inputValidation-errorForeground)";
     tooltip.style.padding = "4px 8px";
     tooltip.style.borderRadius = "3px";

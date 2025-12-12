@@ -300,7 +300,11 @@ export class DatePicker {
 
     const firstOfMonth = new Date(this.currentYear, this.currentMonth, 1);
     const firstDay = firstOfMonth.getDay(); // 0 (Sun) - 6 (Sat)
-    const daysInMonth = new Date(this.currentYear, this.currentMonth + 1, 0).getDate();
+    const daysInMonth = new Date(
+      this.currentYear,
+      this.currentMonth + 1,
+      0,
+    ).getDate();
 
     // Leading blanks
     for (let i = 0; i < firstDay; i++) {
@@ -336,7 +340,8 @@ export class DatePicker {
 
       // Highlight selected date
       if (this.selectedDate && this.isSameDate(date, this.selectedDate)) {
-        button.style.background = "var(--vscode-list-activeSelectionBackground)";
+        button.style.background =
+          "var(--vscode-list-activeSelectionBackground)";
         button.style.color = "var(--vscode-list-activeSelectionForeground)";
       }
 
@@ -346,7 +351,8 @@ export class DatePicker {
 
       button.addEventListener("mouseleave", () => {
         if (this.selectedDate && this.isSameDate(date, this.selectedDate)) {
-          button.style.background = "var(--vscode-list-activeSelectionBackground)";
+          button.style.background =
+            "var(--vscode-list-activeSelectionBackground)";
           button.style.color = "var(--vscode-list-activeSelectionForeground)";
         } else {
           button.style.background = "transparent";
@@ -408,7 +414,10 @@ export class DatePicker {
       case "Enter":
       case " ":
         e.preventDefault();
-        if (this.focusedIndex >= 0 && this.focusedIndex < this.dayButtons.length) {
+        if (
+          this.focusedIndex >= 0 &&
+          this.focusedIndex < this.dayButtons.length
+        ) {
           const { element } = this.dayButtons[this.focusedIndex];
           element.click();
         }
@@ -491,7 +500,10 @@ export class DatePicker {
     let left = anchorRect.left;
 
     // Flip above if not enough space below
-    if (top + containerRect.height > viewportHeight && anchorRect.top > containerRect.height) {
+    if (
+      top + containerRect.height > viewportHeight &&
+      anchorRect.top > containerRect.height
+    ) {
       top = anchorRect.top - containerRect.height - 4;
     }
 

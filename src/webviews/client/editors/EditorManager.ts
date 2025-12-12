@@ -188,7 +188,12 @@ export class EditorManager {
 
       // Re-render the cell with the new value
       const updatedFieldValue = this.getFieldValue(item, field);
-      cell.innerHTML = renderCell(updatedFieldValue, field, item, this.allItems);
+      cell.innerHTML = renderCell(
+        updatedFieldValue,
+        field,
+        item,
+        this.allItems,
+      );
 
       // Make cell editable again
       this.makeEditable(cell, updatedFieldValue, field, item);
@@ -228,8 +233,7 @@ export class EditorManager {
 
     // Find the field value object
     let fv = item.fieldValues.find(
-      (v: any) =>
-        String(v.fieldId) === fieldId || v.fieldName === field.name,
+      (v: any) => String(v.fieldId) === fieldId || v.fieldName === field.name,
     );
 
     if (!fv) {

@@ -31,7 +31,7 @@ export class TableKeyboardNavigator {
    */
   private attachKeyboardHandlers() {
     this.table.addEventListener("keydown", (e) => this.handleTableKeyDown(e));
-    
+
     // Handle focus on cells to track active position
     this.table.addEventListener("focusin", (e) => {
       const target = e.target as HTMLElement;
@@ -46,7 +46,7 @@ export class TableKeyboardNavigator {
    */
   private handleTableKeyDown(e: KeyboardEvent) {
     const target = e.target as HTMLElement;
-    
+
     // Don't handle if we're in an input/textarea/select (except for Escape)
     if (
       (target.tagName === "INPUT" ||
@@ -159,7 +159,7 @@ export class TableKeyboardNavigator {
 
     const row = rows[position.rowIndex] as HTMLTableRowElement;
     const cells = Array.from(row.querySelectorAll("td"));
-    
+
     if (position.colIndex >= cells.length) return;
 
     const cell = cells[position.colIndex] as HTMLTableCellElement;
@@ -173,7 +173,11 @@ export class TableKeyboardNavigator {
 
     // Scroll into view if needed (try/catch for test environments without full DOM API)
     try {
-      cell.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+      cell.scrollIntoView({
+        block: "nearest",
+        inline: "nearest",
+        behavior: "smooth",
+      });
     } catch (e) {
       // TypeError in environments like jsdom that don't support scrollIntoView options
       // Silently fail for compatibility - scrolling is a progressive enhancement
@@ -260,7 +264,9 @@ export class TableKeyboardNavigator {
     if (!row) return null;
 
     const cells = Array.from(row.querySelectorAll("td"));
-    return cells[this.activePosition.colIndex] as HTMLTableCellElement || null;
+    return (
+      (cells[this.activePosition.colIndex] as HTMLTableCellElement) || null
+    );
   }
 
   /**

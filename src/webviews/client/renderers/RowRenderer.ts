@@ -79,19 +79,18 @@ export class RowRenderer {
       const field = this.fields[colIndex];
       const td = document.createElement("td");
       this.styleCell(td);
-      
+
       // Add ARIA attributes for accessibility
       td.setAttribute("role", "gridcell");
       td.setAttribute("aria-colindex", String(colIndex + 2)); // +2 because index column is 1
-      
+
       // Add field label for screen readers
       const fieldLabel = field.name || field.id || "Field";
       td.setAttribute("aria-label", fieldLabel);
 
       const fv = item.fieldValues.find(
         (v: any) =>
-          String(v.fieldId) === String(field.id) ||
-          v.fieldName === field.name,
+          String(v.fieldId) === String(field.id) || v.fieldName === field.name,
       );
 
       if (fv) {

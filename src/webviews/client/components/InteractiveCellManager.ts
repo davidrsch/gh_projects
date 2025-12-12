@@ -38,10 +38,10 @@ export class InteractiveCellManager {
     item: any,
     currentValue: any,
     projectId: string,
-    viewKey: string
+    viewKey: string,
   ) {
     const fieldType = field.dataType || field.type;
-    
+
     if (fieldType !== "SINGLE_SELECT" && fieldType !== "ITERATION") {
       return; // Only handle single_select and iteration fields
     }
@@ -54,14 +54,21 @@ export class InteractiveCellManager {
     // Add click handler
     const clickHandler = (e: MouseEvent) => {
       e.stopPropagation();
-      
+
       // Don't open if cell is being updated
       const cellKey = this.getCellKey(item.id, field.id);
       if (this.updatingCells.has(cellKey)) {
         return;
       }
 
-      this.openDropdownForCell(cell, field, item, currentValue, projectId, viewKey);
+      this.openDropdownForCell(
+        cell,
+        field,
+        item,
+        currentValue,
+        projectId,
+        viewKey,
+      );
     };
 
     cell.addEventListener("click", clickHandler);
@@ -71,13 +78,20 @@ export class InteractiveCellManager {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         e.stopPropagation();
-        
+
         const cellKey = this.getCellKey(item.id, field.id);
         if (this.updatingCells.has(cellKey)) {
           return;
         }
 
-        this.openDropdownForCell(cell, field, item, currentValue, projectId, viewKey);
+        this.openDropdownForCell(
+          cell,
+          field,
+          item,
+          currentValue,
+          projectId,
+          viewKey,
+        );
       }
     };
 
@@ -106,7 +120,7 @@ export class InteractiveCellManager {
     item: any,
     currentValue: any,
     projectId: string,
-    viewKey: string
+    viewKey: string,
   ) {
     // Close existing dropdown
     if (this.activeDropdown) {
@@ -142,7 +156,7 @@ export class InteractiveCellManager {
           field.id,
           projectId,
           viewKey,
-          cell
+          cell,
         );
       },
       onClose: () => {
@@ -153,7 +167,10 @@ export class InteractiveCellManager {
     this.activeDropdown.show();
   }
 
-  private buildSingleSelectOptions(field: any, currentValue: any): DropdownOption[] {
+  private buildSingleSelectOptions(
+    field: any,
+    currentValue: any,
+  ): DropdownOption[] {
     const options: DropdownOption[] = [];
 
     // Add "Clear" option
@@ -178,7 +195,10 @@ export class InteractiveCellManager {
     return options;
   }
 
-  private buildIterationOptions(field: any, currentValue: any): DropdownOption[] {
+  private buildIterationOptions(
+    field: any,
+    currentValue: any,
+  ): DropdownOption[] {
     const options: DropdownOption[] = [];
 
     // Add "Clear" option
@@ -242,7 +262,7 @@ export class InteractiveCellManager {
     fieldId: string,
     projectId: string,
     viewKey: string,
-    cell: HTMLElement
+    cell: HTMLElement,
   ) {
     const cellKey = this.getCellKey(itemId, fieldId);
 
@@ -289,7 +309,7 @@ export class InteractiveCellManager {
 
   private showCellError(cell: HTMLElement, errorMsg: string) {
     this.hideCellLoading(cell);
-    
+
     // Add error styling
     cell.style.outline = "2px solid var(--vscode-errorForeground)";
     cell.style.outlineOffset = "-2px";
@@ -300,7 +320,8 @@ export class InteractiveCellManager {
     tooltip.textContent = errorMsg;
     tooltip.style.position = "absolute";
     tooltip.style.background = "var(--vscode-inputValidation-errorBackground)";
-    tooltip.style.border = "1px solid var(--vscode-inputValidation-errorBorder)";
+    tooltip.style.border =
+      "1px solid var(--vscode-inputValidation-errorBorder)";
     tooltip.style.color = "var(--vscode-inputValidation-errorForeground)";
     tooltip.style.padding = "6px 10px";
     tooltip.style.borderRadius = "4px";

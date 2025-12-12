@@ -6,8 +6,10 @@
 import { BasePicker, BasePickerOptions } from "./BasePicker";
 import { escapeHtml } from "../utils";
 
-export interface ReviewersPickerOptions
-  extends Omit<BasePickerOptions, "title"> {
+export interface ReviewersPickerOptions extends Omit<
+  BasePickerOptions,
+  "title"
+> {
   field: any;
   item: any;
   currentReviewers: any[];

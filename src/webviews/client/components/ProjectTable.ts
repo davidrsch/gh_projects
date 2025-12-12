@@ -10,7 +10,10 @@ import { GroupDataService } from "../services/GroupDataService";
 import { RowRenderer } from "../renderers/RowRenderer";
 import { GroupRenderer } from "../renderers/GroupRenderer";
 import { TableResizer } from "./TableResizer";
-import { InteractiveCellManager, CellUpdateRequest } from "./InteractiveCellManager";
+import {
+  InteractiveCellManager,
+  CellUpdateRequest,
+} from "./InteractiveCellManager";
 import { TableKeyboardNavigator } from "./TableKeyboardNavigator";
 
 export interface TableOptions {
@@ -156,7 +159,7 @@ export class ProjectTable {
     table.style.tableLayout = "fixed";
     // Let container control horizontal scrolling while table fills width
     table.style.width = "100%";
-    
+
     // Add ARIA attributes for accessibility
     table.setAttribute("role", "grid");
     table.setAttribute("aria-label", "Project items table");
@@ -185,7 +188,7 @@ export class ProjectTable {
     // For now, let's keep the sticky header logic and resizers.
     this.tableResizer = new TableResizer(table, this.fields, this.options);
     this.tableResizer.setupResizers();
-    
+
     // Initialize keyboard navigation
     this.keyboardNavigator = new TableKeyboardNavigator(table, {
       onEnterEditMode: (cell, position) => {
@@ -204,7 +207,7 @@ export class ProjectTable {
         this.updateCellFocusIndicator(cell);
       },
     });
-    
+
     // Make cells focusable for keyboard navigation
     this.keyboardNavigator.makeCellsFocusable();
   }
@@ -947,7 +950,8 @@ export class ProjectTable {
           const fieldValue = item.fieldValues.find(
             (fv: any) =>
               String(fv.fieldId) === String(fieldId) ||
-              fv.fieldName === this.fields.find((f) => String(f.id) === String(fieldId))?.name,
+              fv.fieldName ===
+                this.fields.find((f) => String(f.id) === String(fieldId))?.name,
           );
 
           if (fieldValue) {
@@ -957,14 +961,18 @@ export class ProjectTable {
               fieldValue.labels = value.labelIds.map((id: string) => ({ id }));
             } else if (value.assigneeLogins !== undefined) {
               // Assignees update
-              fieldValue.assignees = value.assigneeLogins.map((login: string) => ({
-                login,
-              }));
+              fieldValue.assignees = value.assigneeLogins.map(
+                (login: string) => ({
+                  login,
+                }),
+              );
             } else if (value.reviewerLogins !== undefined) {
               // Reviewers update
-              fieldValue.reviewers = value.reviewerLogins.map((login: string) => ({
-                login,
-              }));
+              fieldValue.reviewers = value.reviewerLogins.map(
+                (login: string) => ({
+                  login,
+                }),
+              );
             } else if (value.milestoneId !== undefined) {
               // Milestone update
               fieldValue.milestone = value.milestoneId

@@ -118,7 +118,8 @@ export abstract class BasePicker {
 
     const header = document.createElement("div");
     header.style.padding = "12px";
-    header.style.borderBottom = "1px solid var(--vscode-menu-separatorBackground)";
+    header.style.borderBottom =
+      "1px solid var(--vscode-menu-separatorBackground)";
     header.style.fontWeight = "600";
     header.style.fontSize = "13px";
     header.style.color = "var(--vscode-foreground)";
@@ -135,7 +136,8 @@ export abstract class BasePicker {
 
     const searchContainer = document.createElement("div");
     searchContainer.style.padding = "8px 12px";
-    searchContainer.style.borderBottom = "1px solid var(--vscode-menu-separatorBackground)";
+    searchContainer.style.borderBottom =
+      "1px solid var(--vscode-menu-separatorBackground)";
 
     this.searchInput = document.createElement("input");
     this.searchInput.type = "text";

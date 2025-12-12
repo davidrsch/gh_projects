@@ -68,8 +68,7 @@ export class DateCellEditor extends CellEditor {
     this.calendarBtn.style.border = "1px solid var(--vscode-button-border)";
     this.calendarBtn.style.background =
       "var(--vscode-button-secondaryBackground)";
-    this.calendarBtn.style.color =
-      "var(--vscode-button-secondaryForeground)";
+    this.calendarBtn.style.color = "var(--vscode-button-secondaryForeground)";
     this.calendarBtn.style.borderRadius = "3px";
     this.calendarBtn.style.cursor = "pointer";
     this.calendarBtn.style.fontSize = "14px";
@@ -110,10 +109,8 @@ export class DateCellEditor extends CellEditor {
     this.clearBtn.style.width = "24px";
     this.clearBtn.style.height = "24px";
     this.clearBtn.style.border = "1px solid var(--vscode-button-border)";
-    this.clearBtn.style.background =
-      "var(--vscode-button-secondaryBackground)";
-    this.clearBtn.style.color =
-      "var(--vscode-button-secondaryForeground)";
+    this.clearBtn.style.background = "var(--vscode-button-secondaryBackground)";
+    this.clearBtn.style.color = "var(--vscode-button-secondaryForeground)";
     this.clearBtn.style.borderRadius = "3px";
     this.clearBtn.style.cursor = "pointer";
     this.clearBtn.style.fontSize = "18px";
@@ -221,7 +218,8 @@ export class DateCellEditor extends CellEditor {
       return;
     }
 
-    const initial = this.input.value ||
+    const initial =
+      this.input.value ||
       this.originalValue?.date ||
       this.originalValue?.startDate ||
       this.originalValue?.dueOn ||

@@ -494,7 +494,8 @@ export class GitHubRepository {
 
   /**
    * Updates a field value for a project item.
-   * @param fieldType - The type of field being updated (text, number, date)
+   * Supports: text, number, date, single_select, iteration, labels, assignees, reviewers, milestone
+   * @param fieldType - The type of field being updated
    */
   public async updateFieldValue(
     projectId: string,
@@ -504,8 +505,117 @@ export class GitHubRepository {
     fieldType?: string,
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      // GitHub Projects V2 uses different mutations for different field types
-      // For text, number, and date fields, we use updateProjectV2ItemFieldValue
+      const type = fieldType?.toLowerCase();
+
+      // Handle clearing field values (null or undefined)
+      if (value === null || value === undefined) {
+        return await this.clearFieldValue(projectId, itemId, fieldId);
+      }
+
+      // Route to appropriate mutation based on field type
+      switch (type) {
+        case "text":
+        case "number":
+        case "date":
+        case "single_select":
+        case "iteration":
+          return await this.updateProjectV2Field(
+            projectId,
+            itemId,
+            fieldId,
+            value,
+            type,
+          );
+
+        case "labels":
+          return await this.updateLabels(itemId, value);
+
+        case "assignees":
+          return await this.updateAssignees(itemId, value);
+
+        case "reviewers":
+          return await this.updateReviewers(itemId, value);
+
+        case "milestone":
+          return await this.updateMilestone(itemId, value);
+
+        default:
+          // Try to infer type from value for backward compatibility
+          if (typeof value === "string") {
+            return await this.updateProjectV2Field(
+              projectId,
+              itemId,
+              fieldId,
+              value,
+              "text",
+            );
+          } else if (typeof value === "number") {
+            return await this.updateProjectV2Field(
+              projectId,
+              itemId,
+              fieldId,
+              value,
+              "number",
+            );
+          }
+          return {
+            success: false,
+            error: `Unsupported field type: ${type}`,
+          };
+      }
+    } catch (error: any) {
+      logger.error(`Failed to update field value: ${error.message || error}`);
+      return {
+        success: false,
+        error: error.message || "Failed to update field value",
+      };
+    }
+  }
+
+  /**
+   * Clears a project field value (sets to null/empty)
+   */
+  private async clearFieldValue(
+    projectId: string,
+    itemId: string,
+    fieldId: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const mutation = `
+        mutation($input: ClearProjectV2ItemFieldValueInput!) {
+          clearProjectV2ItemFieldValue(input: $input) {
+            projectV2Item {
+              id
+            }
+          }
+        }
+      `;
+
+      await this.query(mutation, {
+        input: { projectId, itemId, fieldId },
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      logger.error(`Failed to clear field value: ${error.message || error}`);
+      return {
+        success: false,
+        error: error.message || "Failed to clear field value",
+      };
+    }
+  }
+
+  /**
+   * Updates ProjectV2 field values (text, number, date, single_select, iteration)
+   */
+  private async updateProjectV2Field(
+    projectId: string,
+    itemId: string,
+    fieldId: string,
+    value: any,
+    type: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
       const mutation = `
         mutation($input: UpdateProjectV2ItemFieldValueInput!) {
           updateProjectV2ItemFieldValue(input: $input) {
@@ -523,44 +633,224 @@ export class GitHubRepository {
       };
 
       // Set the value based on type
-      // Note: GitHub Projects V2 API doesn't support clearing field values to null
-      // via updateProjectV2ItemFieldValue mutation. To clear a field, use
-      // clearProjectV2ItemFieldValue mutation instead.
-      if (value === null || value === undefined) {
-        return {
-          success: false,
-          error: "Clearing fields to null is not supported via this mutation",
-        };
+      switch (type) {
+        case "text":
+          input.value = { text: String(value) };
+          break;
+        case "number":
+          input.value = { number: Number(value) };
+          break;
+        case "date":
+          input.value = { date: value };
+          break;
+        case "single_select":
+          // value should be optionId (string)
+          input.value = { singleSelectOptionId: String(value) };
+          break;
+        case "iteration":
+          // value should be iterationId (string)
+          input.value = { iterationId: String(value) };
+          break;
+        default:
+          return {
+            success: false,
+            error: `Unsupported ProjectV2 field type: ${type}`,
+          };
       }
 
-      // Use explicit field type if provided, otherwise infer from value
-      const type = fieldType?.toLowerCase();
-      if (type === "text" || (type === undefined && typeof value === "string")) {
-        // Text value (default for strings if type not specified)
-        input.value = { text: String(value) };
-      } else if (type === "date" || (type === undefined && typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value))) {
-        // ISO 8601 date string (more strict pattern)
-        input.value = { date: value };
-      } else if (type === "number" || (type === undefined && typeof value === "number")) {
-        // Number value
-        input.value = { number: value };
-      } else {
-        return {
-          success: false,
-          error: "Unsupported value type",
-        };
+      await this.query(mutation, { input });
+      return { success: true };
+    } catch (error: any) {
+      logger.error(
+        `Failed to update ProjectV2 field: ${error.message || error}`,
+      );
+      return {
+        success: false,
+        error: error.message || "Failed to update ProjectV2 field",
+      };
+    }
+  }
+
+  /**
+   * Updates labels on an issue or pull request
+   * Value should be an array of label IDs
+   */
+  private async updateLabels(
+    itemId: string,
+    value: any,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Value should be { labelIds: string[] }
+      const labelIds = Array.isArray(value)
+        ? value
+        : Array.isArray(value?.labelIds)
+          ? value.labelIds
+          : [];
+
+      // For labels, we need to get current labels and compute diff
+      // For now, we'll use the simpler approach of adding all labels
+      // A more sophisticated implementation would diff current vs new labels
+      const mutation = `
+        mutation($input: AddLabelsToLabelableInput!) {
+          addLabelsToLabelable(input: $input) {
+            clientMutationId
+          }
+        }
+      `;
+
+      await this.query(mutation, {
+        input: {
+          labelableId: itemId,
+          labelIds: labelIds,
+        },
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      logger.error(`Failed to update labels: ${error.message || error}`);
+      return {
+        success: false,
+        error: error.message || "Failed to update labels",
+      };
+    }
+  }
+
+  /**
+   * Updates assignees on an issue or pull request
+   * Value should be an array of user IDs
+   */
+  private async updateAssignees(
+    itemId: string,
+    value: any,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Value should be { assigneeIds: string[] }
+      const assigneeIds = Array.isArray(value)
+        ? value
+        : Array.isArray(value?.assigneeIds)
+          ? value.assigneeIds
+          : [];
+
+      const mutation = `
+        mutation($input: AddAssigneesToAssignableInput!) {
+          addAssigneesToAssignable(input: $input) {
+            clientMutationId
+          }
+        }
+      `;
+
+      await this.query(mutation, {
+        input: {
+          assignableId: itemId,
+          assigneeIds: assigneeIds,
+        },
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      logger.error(`Failed to update assignees: ${error.message || error}`);
+      return {
+        success: false,
+        error: error.message || "Failed to update assignees",
+      };
+    }
+  }
+
+  /**
+   * Updates reviewers on a pull request
+   * Value should be { userIds?: string[], teamIds?: string[] }
+   */
+  private async updateReviewers(
+    itemId: string,
+    value: any,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Value should be { reviewerIds: string[] } or { userIds: string[], teamIds: string[] }
+      const userIds = Array.isArray(value?.userIds) ? value.userIds : [];
+      const teamIds = Array.isArray(value?.teamIds) ? value.teamIds : [];
+
+      // If value.reviewerIds is provided, treat all as userIds for simplicity
+      if (Array.isArray(value?.reviewerIds)) {
+        userIds.push(...value.reviewerIds);
+      }
+
+      const mutation = `
+        mutation($input: RequestReviewsInput!) {
+          requestReviews(input: $input) {
+            clientMutationId
+          }
+        }
+      `;
+
+      const input: any = {
+        pullRequestId: itemId,
+      };
+
+      if (userIds.length > 0) {
+        input.userIds = userIds;
+      }
+      if (teamIds.length > 0) {
+        input.teamIds = teamIds;
       }
 
       await this.query(mutation, { input });
 
       return { success: true };
     } catch (error: any) {
-      logger.error(
-        `Failed to update field value: ${error.message || error}`,
-      );
+      logger.error(`Failed to update reviewers: ${error.message || error}`);
       return {
         success: false,
-        error: error.message || "Failed to update field value",
+        error: error.message || "Failed to update reviewers",
+      };
+    }
+  }
+
+  /**
+   * Updates milestone on an issue or pull request
+   * Value should be a milestone ID (string)
+   */
+  private async updateMilestone(
+    itemId: string,
+    value: any,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Value should be { milestoneId: string } or just the milestoneId string
+      const milestoneId =
+        typeof value === "string"
+          ? value
+          : typeof value?.milestoneId === "string"
+            ? value.milestoneId
+            : null;
+
+      if (!milestoneId) {
+        return {
+          success: false,
+          error: "Milestone ID is required",
+        };
+      }
+
+      // Try updateIssue first (works for both issues and PRs in GitHub API)
+      const mutation = `
+        mutation($input: UpdateIssueInput!) {
+          updateIssue(input: $input) {
+            clientMutationId
+          }
+        }
+      `;
+
+      await this.query(mutation, {
+        input: {
+          id: itemId,
+          milestoneId: milestoneId,
+        },
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      logger.error(`Failed to update milestone: ${error.message || error}`);
+      return {
+        success: false,
+        error: error.message || "Failed to update milestone",
       };
     }
   }

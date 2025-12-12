@@ -142,9 +142,7 @@ export class TitleRenderer implements CellRendererStrategy {
         content.labels &&
         Array.isArray(content.labels.nodes) &&
         content.labels.nodes.some((l: any) =>
-          completedNames.includes(
-            String((l && l.name) || "").toLowerCase(),
-          ),
+          completedNames.includes(String((l && l.name) || "").toLowerCase()),
         )
       );
 
@@ -328,7 +326,9 @@ export class RepositoryRenderer implements CellRendererStrategy {
     // Extract URL from repository object
     const url =
       (r &&
-        (r.url || r.html_url || (r.nameWithOwner && `https://github.com/${r.nameWithOwner}`))) ||
+        (r.url ||
+          r.html_url ||
+          (r.nameWithOwner && `https://github.com/${r.nameWithOwner}`))) ||
       "";
 
     const icon = getIconSvg("repo", {
@@ -628,12 +628,12 @@ export class SubIssuesProgressRenderer implements CellRendererStrategy {
       else pct = Math.round((doneCount / totalCount) * 100);
       if (pct == null || !isFinite(pct)) return "";
       pct = Math.max(0, Math.min(100, pct));
-      
+
       // Create tooltip with detailed progress information
       const tooltip = escapeHtml(
-        `${doneCount} of ${totalCount} sub-issues complete (${pct}%)`
+        `${doneCount} of ${totalCount} sub-issues complete (${pct}%)`,
       );
-      
+
       const barHtml =
         "<div class='sub-issues-progress' title='" +
         tooltip +
