@@ -24,6 +24,11 @@ window.tableViewFetcher = function (
     setLoadingState(container, viewName);
   } catch (e) {}
 
+  // Extract projectId from global project data
+  const projectId =
+    ((window as any).__project_data__ && (window as any).__project_data__.id) ||
+    undefined;
+
   let itemsLimit = 30;
 
   function render(payload: any, effectiveFilter?: string) {
@@ -361,7 +366,10 @@ window.tableViewFetcher = function (
       groupingFieldName: groupingFieldName || undefined,
       sortConfig,
       viewKey,
-      projectId: snapshot.project?.id,
+      
+      // merged logic: projectId from top-level, fallback to snapshot.project.id
+      projectId: projectId || snapshot.project?.id,
+      
       hiddenFields: viewHiddenFieldIds,
       onFieldUpdate: async (request) => {
         // Send update request to extension

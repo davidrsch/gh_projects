@@ -16,6 +16,7 @@ export interface TableOptions {
   groupingFieldName?: string;
   sortConfig?: SortConfig | null;
   viewKey?: string;
+  projectId?: string;
   hiddenFields?: string[];
   projectId?: string; // Project ID for field updates
   onSortChange?: (config: SortConfig) => void;
@@ -302,7 +303,6 @@ export class ProjectTable {
         }
       },
       (cell, field, item, fieldValue) => {
-        // Attach interactive behavior to single-select and iteration cells
         if (this.interactiveCellManager && this.options.projectId && this.options.viewKey) {
           this.interactiveCellManager.attachToCell(
             cell,
@@ -313,7 +313,7 @@ export class ProjectTable {
             this.options.viewKey
           );
         }
-      },
+      }
     );
 
     if (groupingField) {
