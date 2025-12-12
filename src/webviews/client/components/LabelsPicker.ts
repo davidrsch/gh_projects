@@ -35,6 +35,7 @@ export class LabelsPicker extends BasePicker {
       ...options,
       title: "Select Labels",
       searchPlaceholder: "Filter labels...",
+      onApply: () => {}, // Will be overridden by handleApply
     });
 
     this.field = options.field;

@@ -36,6 +36,7 @@ export class ReviewersPicker extends BasePicker {
       ...options,
       title: "Select Reviewers",
       searchPlaceholder: "Filter reviewers...",
+      onApply: () => {}, // Will be overridden by handleApply
     });
 
     this.field = options.field;

@@ -35,6 +35,7 @@ export class AssigneesPicker extends BasePicker {
       ...options,
       title: "Select Assignees",
       searchPlaceholder: "Filter assignees...",
+      onApply: () => {}, // Will be overridden by handleApply
     });
 
     this.field = options.field;
