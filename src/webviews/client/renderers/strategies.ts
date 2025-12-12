@@ -590,6 +590,9 @@ export class SubIssuesProgressRenderer implements CellRendererStrategy {
       pct = Math.max(0, Math.min(100, pct));
       const barHtml =
         "<div class='sub-issues-progress' style='display:flex;align-items:center;gap:8px;width:100%;'>" +
+        "<div class='sub-issues-progress-count' style='min-width:44px;text-align:left;font-variant-numeric:tabular-nums;color:var(--vscode-descriptionForeground)'>" +
+        escapeHtml(String(doneCount) + "/" + String(totalCount)) +
+        "</div>" +
         "<div class='sub-issues-progress-bar' style='flex:1;min-width:0'>" +
         "<div style='width:100%;height:12px;border-radius:6px;border:1px solid var(--vscode-focusBorder);overflow:hidden;background:transparent;box-sizing:border-box'>" +
         "<div style='height:100%;width:" +
