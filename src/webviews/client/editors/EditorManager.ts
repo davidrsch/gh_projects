@@ -44,7 +44,11 @@ export class EditorManager {
     field: any,
     item: any,
   ): void {
-    const fieldType = fieldValue?.type || field?.dataType || field?.type;
+    const rawFieldType = fieldValue?.type || field?.dataType || field?.type;
+    const fieldType =
+      typeof rawFieldType === "string"
+        ? rawFieldType.toLowerCase()
+        : rawFieldType;
 
     // Only text, number, and date fields are editable
     if (!["text", "number", "date"].includes(fieldType)) {
@@ -126,7 +130,11 @@ export class EditorManager {
       this.activeEditor = null;
     }
 
-    const fieldType = fieldValue?.type || field?.dataType || field?.type;
+    const rawFieldType = fieldValue?.type || field?.dataType || field?.type;
+    const fieldType =
+      typeof rawFieldType === "string"
+        ? rawFieldType.toLowerCase()
+        : rawFieldType;
     const fieldId = String(field.id);
     const itemId = String(item.id);
 
@@ -189,8 +197,12 @@ export class EditorManager {
     });
 
     editor.onCancel(() => {
-      // Re-render cell with original value
-      cell.innerHTML = renderCell(fieldValue, field, item, this.allItems);
+      // Re-render cell with original value (or clear if none)
+      if (fieldValue) {
+        cell.innerHTML = renderCell(fieldValue, field, item, this.allItems);
+      } else {
+        cell.innerHTML = "";
+      }
 
       // Make cell editable again
       this.makeEditable(cell, fieldValue, field, item);
@@ -208,7 +220,11 @@ export class EditorManager {
    */
   private updateFieldValue(item: any, field: any, newValue: any): void {
     const fieldId = String(field.id);
-    const fieldType = field?.dataType || field?.type;
+    const rawFieldType = field?.dataType || field?.type;
+    const fieldType =
+      typeof rawFieldType === "string"
+        ? rawFieldType.toLowerCase()
+        : rawFieldType;
 
     // Find the field value object
     let fv = item.fieldValues.find(

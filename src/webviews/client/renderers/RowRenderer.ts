@@ -96,23 +96,64 @@ export class RowRenderer {
 
       if (fv) {
         td.innerHTML = renderCell(fv, field, item, this.allItems);
+      }
 
-        // Main branch editor system
-        if (this.editorManager) {
-          this.editorManager.makeEditable(td, fv, field, item);
-        }
-        
-        // Indicate if cell is editable
-        const fieldType = field.dataType || field.type;
-        const isEditable = fieldType === "SINGLE_SELECT" || fieldType === "ITERATION";
-        if (isEditable) {
-          td.setAttribute("aria-readonly", "false");
-        } else {
-          td.setAttribute("aria-readonly", "true");
+      // Main branch editor system: attach inline editors for text/number/date
+      if (this.editorManager) {
+        this.editorManager.makeEditable(td, fv, field, item);
+      }
+
+      // Indicate if cell is editable and wire up pickers for supported field types
+      const dataType = String(field.dataType || field.type || "").toUpperCase();
+      const isSingleSelectOrIteration =
+        dataType === "SINGLE_SELECT" || dataType === "ITERATION";
+
+      const isPickerField =
+        dataType === "LABELS" ||
+        dataType === "ASSIGNEES" ||
+        dataType === "REVIEWERS" ||
+        dataType === "MILESTONE";
+
+      if (isSingleSelectOrIteration || isPickerField) {
+        td.setAttribute("aria-readonly", "false");
+      } else {
+        td.setAttribute("aria-readonly", "true");
+      }
+
+      // For labels/assignees/reviewers/milestone, open the appropriate picker
+      if (isPickerField) {
+        td.style.cursor = "pointer";
+
+        const handleClick = (e: MouseEvent) => {
+          const target = e.target as HTMLElement;
+          if (
+            target.classList.contains("column-resizer") ||
+            target.closest(".column-resizer")
+          ) {
+            return;
+          }
+
+          e.stopPropagation();
+          this.openFieldPicker(td, field, item, fv);
+        };
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            this.openFieldPicker(td, field, item, fv);
+          }
+        };
+
+        td.addEventListener("click", handleClick);
+        td.addEventListener("keydown", handleKeyDown);
+
+        if (!td.hasAttribute("tabindex")) {
+          td.setAttribute("tabindex", "0");
         }
       }
 
-      // Allow external callback (used by interactiveCellManager)
+      // Allow external callback (used by InteractiveCellManager for single_select/iteration)
       if (this.onCellRendered) {
         this.onCellRendered(td, field, item, fv);
       }
@@ -186,17 +227,19 @@ export class RowRenderer {
       this.activePicker = null;
     }
 
-    switch (field.type) {
-      case "labels":
+    const dataType = String(field.dataType || field.type || "").toUpperCase();
+
+    switch (dataType) {
+      case "LABELS":
         this.openLabelsPicker(anchorElement, field, item, fieldValue);
         break;
-      case "assignees":
+      case "ASSIGNEES":
         this.openAssigneesPicker(anchorElement, field, item, fieldValue);
         break;
-      case "reviewers":
+      case "REVIEWERS":
         this.openReviewersPicker(anchorElement, field, item, fieldValue);
         break;
-      case "milestone":
+      case "MILESTONE":
         this.openMilestonePicker(anchorElement, field, item, fieldValue);
         break;
     }

@@ -206,32 +206,53 @@ export abstract class CellEditor {
       const messageId = `update-${Date.now()}-${Math.random()}`;
       let timeoutId: number | undefined;
 
-      // Set up response handler
-      const handleResponse = (event: MessageEvent) => {
-        const msg = event.data;
-        if (msg.command === "updateFieldValueResponse" && msg.id === messageId) {
-          window.removeEventListener("message", handleResponse);
-          // Clear timeout on success/error
-          if (timeoutId !== undefined) {
-            clearTimeout(timeoutId);
-          }
-          if (msg.success) {
-            resolve();
-          } else {
-            reject(new Error(msg.error || "Update failed"));
-          }
+      // Normalized handler that works for both raw window messages and the
+      // __APP_MESSAGING__ shim, which forwards just the data object.
+      const handleResponse = (eventOrData: any) => {
+        const msg =
+          eventOrData &&
+          typeof eventOrData === "object" &&
+          "data" in eventOrData
+            ? (eventOrData as MessageEvent).data
+            : eventOrData;
+
+        if (!msg || msg.command !== "updateFieldValueResponse") {
+          return;
+        }
+        if (msg.id !== messageId) {
+          return;
+        }
+
+        window.removeEventListener(
+          "message",
+          handleResponse as unknown as EventListener,
+        );
+
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
+
+        if (msg.success) {
+          resolve();
+        } else {
+          reject(new Error(msg.error || "Update failed"));
         }
       };
 
-      // Use the messaging abstraction if available
-      if (
-        (window as any).__APP_MESSAGING__ &&
-        typeof (window as any).__APP_MESSAGING__.onMessage === "function"
-      ) {
-        (window as any).__APP_MESSAGING__.onMessage(handleResponse);
-      } else {
-        window.addEventListener("message", handleResponse);
+      const messaging = (window as any).__APP_MESSAGING__;
+
+      if (messaging && typeof messaging.onMessage === "function") {
+        try {
+          messaging.onMessage(handleResponse);
+        } catch (e) {
+          // Ignore and rely on window listener below.
+        }
       }
+
+      window.addEventListener(
+        "message",
+        handleResponse as unknown as EventListener,
+      );
 
       // Send the update message
       const message = {
@@ -245,17 +266,17 @@ export abstract class CellEditor {
         viewKey: this.viewKey,
       };
 
-      if (
-        (window as any).__APP_MESSAGING__ &&
-        typeof (window as any).__APP_MESSAGING__.postMessage === "function"
-      ) {
-        (window as any).__APP_MESSAGING__.postMessage(message);
+      if (messaging && typeof messaging.postMessage === "function") {
+        messaging.postMessage(message);
       } else {
-        // Fallback to vscode API
         const vscode = (window as any).vscodeApi;
         if (vscode && typeof vscode.postMessage === "function") {
           vscode.postMessage(message);
         } else {
+          window.removeEventListener(
+            "message",
+            handleResponse as unknown as EventListener,
+          );
           reject(new Error("No messaging API available"));
           return;
         }
@@ -263,7 +284,10 @@ export abstract class CellEditor {
 
       // Timeout after configured duration
       timeoutId = window.setTimeout(() => {
-        window.removeEventListener("message", handleResponse);
+        window.removeEventListener(
+          "message",
+          handleResponse as unknown as EventListener,
+        );
         reject(new Error("Update timeout"));
       }, UPDATE_TIMEOUT_MS);
     });

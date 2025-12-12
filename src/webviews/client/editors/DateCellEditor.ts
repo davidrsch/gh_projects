@@ -40,10 +40,10 @@ export class DateCellEditor extends CellEditor {
       }
     }
 
-    // Style the input to match VS Code theme
+    // Style the input to match VS Code input theme
     this.input.style.flex = "1";
     this.input.style.minWidth = "0";
-    this.input.style.border = "1px solid var(--vscode-focusBorder)";
+    this.input.style.border = "1px solid var(--vscode-input-border)";
     this.input.style.background = "var(--vscode-input-background)";
     this.input.style.color = "var(--vscode-input-foreground)";
     this.input.style.padding = "4px 8px";

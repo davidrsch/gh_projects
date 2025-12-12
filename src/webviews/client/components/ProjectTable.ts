@@ -343,10 +343,24 @@ export class ProjectTable {
             item,
             fieldValue,
             this.options.projectId,
-            this.options.viewKey
+            this.options.viewKey,
           );
         }
-      }
+      },
+      this.options.projectId,
+      this.options.viewKey,
+      this.options.onFieldUpdate &&
+        this.options.projectId &&
+        this.options.viewKey
+        ? (itemId: string, fieldId: string, value: any) =>
+            this.options.onFieldUpdate!({
+              itemId,
+              fieldId,
+              value,
+              projectId: this.options.projectId as string,
+              viewKey: this.options.viewKey as string,
+            })
+        : undefined,
     );
 
     if (groupingField) {

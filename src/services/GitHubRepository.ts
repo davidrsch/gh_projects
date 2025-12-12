@@ -341,7 +341,7 @@ export class GitHubRepository {
     });
 
     // 9. Aggregate Options
-    const { labelMap, repoNames } = aggregateMaps(items);
+    const { labelMap, milestoneMap, repoNames } = aggregateMaps(items);
     const repoOptionsMap = await this.fetchRepoOptions(repoNames, LIMITS);
 
     // 10. Merge Options back to fields
@@ -363,6 +363,25 @@ export class GitHubRepository {
             id: l.id,
             name: l.name,
             color: (l as any).color,
+          }));
+        }
+      } else if (f.dataType === ProjectV2FieldType.MILESTONE) {
+        if (Object.keys(repoOptionsMap).length > 0) {
+          f.repoOptions = {};
+          for (const rn of Object.keys(repoOptionsMap)) {
+            const mls = repoOptionsMap[rn].milestones || [];
+            f.repoOptions[rn] = mls.map((m) => ({
+              id: m.id,
+              title: m.title,
+              description: (m as any).description,
+              dueOn: m.dueOn,
+            }));
+          }
+        } else if (milestoneMap && milestoneMap.size > 0) {
+          // Fallback: use milestones inferred from existing item values
+          f.options = Array.from(milestoneMap.values()).map((m: any) => ({
+            id: m.id,
+            title: m.title,
           }));
         }
       }
