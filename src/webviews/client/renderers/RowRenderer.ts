@@ -12,6 +12,11 @@ import { EditorManager } from "../editors/EditorManager";
 export class RowRenderer {
   private editorManager: EditorManager | null = null;
   private activePicker: any = null;
+  private onFieldUpdate?: (
+    itemId: string,
+    fieldId: string,
+    value: any,
+  ) => Promise<void>;
 
   constructor(
     private fields: any[],
@@ -33,7 +38,13 @@ export class RowRenderer {
     // optional project context
     private projectId?: string,
     private viewKey?: string,
+    onFieldUpdate?: (
+      itemId: string,
+      fieldId: string,
+      value: any,
+    ) => Promise<void>,
   ) {
+    this.onFieldUpdate = onFieldUpdate;
     if (projectId && viewKey) {
       this.editorManager = new EditorManager(projectId, viewKey, allItems);
     }
@@ -136,7 +147,6 @@ export class RowRenderer {
     td.style.overflow = "hidden";
     td.style.textOverflow = "ellipsis";
   }
-}
 
   /**
    * Open the appropriate picker for a field
