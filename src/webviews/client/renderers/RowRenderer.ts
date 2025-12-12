@@ -55,7 +55,8 @@ export class RowRenderer {
     tr.classList.add("table-row");
     tr.setAttribute("data-gh-item-id", item.id);
     tr.setAttribute("role", "row");
-    tr.setAttribute("aria-rowindex", String(index + 1));
+    // aria-rowindex is 1-based and accounts for header row (header is row 1, data starts at 2)
+    tr.setAttribute("aria-rowindex", String(index + 2));
 
     tr.style.transition = "background-color 0.15s ease";
     tr.addEventListener("mouseenter", () => {

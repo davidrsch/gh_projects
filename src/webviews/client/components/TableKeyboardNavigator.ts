@@ -176,6 +176,7 @@ export class TableKeyboardNavigator {
       cell.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
     } catch (e) {
       // TypeError in environments like jsdom that don't support scrollIntoView options
+      // Silently fail for compatibility - scrolling is a progressive enhancement
     }
 
     // Notify callback
