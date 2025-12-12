@@ -184,10 +184,15 @@ export class TitleRenderer implements CellRendererStrategy {
         })
       : "";
 
+    // Create tooltip with full title and number
+    const tooltipText = f ? `${t} #${o}` : t;
+
     return (
       '<a href="' +
       escapeHtml(String(l || "")) +
-      '" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
+      '" target="_blank" rel="noopener noreferrer" title="' +
+      escapeHtml(tooltipText) +
+      '" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
       "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>" +
       baseIcon +
       (blockedIcon
@@ -320,12 +325,36 @@ export class RepositoryRenderer implements CellRendererStrategy {
 
     if (!name) return "<div></div>";
 
+    // Extract URL from repository object
+    const url =
+      (r &&
+        (r.url || r.html_url || (r.nameWithOwner && `https://github.com/${r.nameWithOwner}`))) ||
+      "";
+
     const icon = getIconSvg("repo", {
       size: 16,
       className: "field-icon",
       ariaLabel: "Repository",
     });
 
+    // If we have a URL, make it clickable via data-gh-open
+    if (url) {
+      // Create tooltip with name and URL separated by a dash for better HTML rendering
+      const tooltip = name + " - " + url;
+      return (
+        '<div data-gh-open="' +
+        escapeHtml(url) +
+        '" title="' +
+        escapeHtml(tooltip) +
+        '" style="display:flex;align-items:center;gap:6px;cursor:pointer">' +
+        icon +
+        "<span>" +
+        escapeHtml(String(name)) +
+        "</span></div>"
+      );
+    }
+
+    // Fallback: no URL, just display the name
     return (
       '<div style="display:flex;align-items:center;gap:6px">' +
       icon +
@@ -443,12 +472,17 @@ export class PullRequestRenderer implements CellRendererStrategy {
           })
         : "";
 
+      // Create tooltip with number and title
+      const tooltip = titleText
+        ? escapeHtml(`#${p.number} ${p.title}`)
+        : escapeHtml(`#${p.number}`);
+
       out +=
         "<a href='" +
         url +
         "' target='_blank' rel='noopener noreferrer' style='text-decoration:none;color:inherit'>" +
         "<span title='" +
-        titleText +
+        tooltip +
         "' style='display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid " +
         escapeHtml(border) +
         ";background:" +
@@ -476,16 +510,22 @@ export class PullRequestRenderer implements CellRendererStrategy {
 export class IssueRenderer implements CellRendererStrategy {
   render(value: any): string {
     return (value.issues || [])
-      .map(
-        (t: any) =>
+      .map((t: any) => {
+        const tooltip = t.title
+          ? escapeHtml(`#${t.number} ${t.title}`)
+          : escapeHtml(`#${t.number}`);
+        return (
           "<a href='" +
           escapeHtml(t.url || "") +
-          "' target='_blank' rel='noopener noreferrer'>#" +
+          "' target='_blank' rel='noopener noreferrer' title='" +
+          tooltip +
+          "' style='display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>#" +
           escapeHtml(String(t.number || "")) +
           " " +
           escapeHtml(t.title || "") +
-          "</a>",
-      )
+          "</a>"
+        );
+      })
       .join("<br/>");
   }
 }
@@ -588,8 +628,16 @@ export class SubIssuesProgressRenderer implements CellRendererStrategy {
       else pct = Math.round((doneCount / totalCount) * 100);
       if (pct == null || !isFinite(pct)) return "";
       pct = Math.max(0, Math.min(100, pct));
+      
+      // Create tooltip with detailed progress information
+      const tooltip = escapeHtml(
+        `${doneCount} of ${totalCount} sub-issues complete (${pct}%)`
+      );
+      
       const barHtml =
-        "<div class='sub-issues-progress' style='display:flex;align-items:center;gap:8px;width:100%;'>" +
+        "<div class='sub-issues-progress' title='" +
+        tooltip +
+        "' style='display:flex;align-items:center;gap:8px;width:100%;'>" +
         "<div class='sub-issues-progress-count' style='min-width:44px;text-align:left;font-variant-numeric:tabular-nums;color:var(--vscode-descriptionForeground)'>" +
         escapeHtml(String(doneCount) + "/" + String(totalCount)) +
         "</div>" +
