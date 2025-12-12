@@ -385,48 +385,104 @@ export class MessageHandler {
   private async handleUpdateFieldValue(msg: any) {
     try {
       const reqViewKey = (msg as any).viewKey as string | undefined;
+      const messageId = (msg as any).id;
+      const projectId = (msg as any).projectId || this.project.id;
       const itemId = (msg as any).itemId;
       const fieldId = (msg as any).fieldId;
-      const value = (msg as any).value;
 
-      if (!reqViewKey || !itemId || !fieldId) {
-        logger.error("updateFieldValue: missing required parameters");
+      // Support both CellEditor (“newValue”) and tableViewFetcher (“value”) APIs
+      const newValue =
+        (msg as any).newValue !== undefined
+          ? (msg as any).newValue
+          : (msg as any).value;
+
+      const fieldType = (msg as any).fieldType;
+
+      if (!projectId || !itemId || !fieldId) {
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResponse",
+          id: messageId,
+          success: false,
+          error: "Missing required fields: projectId, itemId, or fieldId",
+        });
         return;
       }
 
       logger.debug(
-        `updateFieldValue: itemId=${itemId}, fieldId=${fieldId}, value=${JSON.stringify(value)}`,
+        `webview.updateFieldValue projectId=${projectId} itemId=${itemId} fieldId=${fieldId} type=${fieldType}`,
       );
 
-      // TODO: Implement actual GraphQL mutations to update the field value
-      // For now, just log the request and send a success response
-      // In a real implementation, this would call appropriate GitHub GraphQL mutations:
-      // - updateProjectV2ItemFieldValue for most fields
-      // - addLabelsToLabelable / removeLabelsFromLabelable for labels
-      // - addAssigneesToAssignable / removeAssigneesFromAssignable for assignees
-      // - requestReviews / removeReviewRequest for reviewers
-      // - updateIssue / updatePullRequest for milestone
-
-      // Simulate successful update for now
-      this.panel.webview.postMessage({
-        command: "fieldUpdateSuccess",
-        viewKey: reqViewKey,
+      const { GitHubRepository } = await import("../services/GitHubRepository");
+      const result = await GitHubRepository.getInstance().updateFieldValue(
+        projectId,
         itemId,
         fieldId,
-      });
+        newValue,
+        fieldType,
+      );
 
-      // Optionally refresh the data to reflect server state
-      // For now, rely on optimistic updates in the UI
+      if (result.success) {
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResponse",
+          id: messageId,
+          success: true,
+        });
+
+        try {
+          const data = await ProjectDataService.getProjectData(
+            this.project,
+            reqViewKey,
+            true,
+          );
+
+          this.panel.webview.postMessage({
+            command: "fields",
+            viewKey: reqViewKey,
+            payload: data.snapshot,
+            effectiveFilter: data.effectiveFilter,
+          });
+
+          this.panel.webview.postMessage({
+            command: "updateFieldValueResult",
+            success: true,
+            viewKey: reqViewKey,
+            payload: data.snapshot,
+            effectiveFilter: data.effectiveFilter,
+          });
+        } catch (e) {
+          logger.debug("Failed to refresh after update: " + String(e));
+        }
+      } else {
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResponse",
+          id: messageId,
+          success: false,
+          error: result.error || "Update failed",
+        });
+
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResult",
+          success: false,
+          viewKey: reqViewKey,
+          error: result.error || "Update failed",
+        });
+      }
     } catch (e) {
       const wrapped = wrapError(e, "updateFieldValue failed");
       const msgText = String(wrapped?.message || wrapped || "");
       logger.error("updateFieldValue failed: " + msgText);
 
       this.panel.webview.postMessage({
-        command: "fieldUpdateError",
+        command: "updateFieldValueResponse",
+        id: (msg as any).id,
+        success: false,
+        error: msgText,
+      });
+
+      this.panel.webview.postMessage({
+        command: "updateFieldValueResult",
+        success: false,
         viewKey: (msg as any).viewKey || null,
-        itemId: (msg as any).itemId,
-        fieldId: (msg as any).fieldId,
         error: msgText,
       });
     }

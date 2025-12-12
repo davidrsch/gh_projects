@@ -33,6 +33,7 @@ export function buildHtml(
   const csp = webview.cspSource;
 
   const projectData = {
+    id: project.id,
     title: project.title,
     repos: project.repos ?? [],
     views: Array.isArray(project.views) ? project.views : [],
