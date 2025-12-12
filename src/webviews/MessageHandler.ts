@@ -427,7 +427,7 @@ export class MessageHandler {
         const field = snapshot.snapshot.fields.find((f: any) => f.id === fieldId);
         
         if (field) {
-          const fieldType = field.dataType || field.type;
+          const fieldType = field.dataType;
           if (fieldType === "SINGLE_SELECT") {
             input.value = { singleSelectOptionId: value };
           } else if (fieldType === "ITERATION") {
