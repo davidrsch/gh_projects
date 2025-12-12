@@ -171,11 +171,11 @@ export class TableKeyboardNavigator {
     // Focus the cell
     cell.focus();
 
-    // Scroll into view if needed (try/catch for test environments)
+    // Scroll into view if needed (try/catch for test environments without full DOM API)
     try {
       cell.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
     } catch (e) {
-      // scrollIntoView may not be available in test environments
+      // TypeError in environments like jsdom that don't support scrollIntoView options
     }
 
     // Notify callback

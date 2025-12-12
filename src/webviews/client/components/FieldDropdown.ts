@@ -236,8 +236,10 @@ export class FieldDropdown {
         targetItem.style.background = "var(--vscode-list-hoverBackground)";
         targetItem.style.color = "var(--vscode-menu-foreground)";
       }
-      
-      // Update ARIA activedescendant for screen readers
+    }
+    
+    // Update ARIA activedescendant for screen readers on the listbox element
+    if (targetItem) {
       this.container.setAttribute("aria-activedescendant", targetItem.id);
     }
   }

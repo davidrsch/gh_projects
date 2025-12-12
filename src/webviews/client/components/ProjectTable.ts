@@ -196,10 +196,8 @@ export class ProjectTable {
         }
       },
       onExitEditMode: (commit) => {
-        // Handle exit edit mode
-        if (!commit) {
-          // Cancelled - no action needed
-        }
+        // Exit edit mode - focus is automatically returned to cell by navigator
+        // No additional cleanup needed as InteractiveCellManager handles state
       },
       onCellFocus: (cell, position) => {
         // Update visual focus indicator
