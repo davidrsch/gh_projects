@@ -1,5 +1,8 @@
 import { CellEditor } from "./CellEditor";
 
+// Constants
+const VALID_NUMBER_PATTERN = /^-?\d*\.?\d*$/;
+
 /**
  * Inline editor for number fields.
  * Validates numeric input and allows clearing to null.

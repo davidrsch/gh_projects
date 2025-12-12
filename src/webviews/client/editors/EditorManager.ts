@@ -4,6 +4,9 @@ import { NumberCellEditor } from "./NumberCellEditor";
 import { DateCellEditor } from "./DateCellEditor";
 import { renderCell } from "../renderers/cellRenderer";
 
+// Constants
+const DOUBLE_CLICK_TIMEOUT_MS = 300;
+
 /**
  * Manages inline cell editors for the project table.
  * Handles editor lifecycle, tracks active editor, and coordinates with backend.
@@ -81,7 +84,7 @@ export class EditorManager {
         // Start timer to reset click count
         clickTimer = setTimeout(() => {
           clickCount = 0;
-        }, 300);
+        }, DOUBLE_CLICK_TIMEOUT_MS);
       } else if (clickCount === 2) {
         // Second click: enter edit mode
         clearTimeout(clickTimer);
@@ -135,6 +138,7 @@ export class EditorManager {
         editor = new TextCellEditor(
           cell,
           fieldId,
+          fieldType,
           itemId,
           this.projectId,
           this.viewKey,
@@ -145,6 +149,7 @@ export class EditorManager {
         editor = new NumberCellEditor(
           cell,
           fieldId,
+          fieldType,
           itemId,
           this.projectId,
           this.viewKey,
@@ -155,6 +160,7 @@ export class EditorManager {
         editor = new DateCellEditor(
           cell,
           fieldId,
+          fieldType,
           itemId,
           this.projectId,
           this.viewKey,

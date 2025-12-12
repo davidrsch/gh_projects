@@ -1,3 +1,6 @@
+// Constants
+const UPDATE_TIMEOUT_MS = 10000; // 10 seconds
+
 /**
  * Base class for inline cell editors in the project table.
  * Provides common functionality for entering/exiting edit mode,
@@ -6,6 +9,7 @@
 export abstract class CellEditor {
   protected cell: HTMLTableCellElement;
   protected fieldId: string;
+  protected fieldType: string;
   protected itemId: string;
   protected projectId: string;
   protected viewKey: string;
@@ -18,6 +22,7 @@ export abstract class CellEditor {
   constructor(
     cell: HTMLTableCellElement,
     fieldId: string,
+    fieldType: string,
     itemId: string,
     projectId: string,
     viewKey: string,
@@ -25,6 +30,7 @@ export abstract class CellEditor {
   ) {
     this.cell = cell;
     this.fieldId = fieldId;
+    this.fieldType = fieldType;
     this.itemId = itemId;
     this.projectId = projectId;
     this.viewKey = viewKey;
@@ -234,6 +240,7 @@ export abstract class CellEditor {
         projectId: this.projectId,
         itemId: this.itemId,
         fieldId: this.fieldId,
+        fieldType: this.fieldType,
         newValue,
         viewKey: this.viewKey,
       };
@@ -254,11 +261,11 @@ export abstract class CellEditor {
         }
       }
 
-      // Timeout after 10 seconds
+      // Timeout after configured duration
       timeoutId = window.setTimeout(() => {
         window.removeEventListener("message", handleResponse);
         reject(new Error("Update timeout"));
-      }, 10000);
+      }, UPDATE_TIMEOUT_MS);
     });
   }
 

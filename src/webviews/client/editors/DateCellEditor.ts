@@ -108,12 +108,17 @@ export class DateCellEditor extends CellEditor {
 
     // Empty string - return original value instead of null
     // (GitHub API doesn't support clearing fields via this mutation)
+    // Note: We preserve the original value rather than defaulting to today's date
+    // to avoid unexpected data changes when user clears and then cancels.
     if (value === "") {
       const originalDate =
         this.originalValue?.date ||
         this.originalValue?.startDate ||
         this.originalValue?.dueOn;
-      return originalDate || new Date().toISOString();
+      // If there was no original date, this should not happen as the input
+      // would show empty initially. But if it does, we keep the empty input
+      // and validation will catch it.
+      return originalDate || null;
     }
 
     // Return ISO 8601 date string

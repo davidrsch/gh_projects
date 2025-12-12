@@ -475,12 +475,14 @@ export class GitHubRepository {
 
   /**
    * Updates a field value for a project item.
+   * @param fieldType - The type of field being updated (text, number, date)
    */
   public async updateFieldValue(
     projectId: string,
     itemId: string,
     fieldId: string,
     value: any,
+    fieldType?: string,
   ): Promise<{ success: boolean; error?: string }> {
     try {
       // GitHub Projects V2 uses different mutations for different field types
@@ -510,16 +512,17 @@ export class GitHubRepository {
           success: false,
           error: "Clearing fields to null is not supported via this mutation",
         };
-      } else if (typeof value === "string") {
-        // Could be text or date (ISO 8601)
-        if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
-          // ISO date string
-          input.value = { date: value };
-        } else {
-          // Text value
-          input.value = { text: value };
-        }
-      } else if (typeof value === "number") {
+      }
+
+      // Use explicit field type if provided, otherwise infer from value
+      const type = fieldType?.toLowerCase();
+      if (type === "text" || (type === undefined && typeof value === "string")) {
+        // Text value (default for strings if type not specified)
+        input.value = { text: String(value) };
+      } else if (type === "date" || (type === undefined && typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value))) {
+        // ISO 8601 date string (more strict pattern)
+        input.value = { date: value };
+      } else if (type === "number" || (type === undefined && typeof value === "number")) {
         // Number value
         input.value = { number: value };
       } else {

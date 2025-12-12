@@ -390,6 +390,7 @@ export class MessageHandler {
       const itemId = (msg as any).itemId;
       const fieldId = (msg as any).fieldId;
       const newValue = (msg as any).newValue;
+      const fieldType = (msg as any).fieldType; // Optional field type hint
 
       // Validate required fields
       if (!projectId || !itemId || !fieldId) {
@@ -403,7 +404,7 @@ export class MessageHandler {
       }
 
       logger.debug(
-        `webview.updateFieldValue projectId=${projectId} itemId=${itemId} fieldId=${fieldId}`,
+        `webview.updateFieldValue projectId=${projectId} itemId=${itemId} fieldId=${fieldId} type=${fieldType}`,
       );
 
       // Call GitHubRepository to update the field
@@ -413,6 +414,7 @@ export class MessageHandler {
         itemId,
         fieldId,
         newValue,
+        fieldType,
       );
 
       if (result.success) {
