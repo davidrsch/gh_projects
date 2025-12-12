@@ -198,12 +198,17 @@ export abstract class CellEditor {
   protected async sendUpdate(newValue: any): Promise<void> {
     return new Promise((resolve, reject) => {
       const messageId = `update-${Date.now()}-${Math.random()}`;
+      let timeoutId: number | undefined;
 
       // Set up response handler
       const handleResponse = (event: MessageEvent) => {
         const msg = event.data;
         if (msg.command === "updateFieldValueResponse" && msg.id === messageId) {
           window.removeEventListener("message", handleResponse);
+          // Clear timeout on success/error
+          if (timeoutId !== undefined) {
+            clearTimeout(timeoutId);
+          }
           if (msg.success) {
             resolve();
           } else {
@@ -245,11 +250,12 @@ export abstract class CellEditor {
           vscode.postMessage(message);
         } else {
           reject(new Error("No messaging API available"));
+          return;
         }
       }
 
       // Timeout after 10 seconds
-      setTimeout(() => {
+      timeoutId = window.setTimeout(() => {
         window.removeEventListener("message", handleResponse);
         reject(new Error("Update timeout"));
       }, 10000);
@@ -306,7 +312,8 @@ export abstract class CellEditor {
       for (let i = currentIndex - 1; i >= 0; i--) {
         const cell = cells[i];
         if (cell.dataset.editable === "true") {
-          cell.click();
+          // Just focus the cell; user can press Enter/F2 to edit
+          (cell as HTMLTableCellElement).focus();
           return;
         }
       }
@@ -315,7 +322,8 @@ export abstract class CellEditor {
       for (let i = currentIndex + 1; i < cells.length; i++) {
         const cell = cells[i];
         if (cell.dataset.editable === "true") {
-          cell.click();
+          // Just focus the cell; user can press Enter/F2 to edit
+          (cell as HTMLTableCellElement).focus();
           return;
         }
       }

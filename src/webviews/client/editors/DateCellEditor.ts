@@ -106,8 +106,15 @@ export class DateCellEditor extends CellEditor {
 
     const value = this.input.value.trim();
 
-    // Empty string means null
-    if (value === "") return null;
+    // Empty string - return original value instead of null
+    // (GitHub API doesn't support clearing fields via this mutation)
+    if (value === "") {
+      const originalDate =
+        this.originalValue?.date ||
+        this.originalValue?.startDate ||
+        this.originalValue?.dueOn;
+      return originalDate || new Date().toISOString();
+    }
 
     // Return ISO 8601 date string
     try {

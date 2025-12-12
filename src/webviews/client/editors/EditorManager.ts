@@ -21,6 +21,18 @@ export class EditorManager {
   }
 
   /**
+   * Enter edit mode for a specific cell (public API for programmatic editing).
+   */
+  public enterEditMode(
+    cell: HTMLTableCellElement,
+    fieldValue: any,
+    field: any,
+    item: any,
+  ): void {
+    this.enterEditModeInternal(cell, fieldValue, field, item);
+  }
+
+  /**
    * Make a cell editable by attaching click and keyboard handlers.
    */
   public makeEditable(
@@ -74,7 +86,7 @@ export class EditorManager {
         // Second click: enter edit mode
         clearTimeout(clickTimer);
         clickCount = 0;
-        this.enterEditMode(cell, fieldValue, field, item);
+        this.enterEditModeInternal(cell, fieldValue, field, item);
       }
     };
 
@@ -83,7 +95,7 @@ export class EditorManager {
       if (e.key === "Enter" || e.key === "F2") {
         e.preventDefault();
         e.stopPropagation();
-        this.enterEditMode(cell, fieldValue, field, item);
+        this.enterEditModeInternal(cell, fieldValue, field, item);
       }
     };
 
@@ -97,9 +109,9 @@ export class EditorManager {
   }
 
   /**
-   * Enter edit mode for a cell.
+   * Enter edit mode for a cell (internal implementation).
    */
-  private enterEditMode(
+  private enterEditModeInternal(
     cell: HTMLTableCellElement,
     fieldValue: any,
     field: any,

@@ -502,9 +502,14 @@ export class GitHubRepository {
       };
 
       // Set the value based on type
+      // Note: GitHub Projects V2 API doesn't support clearing field values to null
+      // via updateProjectV2ItemFieldValue mutation. To clear a field, use
+      // clearProjectV2ItemFieldValue mutation instead.
       if (value === null || value === undefined) {
-        // Clear the field by setting it to null (not all field types support this)
-        input.value = { text: null };
+        return {
+          success: false,
+          error: "Clearing fields to null is not supported via this mutation",
+        };
       } else if (typeof value === "string") {
         // Could be text or date (ISO 8601)
         if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {

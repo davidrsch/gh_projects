@@ -34,13 +34,32 @@ export class NumberCellEditor extends CellEditor {
     // Add input validation to prevent non-numeric characters
     this.input.addEventListener("input", (e) => {
       const target = e.target as HTMLInputElement;
-      const value = target.value;
+      let value = target.value;
 
-      // Allow empty, digits, decimal point, and minus sign
-      if (value && !/^-?\d*\.?\d*$/.test(value)) {
-        // Remove invalid characters
-        target.value = value.replace(/[^0-9.-]/g, "");
+      // Allow empty string
+      if (value === "") return;
+
+      // Remove any invalid characters first
+      value = value.replace(/[^0-9.-]/g, "");
+
+      // Ensure minus sign is only at the beginning
+      const minusCount = (value.match(/-/g) || []).length;
+      if (minusCount > 0) {
+        const hasMinus = value.startsWith("-");
+        value = value.replace(/-/g, "");
+        if (hasMinus) {
+          value = "-" + value;
+        }
       }
+
+      // Ensure only one decimal point
+      const decimalCount = (value.match(/\./g) || []).length;
+      if (decimalCount > 1) {
+        const parts = value.split(".");
+        value = parts[0] + "." + parts.slice(1).join("");
+      }
+
+      target.value = value;
     });
 
     return this.input;
@@ -51,8 +70,14 @@ export class NumberCellEditor extends CellEditor {
 
     const value = this.input.value.trim();
 
-    // Empty string means null
-    if (value === "") return null;
+    // Empty string - return original value instead of null
+    // (GitHub API doesn't support clearing fields via this mutation)
+    if (value === "") {
+      return this.originalValue?.number !== undefined &&
+        this.originalValue?.number !== null
+        ? this.originalValue.number
+        : 0;
+    }
 
     // Parse as number
     const num = Number(value);
