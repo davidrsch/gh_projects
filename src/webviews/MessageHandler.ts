@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { ProjectEntry, ProjectView } from "../lib/types";
 import { ProjectDataService } from "../services/ProjectDataService";
+import { GitHubRepository } from "../services/GitHubRepository";
 import logger from "../lib/logger";
 import { wrapError } from "../lib/errors";
 import messages, { isGhNotFound } from "../lib/messages";
@@ -196,14 +197,14 @@ export class MessageHandler {
       }
 
       // Parse owner and name from nameWithOwner
-      const [owner, name] = selectedRepo.repo.nameWithOwner.split("/");
-      if (!owner || !name) {
+      const parts = selectedRepo.repo.nameWithOwner.split("/");
+      if (parts.length !== 2 || !parts[0]?.trim() || !parts[1]?.trim()) {
         vscode.window.showErrorMessage("Invalid repository format");
         return;
       }
+      const [owner, name] = parts;
 
       // Step 2: Fetch issues and PRs from the selected repository
-      const { GitHubRepository } = await import("../services/GitHubRepository");
       const ghRepo = GitHubRepository.getInstance();
 
       // Show progress indicator while fetching
