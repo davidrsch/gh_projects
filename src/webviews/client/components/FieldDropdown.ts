@@ -258,7 +258,7 @@ export class FieldDropdown {
   private scrollToOption(index: number) {
     const items = this.container.querySelectorAll(".field-dropdown-option");
     const item = items[index] as HTMLElement;
-    if (item) {
+    if (item && typeof item.scrollIntoView === "function") {
       item.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }
