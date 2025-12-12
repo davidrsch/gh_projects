@@ -9,6 +9,12 @@ export class RowRenderer {
       pageX: number,
       startWidth: number,
     ) => void,
+    private onCellRendered?: (
+      cell: HTMLElement,
+      field: any,
+      item: any,
+      fieldValue: any,
+    ) => void,
   ) {}
 
   public createRow(item: any, index: number): HTMLTableRowElement {
@@ -43,6 +49,11 @@ export class RowRenderer {
       );
       if (fv) {
         td.innerHTML = renderCell(fv, field, item, this.allItems);
+      }
+
+      // Attach interactive behavior if callback provided
+      if (this.onCellRendered) {
+        this.onCellRendered(td, field, item, fv);
       }
 
       // Make td position relative so we can position a resizer inside it

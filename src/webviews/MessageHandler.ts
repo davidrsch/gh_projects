@@ -93,6 +93,9 @@ export class MessageHandler {
       case "discardViewGrouping":
         await this.handleDiscardViewGrouping(msg);
         break;
+      case "updateFieldValue":
+        await this.handleUpdateFieldValue(msg);
+        break;
     }
   }
 
@@ -357,6 +360,115 @@ export class MessageHandler {
         command: "fields",
         viewKey: (msg as any).viewKey || null,
         error: msgText,
+      });
+    }
+  }
+
+  private async handleUpdateFieldValue(msg: any) {
+    try {
+      const { itemId, fieldId, value, projectId, viewKey } = msg;
+
+      // Validate required fields
+      if (!itemId || !fieldId || !projectId) {
+        logger.error("updateFieldValue: missing required fields");
+        this.panel.webview.postMessage({
+          command: "updateFieldValueResult",
+          success: false,
+          error: "Missing required fields",
+          viewKey,
+        });
+        return;
+      }
+
+      logger.debug(
+        `updateFieldValue: itemId=${itemId}, fieldId=${fieldId}, value=${value}`,
+      );
+
+      // Use GitHubRepository to execute the mutation
+      const GitHubRepository = (
+        await import("../services/GitHubRepository")
+      ).GitHubRepository;
+      const repo = GitHubRepository.getInstance();
+
+      // Build the mutation based on field type
+      // For single_select and iteration fields, we use updateProjectV2ItemFieldValue
+      // with the singleSelectOptionId or iterationId parameter
+      const mutation = `
+        mutation UpdateFieldValue($input: UpdateProjectV2ItemFieldValueInput!) {
+          updateProjectV2ItemFieldValue(input: $input) {
+            projectV2Item {
+              id
+            }
+          }
+        }
+      `;
+
+      const input: any = {
+        projectId: projectId,
+        itemId: itemId,
+        fieldId: fieldId,
+      };
+
+      // Set the appropriate value parameter
+      if (value === null || value === undefined) {
+        // Clear the field value
+        input.value = { text: "" }; // Empty value clears most field types
+      } else {
+        // Determine field type from the message or field metadata
+        // For now, we'll try to infer from the value format
+        // Single-select uses singleSelectOptionId, iteration uses iterationId
+        
+        // Check if this is an iteration or single-select by looking at field metadata
+        // We'll need to fetch the field type first
+        const snapshot = await ProjectDataService.getProjectData(
+          this.project,
+          viewKey,
+        );
+        const field = snapshot.snapshot.fields.find((f: any) => f.id === fieldId);
+        
+        if (field) {
+          const fieldType = field.dataType || field.type;
+          if (fieldType === "SINGLE_SELECT") {
+            input.value = { singleSelectOptionId: value };
+          } else if (fieldType === "ITERATION") {
+            input.value = { iterationId: value };
+          } else {
+            // For other field types, use text as fallback
+            input.value = { text: String(value) };
+          }
+        } else {
+          // Field not found, try with text
+          input.value = { text: String(value) };
+        }
+      }
+
+      // Execute mutation
+      await (repo as any).query(mutation, { input });
+
+      logger.info(`Field value updated successfully for item ${itemId}`);
+
+      // Refresh the project data to get updated snapshot
+      const { snapshot: updatedSnapshot, effectiveFilter } =
+        await ProjectDataService.getProjectData(this.project, viewKey, true);
+
+      // Send success response with updated snapshot
+      this.panel.webview.postMessage({
+        command: "updateFieldValueResult",
+        success: true,
+        viewKey,
+        payload: updatedSnapshot,
+        effectiveFilter,
+      });
+    } catch (e: any) {
+      const wrapped = wrapError(e, "updateFieldValue failed");
+      const msgText = String(wrapped?.message || wrapped || "");
+      logger.error("updateFieldValue failed: " + msgText);
+
+      this.panel.webview.postMessage({
+        command: "updateFieldValueResult",
+        success: false,
+        error: msgText,
+        viewKey: (msg as any).viewKey || null,
       });
     }
   }

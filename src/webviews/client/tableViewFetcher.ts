@@ -359,7 +359,53 @@ window.tableViewFetcher = function (
       groupingFieldName: groupingFieldName || undefined,
       sortConfig,
       viewKey,
+      projectId: snapshot.project?.id,
       hiddenFields: viewHiddenFieldIds,
+      onFieldUpdate: async (request) => {
+        // Send update request to extension
+        if (
+          (window as any).__APP_MESSAGING__ &&
+          typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+        ) {
+          (window as any).__APP_MESSAGING__.postMessage({
+            command: "updateFieldValue",
+            itemId: request.itemId,
+            fieldId: request.fieldId,
+            value: request.value,
+            projectId: request.projectId,
+            viewKey: request.viewKey,
+          });
+
+          // Wait for response via message listener
+          return new Promise((resolve, reject) => {
+            const handleResponse = (event: MessageEvent) => {
+              const msg = event.data;
+              if (msg.command === "updateFieldValueResult") {
+                window.removeEventListener("message", handleResponse);
+                if (msg.success) {
+                  // Update local snapshot with response payload
+                  if (msg.payload) {
+                    // Re-render table with updated data
+                    render(msg.payload, msg.effectiveFilter);
+                  }
+                  resolve();
+                } else {
+                  reject(new Error(msg.error || "Update failed"));
+                }
+              }
+            };
+            window.addEventListener("message", handleResponse);
+
+            // Timeout after 10 seconds
+            setTimeout(() => {
+              window.removeEventListener("message", handleResponse);
+              reject(new Error("Update timeout"));
+            }, 10000);
+          });
+        } else {
+          throw new Error("Messaging not available");
+        }
+      },
       onHiddenFieldsChange: (hiddenIds: string[]) => {
         try {
           unsavedHiddenFields = new Set(
