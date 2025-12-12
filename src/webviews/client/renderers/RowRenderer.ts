@@ -1,8 +1,22 @@
 import { renderCell } from "../renderers/cellRenderer";
+
+// Pickers (copilot)
+import { LabelsPicker } from "../components/LabelsPicker";
+import { AssigneesPicker } from "../components/AssigneesPicker";
+import { ReviewersPicker } from "../components/ReviewersPicker";
+import { MilestonePicker } from "../components/MilestonePicker";
+
+// Main branch editor manager
 import { EditorManager } from "../editors/EditorManager";
 
 export class RowRenderer {
   private editorManager: EditorManager | null = null;
+  private activePicker: any = null;
+  private onFieldUpdate?: (
+    itemId: string,
+    fieldId: string,
+    value: any,
+  ) => Promise<void>;
 
   constructor(
     private fields: any[],
@@ -13,7 +27,7 @@ export class RowRenderer {
       startWidth: number,
     ) => void,
 
-    // From copilot/implement-interactive-table-cells
+    // main branch callback
     private onCellRendered?: (
       cell: HTMLElement,
       field: any,
@@ -21,11 +35,16 @@ export class RowRenderer {
       fieldValue: any,
     ) => void,
 
-    // From main branch
+    // optional project context
     private projectId?: string,
     private viewKey?: string,
+    onFieldUpdate?: (
+      itemId: string,
+      fieldId: string,
+      value: any,
+    ) => Promise<void>,
   ) {
-    // Initialize EditorManager when possible
+    this.onFieldUpdate = onFieldUpdate;
     if (projectId && viewKey) {
       this.editorManager = new EditorManager(projectId, viewKey, allItems);
     }
@@ -44,13 +63,12 @@ export class RowRenderer {
       tr.style.backgroundColor = "transparent";
     });
 
-    // Index cell
     const tdIndex = document.createElement("td");
     tdIndex.textContent = String(index + 1);
     this.styleCell(tdIndex);
     tr.appendChild(tdIndex);
 
-    // Field cells
+    // Render all field cells
     for (let colIndex = 0; colIndex < this.fields.length; colIndex++) {
       const field = this.fields[colIndex];
       const td = document.createElement("td");
@@ -65,20 +83,19 @@ export class RowRenderer {
       if (fv) {
         td.innerHTML = renderCell(fv, field, item, this.allItems);
 
-        // Make cell editable
+        // Main branch editor system
         if (this.editorManager) {
           this.editorManager.makeEditable(td, fv, field, item);
         }
       }
 
-      // Run interactive callback
+      // Allow external callback (used by interactiveCellManager)
       if (this.onCellRendered) {
         this.onCellRendered(td, field, item, fv);
       }
 
-      // Column resizer UI
+      // Add column resizer
       td.style.position = "relative";
-
       const resizer = document.createElement("div");
       resizer.className = "column-resizer";
       resizer.style.position = "absolute";
@@ -129,5 +146,182 @@ export class RowRenderer {
     td.style.whiteSpace = "nowrap";
     td.style.overflow = "hidden";
     td.style.textOverflow = "ellipsis";
+  }
+
+  /**
+   * Open the appropriate picker for a field
+   */
+  private openFieldPicker(
+    anchorElement: HTMLElement,
+    field: any,
+    item: any,
+    fieldValue: any,
+  ): void {
+    // Close any existing picker
+    if (this.activePicker) {
+      this.activePicker.hide();
+      this.activePicker = null;
+    }
+
+    switch (field.type) {
+      case "labels":
+        this.openLabelsPicker(anchorElement, field, item, fieldValue);
+        break;
+      case "assignees":
+        this.openAssigneesPicker(anchorElement, field, item, fieldValue);
+        break;
+      case "reviewers":
+        this.openReviewersPicker(anchorElement, field, item, fieldValue);
+        break;
+      case "milestone":
+        this.openMilestonePicker(anchorElement, field, item, fieldValue);
+        break;
+    }
+  }
+
+  /**
+   * Open labels picker
+   */
+  private openLabelsPicker(
+    anchorElement: HTMLElement,
+    field: any,
+    item: any,
+    fieldValue: any,
+  ): void {
+    const currentLabels = (fieldValue && fieldValue.labels) || [];
+
+    this.activePicker = new LabelsPicker({
+      anchorElement,
+      field,
+      item,
+      currentLabels,
+      onClose: () => {
+        this.activePicker = null;
+      },
+      onUpdate: async (labelIds: string[]) => {
+        if (this.onFieldUpdate) {
+          try {
+            await this.onFieldUpdate(item.id, field.id, { labelIds });
+            // Update will be reflected when snapshot is refreshed
+          } catch (error) {
+            console.error("Failed to update labels:", error);
+            // Could show error UI here
+          }
+        }
+      },
+      onError: (error: string) => {
+        console.error("Labels picker error:", error);
+      },
+    });
+
+    this.activePicker.show();
+  }
+
+  /**
+   * Open assignees picker
+   */
+  private openAssigneesPicker(
+    anchorElement: HTMLElement,
+    field: any,
+    item: any,
+    fieldValue: any,
+  ): void {
+    const currentAssignees = (fieldValue && fieldValue.assignees) || [];
+
+    this.activePicker = new AssigneesPicker({
+      anchorElement,
+      field,
+      item,
+      currentAssignees,
+      onClose: () => {
+        this.activePicker = null;
+      },
+      onUpdate: async (assigneeLogins: string[]) => {
+        if (this.onFieldUpdate) {
+          try {
+            await this.onFieldUpdate(item.id, field.id, { assigneeLogins });
+          } catch (error) {
+            console.error("Failed to update assignees:", error);
+          }
+        }
+      },
+      onError: (error: string) => {
+        console.error("Assignees picker error:", error);
+      },
+    });
+
+    this.activePicker.show();
+  }
+
+  /**
+   * Open reviewers picker
+   */
+  private openReviewersPicker(
+    anchorElement: HTMLElement,
+    field: any,
+    item: any,
+    fieldValue: any,
+  ): void {
+    const currentReviewers = (fieldValue && fieldValue.reviewers) || [];
+
+    this.activePicker = new ReviewersPicker({
+      anchorElement,
+      field,
+      item,
+      currentReviewers,
+      onClose: () => {
+        this.activePicker = null;
+      },
+      onUpdate: async (reviewerLogins: string[]) => {
+        if (this.onFieldUpdate) {
+          try {
+            await this.onFieldUpdate(item.id, field.id, { reviewerLogins });
+          } catch (error) {
+            console.error("Failed to update reviewers:", error);
+          }
+        }
+      },
+      onError: (error: string) => {
+        console.error("Reviewers picker error:", error);
+      },
+    });
+
+    this.activePicker.show();
+  }
+
+  /**
+   * Open milestone picker
+   */
+  private openMilestonePicker(
+    anchorElement: HTMLElement,
+    field: any,
+    item: any,
+    fieldValue: any,
+  ): void {
+    const currentMilestone = (fieldValue && fieldValue.milestone) || null;
+
+    this.activePicker = new MilestonePicker({
+      anchorElement,
+      field,
+      item,
+      currentMilestone,
+      onClose: () => {
+        this.activePicker = null;
+      },
+      onUpdate: async (milestoneId: string | null) => {
+        if (this.onFieldUpdate) {
+          try {
+            await this.onFieldUpdate(item.id, field.id, { milestoneId });
+          } catch (error) {
+            console.error("Failed to update milestone:", error);
+          }
+        }
+      },
+      onError: (error: string) => {
+        console.error("Milestone picker error:", error);
+      },
+    });
+
+    this.activePicker.show();
   }
 }

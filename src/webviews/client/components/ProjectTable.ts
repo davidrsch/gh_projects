@@ -302,7 +302,11 @@ export class ProjectTable {
         }
       },
       (cell, field, item, fieldValue) => {
-        if (this.interactiveCellManager && this.options.projectId && this.options.viewKey) {
+        if (
+          this.interactiveCellManager &&
+          this.options.projectId &&
+          this.options.viewKey
+        ) {
           this.interactiveCellManager.attachToCell(
             cell,
             field,
@@ -868,6 +872,70 @@ export class ProjectTable {
       this.fields = orderedFields;
     } catch (e) {
       // Ignore errors, use default order
+    }
+  }
+
+  /**
+   * Handle field value update from pickers
+   */
+  private async handleFieldUpdate(
+    itemId: string,
+    fieldId: string,
+    value: any,
+  ): Promise<void> {
+    try {
+      // Send update message to extension
+      if (
+        (window as any).__APP_MESSAGING__ &&
+        typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+      ) {
+        (window as any).__APP_MESSAGING__.postMessage({
+          command: "updateFieldValue",
+          viewKey: this.options.viewKey,
+          itemId,
+          fieldId,
+          value,
+        });
+
+        // Optimistically update the local item data
+        const item = this.items.find((i) => String(i.id) === String(itemId));
+        if (item) {
+          const fieldValue = item.fieldValues.find(
+            (fv: any) =>
+              String(fv.fieldId) === String(fieldId) ||
+              fv.fieldName === this.fields.find((f) => String(f.id) === String(fieldId))?.name,
+          );
+
+          if (fieldValue) {
+            // Update the field value based on type
+            if (value.labelIds !== undefined) {
+              // Labels update
+              fieldValue.labels = value.labelIds.map((id: string) => ({ id }));
+            } else if (value.assigneeLogins !== undefined) {
+              // Assignees update
+              fieldValue.assignees = value.assigneeLogins.map((login: string) => ({
+                login,
+              }));
+            } else if (value.reviewerLogins !== undefined) {
+              // Reviewers update
+              fieldValue.reviewers = value.reviewerLogins.map((login: string) => ({
+                login,
+              }));
+            } else if (value.milestoneId !== undefined) {
+              // Milestone update
+              fieldValue.milestone = value.milestoneId
+                ? { id: value.milestoneId }
+                : null;
+            }
+          }
+
+          // Re-render the table to reflect changes
+          this.render();
+        }
+      }
+    } catch (error) {
+      console.error("Failed to update field value:", error);
+      throw error;
     }
   }
 }

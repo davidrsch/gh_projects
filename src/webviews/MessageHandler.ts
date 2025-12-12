@@ -389,14 +389,15 @@ export class MessageHandler {
       const projectId = (msg as any).projectId || this.project.id;
       const itemId = (msg as any).itemId;
       const fieldId = (msg as any).fieldId;
-      // Support both newValue (CellEditor) and value (tableViewFetcher)
+
+      // Support both CellEditor (“newValue”) and tableViewFetcher (“value”) APIs
       const newValue =
         (msg as any).newValue !== undefined
           ? (msg as any).newValue
           : (msg as any).value;
-      const fieldType = (msg as any).fieldType; // Optional field type hint
 
-      // Validate required fields
+      const fieldType = (msg as any).fieldType;
+
       if (!projectId || !itemId || !fieldId) {
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
@@ -411,7 +412,6 @@ export class MessageHandler {
         `webview.updateFieldValue projectId=${projectId} itemId=${itemId} fieldId=${fieldId} type=${fieldType}`,
       );
 
-      // Call GitHubRepository to update the field
       const { GitHubRepository } = await import("../services/GitHubRepository");
       const result = await GitHubRepository.getInstance().updateFieldValue(
         projectId,
@@ -422,48 +422,37 @@ export class MessageHandler {
       );
 
       if (result.success) {
-        // Send success response for CellEditor-style callers
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
           id: messageId,
           success: true,
         });
 
-        // Refresh the project data to get updated snapshot
-        // and notify tableViewFetcher-style callers via updateFieldValueResult
-        let updatedSnapshot: any | undefined;
-        let effectiveFilter: any | undefined;
         try {
           const data = await ProjectDataService.getProjectData(
             this.project,
             reqViewKey,
             true,
           );
-          updatedSnapshot = data.snapshot;
-          effectiveFilter = data.effectiveFilter;
 
-          // Broadcast updated fields snapshot
           this.panel.webview.postMessage({
             command: "fields",
             viewKey: reqViewKey,
-            payload: updatedSnapshot,
-            effectiveFilter,
+            payload: data.snapshot,
+            effectiveFilter: data.effectiveFilter,
           });
 
-          // Backwards-compatible message used by tableViewFetcher
           this.panel.webview.postMessage({
             command: "updateFieldValueResult",
             success: true,
             viewKey: reqViewKey,
-            payload: updatedSnapshot,
-            effectiveFilter,
+            payload: data.snapshot,
+            effectiveFilter: data.effectiveFilter,
           });
         } catch (e) {
-          // Log but don't fail the update
           logger.debug("Failed to refresh after update: " + String(e));
         }
       } else {
-        // Send error response for CellEditor-style callers
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
           id: messageId,
@@ -471,7 +460,6 @@ export class MessageHandler {
           error: result.error || "Update failed",
         });
 
-        // Also notify tableViewFetcher-style callers
         this.panel.webview.postMessage({
           command: "updateFieldValueResult",
           success: false,
@@ -483,6 +471,7 @@ export class MessageHandler {
       const wrapped = wrapError(e, "updateFieldValue failed");
       const msgText = String(wrapped?.message || wrapped || "");
       logger.error("updateFieldValue failed: " + msgText);
+
       this.panel.webview.postMessage({
         command: "updateFieldValueResponse",
         id: (msg as any).id,
@@ -490,7 +479,6 @@ export class MessageHandler {
         error: msgText,
       });
 
-      // Also notify tableViewFetcher-style callers
       this.panel.webview.postMessage({
         command: "updateFieldValueResult",
         success: false,
