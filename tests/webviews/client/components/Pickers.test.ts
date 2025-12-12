@@ -454,6 +454,9 @@ describe("ReviewersPicker", () => {
     document.body.innerHTML = "";
     anchorElement = document.createElement("div");
     document.body.appendChild(anchorElement);
+
+    // Ensure messaging mock is reset before each reviewers test
+    messagingMock.postMessage.mockClear();
   });
 
   afterEach(() => {
@@ -519,12 +522,15 @@ describe("ReviewersPicker", () => {
     ) as HTMLButtonElement | null;
     expect(openBtn).toBeTruthy();
 
-    const messaging = (window as any).APP_MESSAGING;
-    (messaging.postMessage as jest.Mock).mockClear();
+    const messaging =
+      (window as any).APP_MESSAGING || (window as any).__APP_MESSAGING__;
+    if (messaging && messaging.postMessage) {
+      (messaging.postMessage as jest.Mock).mockClear();
+    }
 
     openBtn?.click();
 
-    expect(messaging.postMessage).toHaveBeenCalledWith(
+    expect(messaging?.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ command: "openUrl" }),
     );
   });
