@@ -92,3 +92,19 @@ export async function runTestStep(
         throw err; // Re-throw to let caller handle failure count
     }
 }
+
+export async function sendTestClickAddItemMenu(
+    panel: vscode.WebviewPanel,
+): Promise<any> {
+    return sendTestCommand(panel, "test:evaluate", {
+        expression: `(() => {
+            const row = document.querySelector('tr.add-item-row td[data-add-item-row="true"]');
+            if (!row) return { success: false, error: 'Add item row not found' };
+            row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            const menu = document.querySelector('.add-item-menu');
+            if (!menu) return { success: false, error: 'Add item menu not shown' };
+            const items = Array.from(menu.querySelectorAll('.add-item-menu-item')).map(el => el.textContent?.trim());
+            return { success: true, items };
+        })()`,
+    });
+}

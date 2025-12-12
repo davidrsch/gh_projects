@@ -1,37 +1,42 @@
-import { MessageHandler } from '../../src/webviews/MessageHandler';
-import { GitHubRepository } from '../../src/services/GitHubRepository';
-import { ProjectDataService } from '../../src/services/ProjectDataService';
+import { MessageHandler } from "../../src/webviews/MessageHandler";
+import { GitHubRepository } from "../../src/services/GitHubRepository";
+import { ProjectDataService } from "../../src/services/ProjectDataService";
+import * as vscode from "vscode";
 
-jest.mock('../../src/services/GitHubRepository');
-jest.mock('../../src/services/ProjectDataService');
-jest.mock('vscode', () => ({
-    window: {
-        showErrorMessage: jest.fn(),
-    },
-    ExtensionContext: class { },
-    WebviewPanel: class { },
-    commands: {
-        executeCommand: jest.fn(),
-    },
-    env: {
-        openExternal: jest.fn(),
-    },
-    Uri: {
-        parse: jest.fn((url) => ({ url })),
-        file: jest.fn((path) => ({ path })),
-    },
-}), { virtual: true });
-jest.mock('../../src/lib/logger', () => ({
+jest.mock("../../src/services/GitHubRepository");
+jest.mock("../../src/services/ProjectDataService");
+jest.mock(
+    "vscode",
+    () => ({
+        window: {
+            showErrorMessage: jest.fn(),
+        },
+        ExtensionContext: class {},
+        WebviewPanel: class {},
+        commands: {
+            executeCommand: jest.fn(),
+        },
+        env: {
+            openExternal: jest.fn(),
+        },
+        Uri: {
+            parse: jest.fn((url) => ({ url })),
+            file: jest.fn((path) => ({ path })),
+        },
+    }),
+    { virtual: true },
+);
+jest.mock("../../src/lib/logger", () => ({
     __esModule: true,
     default: {
         debug: jest.fn(),
         info: jest.fn(),
         warn: jest.fn(),
         error: jest.fn(),
-    }
+    },
 }));
 
-describe('MessageHandler', () => {
+describe("MessageHandler", () => {
     let messageHandler: MessageHandler;
     let mockPanel: any;
     let mockProject: any;
@@ -102,8 +107,8 @@ describe('MessageHandler', () => {
         );
     });
 
-    describe('handleUpdateFieldValue', () => {
-        test('successfully updates text field', async () => {
+    describe("handleUpdateFieldValue", () => {
+        test("successfully updates text field", async () => {
             const message = {
                 command: 'updateFieldValue',
                 id: 'msg-1',
@@ -135,7 +140,7 @@ describe('MessageHandler', () => {
             );
         });
 
-        test('successfully updates number field', async () => {
+        test("successfully updates number field", async () => {
             const message = {
                 command: 'updateFieldValue',
                 id: 'msg-2',
@@ -158,7 +163,7 @@ describe('MessageHandler', () => {
             );
         });
 
-        test('successfully updates single_select field', async () => {
+        test("successfully updates single_select field", async () => {
             const message = {
                 command: 'updateFieldValue',
                 id: 'msg-3',
@@ -181,7 +186,7 @@ describe('MessageHandler', () => {
             );
         });
 
-        test('successfully updates iteration field', async () => {
+        test("successfully updates iteration field", async () => {
             const message = {
                 command: 'updateFieldValue',
                 id: 'msg-4',
@@ -204,7 +209,7 @@ describe('MessageHandler', () => {
             );
         });
 
-        test('successfully updates labels field', async () => {
+        test("successfully updates labels field", async () => {
             const message = {
                 command: 'updateFieldValue',
                 id: 'msg-5',
@@ -227,7 +232,7 @@ describe('MessageHandler', () => {
             );
         });
 
-        test('handles missing required fields', async () => {
+        test("handles missing required fields", async () => {
             const message = {
                 command: 'updateFieldValue',
                 id: 'msg-6',
@@ -249,7 +254,7 @@ describe('MessageHandler', () => {
             );
         });
 
-        test('handles update failure from GitHubRepository', async () => {
+        test("handles update failure from GitHubRepository", async () => {
             gitHubRepoMock.updateFieldValue.mockResolvedValue({
                 success: false,
                 error: 'GraphQL error: Field not found',
@@ -278,7 +283,7 @@ describe('MessageHandler', () => {
             );
         });
 
-        test('handles exception during update', async () => {
+        test("handles exception during update", async () => {
             gitHubRepoMock.updateFieldValue.mockRejectedValue(new Error('Network error'));
 
             const message = {
@@ -304,7 +309,7 @@ describe('MessageHandler', () => {
             );
         });
 
-        test('refreshes project data after successful update', async () => {
+        test("refreshes project data after successful update", async () => {
             const message = {
                 command: 'updateFieldValue',
                 id: 'msg-9',
@@ -331,6 +336,41 @@ describe('MessageHandler', () => {
                     viewKey: 'project-123:view-0',
                 })
             );
+        });
+    });
+
+    describe("openUrl behavior", () => {
+        test("handles openUrl without viewKey via vscode.open", async () => {
+            const message = {
+                command: "openUrl",
+                url: "https://github.com/org/repo/issues/123",
+            };
+
+            await (messageHandler as any).handleMessage(message);
+
+            expect((vscode.commands.executeCommand as jest.Mock)).toHaveBeenCalledWith(
+                "vscode.open",
+                { url: "https://github.com/org/repo/issues/123" },
+            );
+            // env.openExternal should not be needed in the happy path
+            expect((vscode.env.openExternal as jest.Mock)).not.toHaveBeenCalled();
+        });
+
+        test("falls back to env.openExternal when vscode.open fails", async () => {
+            (vscode.commands.executeCommand as jest.Mock).mockRejectedValueOnce(
+                new Error("failed"),
+            );
+
+            const message = {
+                command: "openUrl",
+                url: "https://github.com/org/repo/pull/1",
+            };
+
+            await (messageHandler as any).handleMessage(message);
+
+            expect((vscode.env.openExternal as jest.Mock)).toHaveBeenCalledWith({
+                url: "https://github.com/org/repo/pull/1",
+            });
         });
     });
 });

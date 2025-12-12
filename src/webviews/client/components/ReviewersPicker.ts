@@ -27,6 +27,7 @@ interface ReviewerOption {
 export class ReviewersPicker extends BasePicker {
   private field: any;
   private item: any;
+  private currentReviewers: any[] = [];
   private availableReviewers: ReviewerOption[] = [];
   private selectedLogins: Set<string> = new Set();
   private filteredReviewers: ReviewerOption[] = [];
@@ -43,6 +44,7 @@ export class ReviewersPicker extends BasePicker {
 
     this.field = options.field;
     this.item = options.item;
+  this.currentReviewers = options.currentReviewers || [];
     this.onUpdate = options.onUpdate;
     this.onError = options.onError;
 
@@ -61,18 +63,31 @@ export class ReviewersPicker extends BasePicker {
    * Load available reviewers from field options
    */
   private loadAvailableReviewers(): void {
-    let reviewers: any[] = [];
+    const byLogin = new Map<string, ReviewerOption>();
 
-    if (this.field.options) {
-      reviewers = this.field.options;
+    const addReviewer = (source: any) => {
+      if (!source) return;
+      const login = source.login || source.name || "";
+      if (!login) return;
+      const name = source.name || source.login || "";
+      const avatarUrl = source.avatarUrl || source.avatar || "";
+      const kind = source.kind || source.__typename || "User";
+      if (!byLogin.has(login)) {
+        byLogin.set(login, { login, name, avatarUrl, kind });
+      }
+    };
+
+    if (Array.isArray(this.field.options)) {
+      this.field.options.forEach(addReviewer);
     }
 
-    this.availableReviewers = reviewers.map((reviewer) => ({
-      login: reviewer.login || reviewer.name || "",
-      name: reviewer.name || reviewer.login || "",
-      avatarUrl: reviewer.avatarUrl || reviewer.avatar || "",
-      kind: reviewer.kind || reviewer.__typename || "User",
-    }));
+    if (Array.isArray(this.currentReviewers)) {
+      this.currentReviewers.forEach(addReviewer);
+    }
+
+    this.availableReviewers = Array.from(byLogin.values()).sort((a, b) =>
+      a.login.localeCompare(b.login),
+    );
 
     this.filteredReviewers = [...this.availableReviewers];
   }
@@ -218,6 +233,45 @@ export class ReviewersPicker extends BasePicker {
     item.appendChild(checkbox);
     item.appendChild(avatar);
     item.appendChild(info);
+
+    // Optional: open profile/team page in browser from within the picker
+    if (reviewer.login) {
+      const profileUrl = `https://github.com/${reviewer.login}`;
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.alignItems = "center";
+      actions.style.marginLeft = "auto";
+      actions.style.flexShrink = "0";
+
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "reviewer-open-button";
+      openBtn.textContent = "↗";
+      openBtn.title = isTeam
+        ? "Open GitHub team page"
+        : "Open GitHub profile";
+      openBtn.style.fontSize = "11px";
+      openBtn.style.padding = "2px 4px";
+      openBtn.style.cursor = "pointer";
+      openBtn.style.border = "none";
+      openBtn.style.background = "transparent";
+      openBtn.style.color = "var(--vscode-textLink-foreground)";
+
+      openBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        try {
+          const messaging = (window as any).__APP_MESSAGING__;
+          if (messaging && typeof messaging.postMessage === "function") {
+            messaging.postMessage({ command: "openUrl", url: profileUrl });
+          }
+        } catch (err) {
+          // Swallow errors in picker context
+        }
+      });
+
+      actions.appendChild(openBtn);
+      item.appendChild(actions);
+    }
 
     // Toggle on click
     item.addEventListener("click", (e) => {

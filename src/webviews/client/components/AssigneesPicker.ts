@@ -26,6 +26,7 @@ interface AssigneeOption {
 export class AssigneesPicker extends BasePicker {
   private field: any;
   private item: any;
+  private currentAssignees: any[] = [];
   private availableAssignees: AssigneeOption[] = [];
   private selectedLogins: Set<string> = new Set();
   private filteredAssignees: AssigneeOption[] = [];
@@ -42,6 +43,7 @@ export class AssigneesPicker extends BasePicker {
 
     this.field = options.field;
     this.item = options.item;
+  this.currentAssignees = options.currentAssignees || [];
     this.onUpdate = options.onUpdate;
     this.onError = options.onError;
 
@@ -60,19 +62,32 @@ export class AssigneesPicker extends BasePicker {
    * Load available assignees from field options
    */
   private loadAvailableAssignees(): void {
-    // Try to get assignees from field options
-    // In a real implementation, this might need to fetch from repository collaborators
-    let assignees: any[] = [];
+    // Try to get assignees from field options and merge with current selections
+    // so that already-selected assignees always remain visible in the dropdown.
+    const byLogin = new Map<string, AssigneeOption>();
 
-    if (this.field.options) {
-      assignees = this.field.options;
+    const addAssignee = (source: any) => {
+      if (!source) return;
+      const login = source.login || source.name || "";
+      if (!login) return;
+      const name = source.name || source.login || "";
+      const avatarUrl = source.avatarUrl || source.avatar || "";
+      if (!byLogin.has(login)) {
+        byLogin.set(login, { login, name, avatarUrl });
+      }
+    };
+
+    if (Array.isArray(this.field.options)) {
+      this.field.options.forEach(addAssignee);
     }
 
-    this.availableAssignees = assignees.map((assignee) => ({
-      login: assignee.login || assignee.name || "",
-      name: assignee.name || assignee.login || "",
-      avatarUrl: assignee.avatarUrl || assignee.avatar || "",
-    }));
+    if (Array.isArray(this.currentAssignees)) {
+      this.currentAssignees.forEach(addAssignee);
+    }
+
+    this.availableAssignees = Array.from(byLogin.values()).sort((a, b) =>
+      a.login.localeCompare(b.login),
+    );
 
     this.filteredAssignees = [...this.availableAssignees];
   }
@@ -192,6 +207,43 @@ export class AssigneesPicker extends BasePicker {
     item.appendChild(checkbox);
     item.appendChild(avatar);
     item.appendChild(info);
+
+    // Optional: open profile in browser from within the picker
+    if (assignee.login) {
+      const profileUrl = `https://github.com/${assignee.login}`;
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.alignItems = "center";
+      actions.style.marginLeft = "auto";
+      actions.style.flexShrink = "0";
+
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "assignee-open-button";
+      openBtn.textContent = "↗";
+      openBtn.title = "Open GitHub profile";
+      openBtn.style.fontSize = "11px";
+      openBtn.style.padding = "2px 4px";
+      openBtn.style.cursor = "pointer";
+      openBtn.style.border = "none";
+      openBtn.style.background = "transparent";
+      openBtn.style.color = "var(--vscode-textLink-foreground)";
+
+      openBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        try {
+          const messaging = (window as any).__APP_MESSAGING__;
+          if (messaging && typeof messaging.postMessage === "function") {
+            messaging.postMessage({ command: "openUrl", url: profileUrl });
+          }
+        } catch (err) {
+          // Swallow errors in picker context
+        }
+      });
+
+      actions.appendChild(openBtn);
+      item.appendChild(actions);
+    }
 
     // Toggle on click
     item.addEventListener("click", (e) => {

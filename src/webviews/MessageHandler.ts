@@ -50,8 +50,25 @@ export class MessageHandler {
       return;
     }
 
-    // Only handle messages for this panel
-    if (!msg?.viewKey) return;
+    // Some commands (like openUrl/openRepo/debugLog) are global and do not
+    // require a specific viewKey. For all other commands, we only handle
+    // messages that are explicitly targeted at this panel/view.
+    const command = (msg as any).command as string;
+
+    // Some commands (like openUrl/openRepo/debugLog) are global side effects
+    // and do not require a specific viewKey. All data/update commands do.
+    const requiresViewKey = ![
+      "openUrl",
+      "openRepo",
+      "debugLog",
+      "addItem:createIssue",
+      "addItem:addFromRepo",
+    ].includes(command);
+
+    // Only handle view-scoped messages for this panel
+    if (requiresViewKey && !msg?.viewKey) {
+      return;
+    }
 
     switch (msg.command) {
       case "openRepo":
@@ -67,13 +84,27 @@ export class MessageHandler {
         if (typeof (msg as any).url === "string") {
           try {
             const u = vscode.Uri.parse(String((msg as any).url));
-            await vscode.env.openExternal(u);
+            try {
+              // Prefer the generic vscode.open command so that other
+              // extensions (like the official GitHub Pull Requests
+              // extension) can participate in handling GitHub links.
+              await vscode.commands.executeCommand("vscode.open", u);
+            } catch (primaryError) {
+              // Fallback to the default external browser behavior.
+              await vscode.env.openExternal(u);
+            }
           } catch (e) {
             const sanitized = String((e as any)?.message || e || "");
             logger.error("webview.openUrl failed: " + sanitized);
             vscode.window.showErrorMessage("Failed to open URL: " + sanitized);
           }
         }
+        break;
+      case "addItem:createIssue":
+        await this.handleAddItemCreateIssue(msg);
+        break;
+      case "addItem:addFromRepo":
+        await this.handleAddItemAddFromRepo(msg);
         break;
       case "requestFields":
         await this.handleRequestFields(msg);
@@ -96,6 +127,46 @@ export class MessageHandler {
       case "updateFieldValue":
         await this.handleUpdateFieldValue(msg);
         break;
+    }
+  }
+
+  private async handleAddItemCreateIssue(msg: any) {
+    try {
+      // For now, this is a stub that simply opens the project URL
+      // (or a generic GitHub Projects page) using vscode.open so that
+      // other extensions, like the GitHub Pull Requests extension,
+      // can participate in handling the link when installed.
+      const target =
+        (this.project && (this.project as any).url) ||
+        "https://github.com/projects";
+      const uri = vscode.Uri.parse(String(target));
+      try {
+        await vscode.commands.executeCommand("vscode.open", uri);
+      } catch (primaryError) {
+        await vscode.env.openExternal(uri);
+      }
+    } catch (e) {
+      const sanitized = String((e as any)?.message || e || "");
+      logger.error("webview.addItem:createIssue failed: " + sanitized);
+    }
+  }
+
+  private async handleAddItemAddFromRepo(msg: any) {
+    try {
+      // Stub: Open the project URL as a placeholder until a richer
+      // in-extension picker is implemented.
+      const target =
+        (this.project && (this.project as any).url) ||
+        "https://github.com/projects";
+      const uri = vscode.Uri.parse(String(target));
+      try {
+        await vscode.commands.executeCommand("vscode.open", uri);
+      } catch (primaryError) {
+        await vscode.env.openExternal(uri);
+      }
+    } catch (e) {
+      const sanitized = String((e as any)?.message || e || "");
+      logger.error("webview.addItem:addFromRepo failed: " + sanitized);
     }
   }
 

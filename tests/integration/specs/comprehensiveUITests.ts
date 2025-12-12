@@ -13,6 +13,7 @@ import { runColumnOperationsTests } from './columnOperations.spec';
 import { runBoardViewTests } from './boardView.spec';
 import { runRoadmapViewTests } from './roadmapView.spec';
 import { runFieldUpdateTests } from './fieldUpdates.spec';
+import { runAddItemMenuTests } from './addItemMenu.spec';
 
 export async function runComprehensiveTests(
     panel: vscode.WebviewPanel,
@@ -50,6 +51,9 @@ export async function runComprehensiveTests(
 
     // 7. Field Update Tests
     addResults(await runFieldUpdateTests(panel, page, report, screenshots));
+
+    // 8. Add Item menu
+    addResults(await runAddItemMenuTests(panel, page, report, screenshots));
 
     // Final Summary
     console.log('\n=== Test Results ===');

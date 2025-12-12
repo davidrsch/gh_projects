@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, autofix/** ]
+    branches: [main, autofix/**]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   build:
@@ -26,5 +26,10 @@ jobs:
         run: npm run lint
       - name: Run tests
         run: npm test
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          GH_PROJECTS_TOKEN_FOR_TESTING: ${{ secrets.GH_PROJECTS_TOKEN_FOR_TESTING }}
+          GH_PROJECTS_TEST_PROJECT_ID: ${{ secrets.GH_PROJECTS_TEST_PROJECT_ID }}
       - name: Build webviews
         run: npm run build:webviews

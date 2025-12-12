@@ -532,60 +532,91 @@ export class IssueRenderer implements CellRendererStrategy {
 
 export class AssigneesRenderer implements CellRendererStrategy {
   render(value: any): string {
-    let t = value.assignees || [];
-    if (t.length === 0) return "<div></div>";
-    let l = t
-        .slice(0, 3)
-        .map((g: any, f: any) => {
-          let h = escapeHtml(g.avatarUrl || g.avatar || ""),
-            w = f === 0 ? "0px" : f === 1 ? "-8px" : "-14px",
-            x = Math.max(1, 3 - f);
-          if (h)
-            return (
-              "<span title='" +
-              escapeHtml(g.login || g.name || "") +
-              "' style='display:inline-block;width:20px;height:20px;border-radius:50%;overflow:hidden;background-size:cover;background-position:center;background-image:url(" +
-              h +
-              ");border:2px solid var(--vscode-editor-background);margin-left:" +
-              w +
-              ";vertical-align:middle;position:relative;z-index:" +
-              x +
-              "'></span>"
-            );
-          let k = escapeHtml(
-            (g.name || g.login || "")
-              .split(" ")
-              .map((L: any) => L[0] || "")
-              .join("")
-              .toUpperCase()
-              .slice(0, 2),
-          );
+    const assignees = value.assignees || [];
+    if (!assignees || assignees.length === 0) return "<div></div>";
+
+    // Helper to build a GitHub profile URL for an assignee
+    const getProfileUrl = (g: any): string => {
+      const login = g && (g.login || g.name || "");
+      const direct = (g && (g.url || g.html_url)) || "";
+      if (direct) return String(direct);
+      if (login) return `https://github.com/${login}`;
+      return "";
+    };
+
+    const avatarHtml = assignees
+      .slice(0, 3)
+      .map((g: any, index: number) => {
+        const avatarUrl = escapeHtml(g.avatarUrl || g.avatar || "");
+        const offset = index === 0 ? "0px" : index === 1 ? "-8px" : "-14px";
+        const zIndex = Math.max(1, 3 - index);
+        const login = g.login || g.name || "";
+        const initials = escapeHtml(
+          (g.name || g.login || "")
+            .split(" ")
+            .map((part: any) => part[0] || "")
+            .join("")
+            .toUpperCase()
+            .slice(0, 2),
+        );
+        const profileUrl = escapeHtml(getProfileUrl(g));
+
+        const commonStyle =
+          "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:2px solid var(--vscode-editor-background);margin-left:" +
+          offset +
+          ";vertical-align:middle;position:relative;z-index:" +
+          zIndex +
+          ";";
+
+        if (avatarUrl) {
           return (
             "<span title='" +
-            escapeHtml(g.login || g.name || "") +
-            "' style='display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#777;color:#fff;font-size:11px;border:2px solid var(--vscode-editor-background);margin-left:" +
-            w +
-            ";vertical-align:middle;position:relative;z-index:" +
-            x +
-            "'>" +
-            k +
-            "</span>"
+            escapeHtml(login || "") +
+            "' data-gh-open='" +
+            profileUrl +
+            "' style='" +
+            commonStyle +
+            "overflow:hidden;background-size:cover;background-position:center;background-image:url(" +
+            avatarUrl +
+            ");'></span>"
           );
-        })
-        .join(""),
-      r = t.map((g: any) => g.login || g.name || ""),
-      a = "";
-    if (r.length === 1) a = r[0];
-    else if (r.length === 2) a = r[0] + " and " + r[1];
-    else a = r.slice(0, -1).join(", ") + " and " + r.slice(-1)[0];
+        }
+
+        return (
+          "<span title='" +
+          escapeHtml(login || "") +
+          "' data-gh-open='" +
+          profileUrl +
+          "' style='" +
+          commonStyle +
+          "background:#777;color:#fff;font-size:11px;'>" +
+          initials +
+          "</span>"
+        );
+      })
+      .join("");
+
+    const names = assignees.map((g: any) => g.login || g.name || "");
+    let summary = "";
+    if (names.length === 1) summary = names[0];
+    else if (names.length === 2) summary = names[0] + " and " + names[1];
+    else summary = names.slice(0, -1).join(", ") + " and " + names.slice(-1)[0];
+
+    // Use the first assignee as a primary profile target when clicking the
+    // text summary area. Individual avatars already have their own targets.
+    const primaryProfileUrl = escapeHtml(getProfileUrl(assignees[0]));
 
     return (
-      "<div style='display:flex;align-items:center;gap:8px'><span style='display:flex;align-items:center'>" +
-      ("<span style='display:inline-block;vertical-align:middle;height:20px;line-height:20px;margin-right:8px;'>" +
-        l +
-        "</span>") +
-      "</span><span style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" +
-      escapeHtml(a) +
+      "<div style='display:flex;align-items:center;gap:8px'>" +
+      "<span style='display:flex;align-items:center'>" +
+      "<span style='display:inline-block;vertical-align:middle;height:20px;line-height:20px;margin-right:8px;'>" +
+      avatarHtml +
+      "</span>" +
+      "</span>" +
+      "<span data-gh-open='" +
+      primaryProfileUrl +
+      "' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer'>" +
+      escapeHtml(summary) +
       "</span></div>"
     );
   }
@@ -593,15 +624,32 @@ export class AssigneesRenderer implements CellRendererStrategy {
 
 export class RequestedReviewersRenderer implements CellRendererStrategy {
   render(value: any): string {
-    return (
-      "<div>" +
-      escapeHtml(
-        (value.reviewers || [])
-          .map((t: any) => t.login || t.name || t.kind || "")
-          .join(", "),
-      ) +
-      "</div>"
-    );
+    const reviewers = value.reviewers || [];
+    if (!reviewers || reviewers.length === 0) return "<div></div>";
+
+    const parts = reviewers.map((r: any) => {
+      const login = r.login || r.name || r.kind || "";
+      const display = escapeHtml(login);
+      const direct = (r && (r.url || r.html_url)) || "";
+      const url = direct || (login ? `https://github.com/${login}` : "");
+      const safeUrl = escapeHtml(url);
+
+      if (!url) {
+        return display;
+      }
+
+      return (
+        "<a href='" +
+        safeUrl +
+        "' target='_blank' rel='noopener noreferrer' data-gh-open='" +
+        safeUrl +
+        "' style='text-decoration:none;color:inherit'>" +
+        display +
+        "</a>"
+      );
+    });
+
+    return "<div>" + parts.join(", ") + "</div>";
   }
 }
 

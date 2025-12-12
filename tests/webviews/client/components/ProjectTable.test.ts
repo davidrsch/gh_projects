@@ -48,16 +48,18 @@ describe('ProjectTable', () => {
         expect(headers[2].textContent).toContain('Status');
         expect(headers[3].textContent?.trim()).toBe('+');
 
-        // Check Rows
+        // Check Rows (including the dedicated "+ Add item" row)
         const rows = container.querySelectorAll('tbody tr');
-        expect(rows.length).toBe(1);
-        expect(rows[0].getAttribute('data-gh-item-id')).toBe('i1');
+        expect(rows.length).toBe(2);
 
-        // Check Cells
-        const cells = container.querySelectorAll('tbody td');
-        expect(cells.length).toBe(fields.length + 1); // Index + field cells
-        expect(cells[0].textContent).toBe('1');
-        expect(cells[1].innerHTML).toContain('<span>Cell Content</span>');
+        const itemRow = container.querySelector('tr[data-gh-item-id="i1"]');
+        expect(itemRow).toBeTruthy();
+
+        // Check Cells for the data row only
+        const dataCells = itemRow?.querySelectorAll('td') as NodeListOf<HTMLTableCellElement>;
+        expect(dataCells.length).toBe(fields.length + 1); // Index + field cells
+        expect(dataCells[0].textContent).toBe('1');
+        expect(dataCells[1].innerHTML).toContain('<span>Cell Content</span>');
     });
 
     test('renders grouped rows', () => {

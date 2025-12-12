@@ -15,6 +15,7 @@ import {
   CellUpdateRequest,
 } from "./InteractiveCellManager";
 import { TableKeyboardNavigator } from "./TableKeyboardNavigator";
+import { AddItemMenu } from "./AddItemMenu";
 
 export interface TableOptions {
   groupingFieldName?: string;
@@ -372,6 +373,13 @@ export class ProjectTable {
       this.renderFlatRows(tbody, displayItems, rowRenderer);
     }
 
+    // Always render a dedicated "+ Add item" row at the end of the
+    // table body to make it easy to add new items. This currently
+    // posts a message back to the extension for handling, allowing
+    // the host to delegate to the GitHub Pull Requests extension or
+    // open a browser as appropriate.
+    this.renderAddItemRow(tbody);
+
     table.appendChild(tbody);
   }
 
@@ -399,6 +407,93 @@ export class ProjectTable {
       const tr = rowRenderer.createRow(item, index);
       tbody.appendChild(tr);
     });
+  }
+
+  private renderAddItemRow(tbody: HTMLTableSectionElement) {
+    const tr = document.createElement("tr");
+    tr.className = "add-item-row";
+    tr.setAttribute("role", "row");
+    tr.style.transition = "background-color 0.15s ease";
+    tr.addEventListener("mouseenter", () => {
+      tr.style.backgroundColor = "var(--vscode-list-hoverBackground)";
+    });
+    tr.addEventListener("mouseleave", () => {
+      tr.style.backgroundColor = "transparent";
+    });
+
+    const td = document.createElement("td");
+    // Index column + visible field columns; the trailing "add field" header
+    // column is visual-only, so we span the data region.
+    td.colSpan = this.fields.length + 1;
+    td.setAttribute("data-add-item-row", "true");
+    td.setAttribute("role", "gridcell");
+    td.setAttribute("aria-colspan", String(this.fields.length + 1));
+    td.setAttribute("aria-label", "+ Add item");
+    td.style.padding = "8px 12px";
+    td.style.cursor = "pointer";
+    td.style.userSelect = "none";
+    td.style.borderBottom = "1px solid var(--vscode-panel-border)";
+    td.style.color = "var(--vscode-foreground)";
+    td.style.fontWeight = "400";
+    td.style.textAlign = "left";
+
+    const label = document.createElement("span");
+    label.textContent = "+ Add item";
+    label.style.opacity = "0.9";
+    td.appendChild(label);
+
+    tr.appendChild(td);
+
+    tr.tabIndex = 0;
+
+    const activate = () => {
+      const menu = new AddItemMenu({
+        anchorElement: td,
+        onCreateIssue: () => {
+          try {
+            const messaging = (window as any).__APP_MESSAGING__;
+            if (messaging && typeof messaging.postMessage === "function") {
+              messaging.postMessage({
+                command: "addItem:createIssue",
+                viewKey: this.options.viewKey,
+                projectId: this.options.projectId,
+              });
+            }
+          } catch (e) {
+            console.error("[ProjectTable] create-issue action failed", e);
+          }
+        },
+        onAddFromRepo: () => {
+          try {
+            const messaging = (window as any).__APP_MESSAGING__;
+            if (messaging && typeof messaging.postMessage === "function") {
+              messaging.postMessage({
+                command: "addItem:addFromRepo",
+                viewKey: this.options.viewKey,
+                projectId: this.options.projectId,
+              });
+            }
+          } catch (e) {
+            console.error("[ProjectTable] add-from-repo action failed", e);
+          }
+        },
+      });
+      menu.show();
+    };
+
+    tr.addEventListener("click", () => {
+      activate();
+    });
+
+    tr.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        activate();
+      }
+    });
+
+    tbody.appendChild(tr);
   }
 
   private renderGroupedRows(
