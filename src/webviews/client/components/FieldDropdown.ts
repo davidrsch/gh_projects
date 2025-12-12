@@ -258,8 +258,12 @@ export class FieldDropdown {
   private scrollToOption(index: number) {
     const items = this.container.querySelectorAll(".field-dropdown-option");
     const item = items[index] as HTMLElement;
-    if (item && typeof item.scrollIntoView === "function") {
-      item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (item) {
+      try {
+        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } catch (e) {
+        // Fallback for environments where scrollIntoView is not available (e.g., jsdom in tests)
+      }
     }
   }
 

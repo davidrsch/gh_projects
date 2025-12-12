@@ -18,6 +18,8 @@ export interface InteractiveCellConfig {
  * Manages interactive behavior for single-select and iteration cells.
  * Handles click events, dropdown display, and update requests.
  */
+const ERROR_TOOLTIP_DURATION_MS = 3000;
+
 export class InteractiveCellManager {
   private config: InteractiveCellConfig;
   private activeDropdown: FieldDropdown | null = null;
@@ -196,7 +198,7 @@ export class InteractiveCellManager {
         const dateRange = this.formatIterationDateRange(iter);
         options.push({
           id: iter.id,
-          label: iter.title || iter.id,
+          label: iter.title || "Untitled Iteration",
           metadata: { dateRange },
         });
       });
@@ -314,11 +316,11 @@ export class InteractiveCellManager {
 
     document.body.appendChild(tooltip);
 
-    // Remove error styling and tooltip after 3 seconds
+    // Remove error styling and tooltip after configured duration
     setTimeout(() => {
       cell.style.outline = "none";
       tooltip.remove();
-    }, 3000);
+    }, ERROR_TOOLTIP_DURATION_MS);
   }
 
   public destroy() {

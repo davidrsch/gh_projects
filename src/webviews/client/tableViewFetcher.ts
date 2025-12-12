@@ -11,6 +11,8 @@ import type { SortConfig } from "./utils/tableSorting";
 
 /// <reference path="./global.d.ts" />
 
+const UPDATE_TIMEOUT_MS = 10000;
+
 window.tableViewFetcher = function (
   view: any,
   container: HTMLElement,
@@ -396,11 +398,11 @@ window.tableViewFetcher = function (
             };
             window.addEventListener("message", handleResponse);
 
-            // Timeout after 10 seconds
+            // Timeout after configured duration
             setTimeout(() => {
               window.removeEventListener("message", handleResponse);
               reject(new Error("Update timeout"));
-            }, 10000);
+            }, UPDATE_TIMEOUT_MS);
           });
         } else {
           throw new Error("Messaging not available");

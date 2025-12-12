@@ -384,6 +384,13 @@ export class MessageHandler {
         `updateFieldValue: itemId=${itemId}, fieldId=${fieldId}, value=${value}`,
       );
 
+      // Fetch current snapshot once to determine field type
+      const snapshot = await ProjectDataService.getProjectData(
+        this.project,
+        viewKey,
+      );
+      const field = snapshot.snapshot.fields.find((f: any) => f.id === fieldId);
+
       // Use GitHubRepository to execute the mutation
       const GitHubRepository = (
         await import("../services/GitHubRepository")
@@ -409,56 +416,33 @@ export class MessageHandler {
         fieldId: fieldId,
       };
 
-      // Set the appropriate value parameter
-      if (value === null || value === undefined) {
-        // To clear a field value, we need to determine the field type and set the appropriate parameter to null
-        const snapshot = await ProjectDataService.getProjectData(
-          this.project,
-          viewKey,
-        );
-        const field = snapshot.snapshot.fields.find((f: any) => f.id === fieldId);
-        
-        if (field) {
-          const fieldType = field.dataType;
+      // Determine the appropriate value parameter based on field type
+      if (field) {
+        const fieldType = field.dataType;
+        if (value === null || value === undefined) {
+          // Clear the field value
           if (fieldType === "SINGLE_SELECT") {
             input.value = { singleSelectOptionId: null };
           } else if (fieldType === "ITERATION") {
             input.value = { iterationId: null };
           } else {
-            // For text and other types, use empty text
             input.value = { text: "" };
           }
         } else {
-          // Field not found, use empty text as fallback
-          input.value = { text: "" };
-        }
-      } else {
-        // Determine field type from the message or field metadata
-        // For now, we'll try to infer from the value format
-        // Single-select uses singleSelectOptionId, iteration uses iterationId
-        
-        // Check if this is an iteration or single-select by looking at field metadata
-        // We'll need to fetch the field type first
-        const snapshot = await ProjectDataService.getProjectData(
-          this.project,
-          viewKey,
-        );
-        const field = snapshot.snapshot.fields.find((f: any) => f.id === fieldId);
-        
-        if (field) {
-          const fieldType = field.dataType;
+          // Set the field value
           if (fieldType === "SINGLE_SELECT") {
             input.value = { singleSelectOptionId: value };
           } else if (fieldType === "ITERATION") {
             input.value = { iterationId: value };
           } else {
-            // For other field types, use text as fallback
             input.value = { text: String(value) };
           }
-        } else {
-          // Field not found, try with text
-          input.value = { text: String(value) };
         }
+      } else {
+        // Field not found, use text as fallback
+        input.value = value === null || value === undefined
+          ? { text: "" }
+          : { text: String(value) };
       }
 
       // Execute mutation
