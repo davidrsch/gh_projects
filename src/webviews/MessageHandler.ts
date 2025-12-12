@@ -411,8 +411,27 @@ export class MessageHandler {
 
       // Set the appropriate value parameter
       if (value === null || value === undefined) {
-        // Clear the field value
-        input.value = { text: "" }; // Empty value clears most field types
+        // To clear a field value, we need to determine the field type and set the appropriate parameter to null
+        const snapshot = await ProjectDataService.getProjectData(
+          this.project,
+          viewKey,
+        );
+        const field = snapshot.snapshot.fields.find((f: any) => f.id === fieldId);
+        
+        if (field) {
+          const fieldType = field.dataType;
+          if (fieldType === "SINGLE_SELECT") {
+            input.value = { singleSelectOptionId: null };
+          } else if (fieldType === "ITERATION") {
+            input.value = { iterationId: null };
+          } else {
+            // For text and other types, use empty text
+            input.value = { text: "" };
+          }
+        } else {
+          // Field not found, use empty text as fallback
+          input.value = { text: "" };
+        }
       } else {
         // Determine field type from the message or field metadata
         // For now, we'll try to infer from the value format
