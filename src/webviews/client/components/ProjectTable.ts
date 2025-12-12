@@ -11,6 +11,7 @@ import { RowRenderer } from "../renderers/RowRenderer";
 import { GroupRenderer } from "../renderers/GroupRenderer";
 import { TableResizer } from "./TableResizer";
 import { InteractiveCellManager, CellUpdateRequest } from "./InteractiveCellManager";
+import { TableKeyboardNavigator } from "./TableKeyboardNavigator";
 
 export interface TableOptions {
   groupingFieldName?: string;
@@ -40,6 +41,7 @@ export class ProjectTable {
   private activeSlicePanelFieldId: string | null = null;
   private tableResizer: TableResizer | null = null;
   private interactiveCellManager: InteractiveCellManager | null = null;
+  private keyboardNavigator: TableKeyboardNavigator | null = null;
 
   constructor(
     container: HTMLElement,
@@ -154,6 +156,12 @@ export class ProjectTable {
     table.style.tableLayout = "fixed";
     // Let container control horizontal scrolling while table fills width
     table.style.width = "100%";
+    
+    // Add ARIA attributes for accessibility
+    table.setAttribute("role", "grid");
+    table.setAttribute("aria-label", "Project items table");
+    table.setAttribute("aria-rowcount", String(this.items.length));
+    table.setAttribute("aria-colcount", String(this.fields.length + 1)); // +1 for index column
 
     this.renderColGroup(table);
     new ColumnHeaderRenderer({
@@ -177,6 +185,30 @@ export class ProjectTable {
     // For now, let's keep the sticky header logic and resizers.
     this.tableResizer = new TableResizer(table, this.fields, this.options);
     this.tableResizer.setupResizers();
+    
+    // Initialize keyboard navigation
+    this.keyboardNavigator = new TableKeyboardNavigator(table, {
+      onEnterEditMode: (cell, position) => {
+        // Trigger interactive cell behavior if cell has it
+        if (cell.classList.contains("interactive-cell")) {
+          // Simulate click to open dropdown
+          cell.click();
+        }
+      },
+      onExitEditMode: (commit) => {
+        // Handle exit edit mode
+        if (!commit) {
+          // Cancelled - no action needed
+        }
+      },
+      onCellFocus: (cell, position) => {
+        // Update visual focus indicator
+        this.updateCellFocusIndicator(cell);
+      },
+    });
+    
+    // Make cells focusable for keyboard navigation
+    this.keyboardNavigator.makeCellsFocusable();
   }
 
   private renderColGroup(table: HTMLTableElement) {
@@ -937,5 +969,19 @@ export class ProjectTable {
       console.error("Failed to update field value:", error);
       throw error;
     }
+  }
+
+  /**
+   * Update visual focus indicator for the current cell
+   */
+  private updateCellFocusIndicator(cell: HTMLElement) {
+    // Remove focus indicator from all cells
+    const allCells = this.container.querySelectorAll("td.focused");
+    allCells.forEach((c) => {
+      c.classList.remove("focused");
+    });
+
+    // Add focus indicator to current cell
+    cell.classList.add("focused");
   }
 }
