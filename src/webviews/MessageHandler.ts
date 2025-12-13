@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { ProjectEntry, ProjectView } from "../lib/types";
 import { ProjectDataService } from "../services/ProjectDataService";
+import { GitHubRepository } from "../services/GitHubRepository";
 import logger from "../lib/logger";
 import { wrapError } from "../lib/errors";
 import messages, { isGhNotFound } from "../lib/messages";
@@ -12,7 +13,7 @@ export class MessageHandler {
     private panelKey: string,
     private context: vscode.ExtensionContext,
     private resources: any, // Pass resources for re-init
-  ) {}
+  ) { }
 
   public attach() {
     this.panel.webview.onDidReceiveMessage(
@@ -36,7 +37,7 @@ export class MessageHandler {
         this.sendInitMessage();
         return;
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // Basic validation
     if (!msg || typeof msg !== "object" || typeof msg.command !== "string") {
@@ -50,8 +51,25 @@ export class MessageHandler {
       return;
     }
 
-    // Only handle messages for this panel
-    if (!msg?.viewKey) return;
+    // Some commands (like openUrl/openRepo/debugLog) are global and do not
+    // require a specific viewKey. For all other commands, we only handle
+    // messages that are explicitly targeted at this panel/view.
+    const command = (msg as any).command as string;
+
+    // Some commands (like openUrl/openRepo/debugLog) are global side effects
+    // and do not require a specific viewKey. All data/update commands do.
+    const requiresViewKey = ![
+      "openUrl",
+      "openRepo",
+      "debugLog",
+      "addItem:createIssue",
+      "addItem:addFromRepo",
+    ].includes(command);
+
+    // Only handle view-scoped messages for this panel
+    if (requiresViewKey && !msg?.viewKey) {
+      return;
+    }
 
     switch (msg.command) {
       case "openRepo":
@@ -64,16 +82,13 @@ export class MessageHandler {
         }
         break;
       case "openUrl":
-        if (typeof (msg as any).url === "string") {
-          try {
-            const u = vscode.Uri.parse(String((msg as any).url));
-            await vscode.env.openExternal(u);
-          } catch (e) {
-            const sanitized = String((e as any)?.message || e || "");
-            logger.error("webview.openUrl failed: " + sanitized);
-            vscode.window.showErrorMessage("Failed to open URL: " + sanitized);
-          }
-        }
+        await this.handleOpenUrl(msg);
+        break;
+      case "addItem:createIssue":
+        await this.handleAddItemCreateIssue(msg);
+        break;
+      case "addItem:addFromRepo":
+        await this.handleAddItemAddFromRepo(msg);
         break;
       case "requestFields":
         await this.handleRequestFields(msg);
@@ -96,6 +111,692 @@ export class MessageHandler {
       case "updateFieldValue":
         await this.handleUpdateFieldValue(msg);
         break;
+    }
+  }
+
+  private async handleOpenUrl(msg: any) {
+    if (typeof (msg as any).url !== "string") return;
+
+    const urlString = String((msg as any).url);
+    logger.info(`[handleOpenUrl] Requested to open: ${urlString}`);
+    try {
+      let uriToOpen = vscode.Uri.parse(urlString);
+
+      // Attempt to resolve to a local file URI if it matches a workspace repository
+      // This helps the GitHub extension identify the context and open the issue/PR within VS Code
+      if (
+        ((msg as any).tryExtension || urlString.includes("github.com")) &&
+        (vscode.workspace && vscode.workspace.workspaceFolders)
+      ) {
+        try {
+          // Helper to clean URL using Regex (reused logic)
+          const getSlugFromUrl = (url: string): string | null => {
+            try {
+              const regex = /(?:git@|https:\/\/|http:\/\/|ssh:\/\/|git:\/\/)(?:.*@)?github\.com[:\/]([^\/]+)\/([^\/.]+)(?:\.git)?/i;
+              const match = url.match(regex);
+              if (match && match.length >= 3) {
+                return `${match[1]}/${match[2]}`.toLowerCase();
+              }
+              return null;
+            } catch (e) {
+              return null;
+            }
+          };
+
+          const targetSlug = getSlugFromUrl(urlString);
+          if (targetSlug) {
+            const gitExtension =
+              vscode.extensions &&
+              vscode.extensions.getExtension<any>("vscode.git");
+            if (gitExtension) {
+              const git = gitExtension.isActive
+                ? gitExtension.exports.getAPI(1)
+                : await gitExtension.activate().then((ext) => ext.getAPI(1));
+
+              if (git && git.repositories) {
+                for (const local of git.repositories) {
+                  const remote =
+                    local.state.remotes?.find((r: any) => r.name === "origin") ||
+                    local.state.remotes?.[0];
+                  if (remote && remote.fetchUrl) {
+                    const localSlug = getSlugFromUrl(remote.fetchUrl);
+                    if (localSlug === targetSlug) {
+                      logger.info(
+                        `[handleOpenUrl] Matched URL to local repo: ${local.rootUri.fsPath}`,
+                      );
+                      // We found the local repo!
+                      // The GitHub extension often works better if we pass the *same* generic URL
+                      // BUT make sure we have focus or context.
+                      // Actually, vscode.open(uri) with a http URI is just generic.
+                      // To force the GitHub extension to take it, strictly speaking it should just work if the extension is active.
+                      // However, the user reports it failing.
+                      // Let's try to verify if there is a way to trigger via command.
+                      // Since we can't find a specific command, we will stick to vscode.open but ensue we activate the extension first.
+                      // But we ALREADY do that.
+                      // HYPOTHESIS: exact URL mismatch?
+                      // Try opening the issue/PR using the specific issue/pr command if we can parse it.
+
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (resolveErr) {
+          logger.warn(
+            `[handleOpenUrl] Failed to resolve local repo: ${resolveErr}`,
+          );
+        }
+      }
+
+      // If specific instruction to try extension (or just generally for GitHub URLs)
+      if ((msg as any).tryExtension || urlString.includes("github.com")) {
+        try {
+          const ghExtension =
+            vscode.extensions &&
+            vscode.extensions.getExtension("github.vscode-pull-request-github");
+          if (ghExtension) {
+            if (!ghExtension.isActive) {
+              await ghExtension.activate();
+              logger.info(`[handleOpenUrl] Activated GitHub extension.`);
+            }
+
+            // Wait a tick for activation to settle
+            await new Promise((r) => setTimeout(r, 500));
+          }
+
+          // Use the GitHub extension's URI handler to open issues/PRs
+          // Format: vscode://github.vscode-pull-request-github/open-issue-webview?{"owner":"...","repo":"...","issueNumber":123}
+          // Parse owner/repo/number from the GitHub URL
+          const ghUrlMatch = urlString.match(
+            /github\.com\/([^\/]+)\/([^\/]+)\/(issues|pull)\/(\d+)/,
+          );
+
+          if (ghUrlMatch) {
+            const [, owner, repo, type, numberStr] = ghUrlMatch;
+            const number = parseInt(numberStr, 10);
+
+            logger.info(
+              `[handleOpenUrl] Parsed GitHub URL: owner=${owner}, repo=${repo}, type=${type}, number=${number}`,
+            );
+
+            try {
+              let handlerUri: vscode.Uri;
+
+              if (type === "issues") {
+                // Construct issue URI
+                const query = JSON.stringify({ owner, repo, issueNumber: number });
+                handlerUri = vscode.Uri.from({
+                  scheme: vscode.env.uriScheme,
+                  authority: "github.vscode-pull-request-github",
+                  path: "/open-issue-webview",
+                  query,
+                });
+              } else {
+                // Construct PR URI
+                const query = JSON.stringify({ owner, repo, pullRequestNumber: number });
+                handlerUri = vscode.Uri.from({
+                  scheme: vscode.env.uriScheme,
+                  authority: "github.vscode-pull-request-github",
+                  path: "/open-pull-request-webview",
+                  query,
+                });
+              }
+
+              logger.info(
+                `[handleOpenUrl] Constructed vscode URI: ${handlerUri.toString()}`,
+              );
+
+              // Open using vscode.env.openExternal which triggers the extension's UriHandler
+              const opened = await vscode.env.openExternal(handlerUri);
+              if (opened) {
+                logger.info(`[handleOpenUrl] openExternal completed successfully.`);
+                return;
+              } else {
+                logger.warn(
+                  `[handleOpenUrl] openExternal returned false. Falling back to browser.`,
+                );
+              }
+            } catch (uriErr) {
+              logger.warn(
+                `[handleOpenUrl] URI handler failed: ${uriErr}. Falling back to browser.`,
+              );
+            }
+          }
+        } catch (e) {
+          logger.error(`[handleOpenUrl] Error activating extension: ${e}`);
+        }
+      }
+
+      // Fallback: open in browser
+      try {
+        logger.info(
+          `[handleOpenUrl] Opening in browser: ${uriToOpen.toString()}`,
+        );
+        await vscode.env.openExternal(uriToOpen);
+        logger.info(`[handleOpenUrl] Browser open completed.`);
+      } catch (browserError) {
+        logger.error(
+          `[handleOpenUrl] Failed to open in browser: ${browserError}`,
+        );
+      }
+    } catch (e) {
+      const sanitized = String((e as any)?.message || e || "");
+      logger.error("webview.openUrl failed: " + sanitized);
+      vscode.window.showErrorMessage("Failed to open URL: " + sanitized);
+    }
+  }
+
+  private async handleAddItemCreateIssue(msg: any) {
+    try {
+      // Map to store exact Uri objects to avoid fsPath roundtrip issues
+      const repoUriMap = new Map<string, vscode.Uri>();
+      // Map to store match type: 'strict' (safe for extension) or 'redirect' (needs fix)
+      const repoMatchType = new Map<string, 'strict' | 'redirect'>();
+      // Map to store the actual Git Repository object for fixing remotes
+      const repoGitMap = new Map<string, any>();
+
+      // Get repositories linked to this project
+      const repos = this.project.repos || [];
+
+      // Attempt to resolve local paths for repositories using VS Code Git Extension
+      try {
+        const gitExtension = vscode.extensions.getExtension<any>("vscode.git");
+        if (gitExtension) {
+          const git = gitExtension.isActive
+            ? gitExtension.exports.getAPI(1)
+            : await gitExtension.activate().then((ext) => ext.getAPI(1));
+
+          if (git && git.repositories) {
+            const localRepos = git.repositories;
+            const projectRepoSlugs = new Set(
+              repos
+                .map((r) =>
+                  r.owner && r.name
+                    ? `${r.owner}/${r.name}`.toLowerCase()
+                    : null,
+                )
+                .filter(Boolean),
+            );
+
+            // Helper to clean URL using Regex
+            const getSlugFromUrl = (url: string): string | null => {
+              try {
+                // Regex handles:
+                // - git@github.com:owner/repo.git
+                // - https://github.com/owner/repo.git
+                // - ssh://git@github.com/owner/repo
+                // - git://github.com/owner/repo
+                // Capture groups: 1=Owner, 2=Name
+                const regex = /(?:git@|https:\/\/|http:\/\/|ssh:\/\/|git:\/\/)(?:.*@)?github\.com[:\/]([^\/]+)\/([^\/.]+)(?:\.git)?/i;
+                const match = url.match(regex);
+                if (match && match.length >= 3) {
+                  return `${match[1]}/${match[2]}`.toLowerCase();
+                }
+                logger.debug(`[PathRes] Failed to parse slug from: ${url}`);
+                return null;
+              } catch (e) {
+                logger.debug(`[PathRes] Error parsing slug: ${e}`);
+                return null;
+              }
+            };
+
+            for (const local of localRepos) {
+              // Determine the "slug" for this local repo
+              let localSlug: string | null = null;
+              const remote =
+                local.state.remotes?.find((r: any) => r.name === "origin") ||
+                local.state.remotes?.[0];
+              if (!remote) continue;
+
+              const fetchUrl = remote.fetchUrl || "";
+              localSlug = getSlugFromUrl(fetchUrl);
+
+              logger.debug(`[PathRes] Checking local repo: ${local.rootUri.fsPath}`);
+              logger.debug(`[PathRes] Remote URL: ${fetchUrl} -> Slug: ${localSlug}`);
+
+              // Strategy 1: Direct String Match
+              if (localSlug && projectRepoSlugs.has(localSlug)) {
+                // Match found! Assign path to the corresponding project repo
+                const matchingProjectRepo = repos.find(
+                  (r) => `${r.owner}/${r.name}`.toLowerCase() === localSlug,
+                );
+                if (matchingProjectRepo) {
+                  matchingProjectRepo.path = local.rootUri.fsPath;
+                  const key = `${matchingProjectRepo.owner}/${matchingProjectRepo.name}`.toLowerCase();
+                  repoUriMap.set(key, local.rootUri);
+                  repoMatchType.set(key, 'strict');
+                  repoGitMap.set(key, local);
+                  logger.debug(
+                    `[PathRes] STRICT MATCH: ${matchingProjectRepo.owner}/${matchingProjectRepo.name} -> ${matchingProjectRepo.path}`,
+                  );
+                }
+                continue;
+              }
+
+              logger.debug(`[PathRes] No strict match for ${localSlug}. Checking API for redirects...`);
+
+              // Strategy 2: API Resolution (for renames/redirects)
+              // If localSlug is valid but didn't match, maybe it's an old name?
+              if (localSlug) {
+                const [owner, name] = localSlug.split("/");
+                if (owner && name) {
+                  try {
+                    const canonical =
+                      await GitHubRepository.getInstance().getRepoCanonicalName(
+                        owner,
+                        name,
+                      );
+                    logger.debug(
+                      `[PathRes] API Resolution: ${localSlug} canonical is ${canonical}`,
+                    );
+                    if (
+                      canonical &&
+                      projectRepoSlugs.has(canonical.toLowerCase())
+                    ) {
+                      const matchingProjectRepo = repos.find(
+                        (r) =>
+                          `${r.owner}/${r.name}`.toLowerCase() ===
+                          canonical.toLowerCase(),
+                      );
+                      if (matchingProjectRepo) {
+                        matchingProjectRepo.path = local.rootUri.fsPath;
+                        const key = `${matchingProjectRepo.owner}/${matchingProjectRepo.name}`.toLowerCase();
+                        repoUriMap.set(key, local.rootUri);
+                        repoMatchType.set(key, 'redirect');
+                        repoGitMap.set(key, local);
+                        logger.debug(
+                          `[PathRes] REDIRECT MATCH: ${matchingProjectRepo.owner}/${matchingProjectRepo.name} (from ${localSlug}) -> ${matchingProjectRepo.path}`,
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    logger.warn(
+                      `Failed to resolve canonical name for local repo ${localSlug}: ${e}`,
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (gitErr) {
+        logger.warn("Failed to resolve local git repositories: " + String(gitErr));
+      }
+
+      if (repos.length === 0) {
+        // Fallback to project URL if no repos available
+        const targetUrl = this.project?.url || "https://github.com/projects";
+        const uri = vscode.Uri.parse(targetUrl);
+        await vscode.env.openExternal(uri);
+        return;
+      }
+
+      let selectedRepoConfig: { owner?: string; name?: string; path?: string } | undefined;
+
+      if (repos.length === 1) {
+        selectedRepoConfig = repos[0];
+      } else {
+        // Show picker
+        const items = repos.map((r) => {
+          const label =
+            r.owner && r.name ? `${r.owner}/${r.name}` : r.path || "Unknown";
+
+          let desc = "Remote Repository (Browser only)";
+          if (r.path) {
+            const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(r.path));
+            const key = r.owner && r.name ? `${r.owner}/${r.name}`.toLowerCase() : "";
+            const type = repoMatchType.get(key);
+            const typeLabel = type === 'strict' ? "Strict" : type === 'redirect' ? "Redirect" : "Unknown";
+
+            desc = `$(folder) ${workspaceFolder ? workspaceFolder.name : r.path} [${typeLabel}]`;
+          }
+
+          return {
+            label: `$(repo) ${label}`,
+            description: desc,
+            repo: r,
+          };
+        });
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: "Select repository to create issue in",
+        });
+
+        if (!selected) return;
+        selectedRepoConfig = selected.repo;
+      }
+
+      if (!selectedRepoConfig) return;
+
+      // ALWAYS try the extension first if available
+      let extensionSucceeded = false;
+      const ghExtension = vscode.extensions.getExtension("github.vscode-pull-request-github");
+
+      if (ghExtension) {
+        try {
+          if (!ghExtension.isActive) {
+            await ghExtension.activate();
+          }
+
+          // Try to invoke issue.createIssue
+          // The command uses active editor context, so we try to help by providing a URI
+          const repoKey = selectedRepoConfig.owner && selectedRepoConfig.name
+            ? `${selectedRepoConfig.owner}/${selectedRepoConfig.name}`.toLowerCase()
+            : "";
+          const uri = repoUriMap.get(repoKey) ||
+            (selectedRepoConfig.path ? vscode.Uri.file(selectedRepoConfig.path) : undefined);
+
+          // Set up a listener to auto-fill the project field when NewIssue.md opens
+          const projectTitle = this.project?.title;
+          let disposable: vscode.Disposable | undefined;
+
+          if (projectTitle) {
+            disposable = vscode.window.onDidChangeActiveTextEditor(async (editor) => {
+              if (editor && editor.document.uri.scheme === 'newissue') {
+                // Found the NewIssue.md file, edit the Projects line
+                try {
+                  const document = editor.document;
+                  const text = document.getText();
+
+                  // Find the "Projects:" line and add the project title
+                  // The line format is: "Projects: " (may have trailing space)
+                  const projectsLineMatch = text.match(/^(Projects:\s*)$/m);
+                  if (projectsLineMatch) {
+                    const lineIndex = text.substring(0, text.indexOf(projectsLineMatch[0])).split('\n').length - 1;
+                    const line = document.lineAt(lineIndex);
+
+                    const edit = new vscode.WorkspaceEdit();
+                    edit.replace(
+                      document.uri,
+                      new vscode.Range(line.range.start, line.range.end),
+                      `Projects: ${projectTitle}`
+                    );
+                    await vscode.workspace.applyEdit(edit);
+                    logger.info(`[handleAddItemCreateIssue] Auto-filled project: ${projectTitle}`);
+                  }
+                } catch (editErr) {
+                  logger.warn(`[handleAddItemCreateIssue] Failed to auto-fill project: ${editErr}`);
+                } finally {
+                  // Clean up listener after first use
+                  if (disposable) {
+                    disposable.dispose();
+                  }
+                }
+              }
+            });
+
+            // Auto-cleanup after 10 seconds if file never opens
+            setTimeout(() => {
+              if (disposable) {
+                disposable.dispose();
+              }
+            }, 10000);
+          }
+
+          logger.info(`[handleAddItemCreateIssue] Attempting issue.createIssue via extension${uri ? ` with URI: ${uri.toString()}` : ''}`);
+          await vscode.commands.executeCommand("issue.createIssue", uri);
+          extensionSucceeded = true;
+          logger.info(`[handleAddItemCreateIssue] Extension command succeeded.`);
+          return;
+        } catch (cmdErr) {
+          logger.warn(`[handleAddItemCreateIssue] Extension command failed: ${cmdErr}. Falling back to browser.`);
+        }
+      } else {
+        logger.info(`[handleAddItemCreateIssue] GitHub extension not installed. Using browser.`);
+      }
+
+      // Fallback: Build GitHub "new issue" URL with PROJECT PRE-FILLED
+      if (!extensionSucceeded) {
+        let targetUrl: string;
+        if (selectedRepoConfig.owner && selectedRepoConfig.name) {
+          const baseUrl = `https://github.com/${selectedRepoConfig.owner}/${selectedRepoConfig.name}/issues/new`;
+
+          // Extract project owner and number from project URL
+          // Format: https://github.com/users/{owner}/projects/{number} 
+          // OR: https://github.com/orgs/{org}/projects/{number}
+          const projectUrl = this.project?.url || "";
+          const projectMatch = projectUrl.match(/github\.com\/(?:users|orgs)\/([^\/]+)\/projects\/(\d+)/);
+
+          if (projectMatch) {
+            const [, projectOwner, projectNumber] = projectMatch;
+            // Format: projects=owner/projectNumber
+            const params = new URLSearchParams();
+            params.set('projects', `${projectOwner}/${projectNumber}`);
+            targetUrl = `${baseUrl}?${params.toString()}`;
+            logger.info(`[handleAddItemCreateIssue] Opening browser with project pre-filled: ${targetUrl}`);
+          } else {
+            targetUrl = baseUrl;
+            logger.info(`[handleAddItemCreateIssue] Could not parse project URL, opening without pre-fill: ${projectUrl}`);
+          }
+        } else {
+          targetUrl = this.project?.url || "https://github.com/projects";
+        }
+
+        const uri = vscode.Uri.parse(targetUrl);
+        await vscode.env.openExternal(uri);
+      }
+
+
+    } catch (e) {
+      const sanitized = String((e as any)?.message || e || "");
+      logger.error("webview.addItem:createIssue failed: " + sanitized);
+    }
+  }
+
+  private getWorkspaceOrFsPath(uri: vscode.Uri): string {
+    const wsFolder = vscode.workspace.getWorkspaceFolder(uri);
+    return wsFolder ? wsFolder.uri.fsPath : uri.fsPath;
+  }
+
+  private async handleAddItemAddFromRepo(msg: any) {
+    try {
+      // Get repositories linked to this project
+      const repos = this.project.repos || [];
+
+      if (repos.length === 0) {
+        vscode.window.showWarningMessage(
+          "No repositories are linked to this project. Please add repositories to the project first.",
+        );
+        return;
+      }
+
+      // Step 1: Show repository picker
+      const repoItems = repos.map((repo) => {
+        const nameWithOwner =
+          repo.owner && repo.name
+            ? `${repo.owner}/${repo.name}`
+            : repo.path || "Unknown repo";
+        return {
+          label: `$(repo) ${nameWithOwner}`,
+          description: repo.path || "",
+          owner: repo.owner,
+          name: repo.name,
+        };
+      });
+
+      const selectedRepo = await vscode.window.showQuickPick(repoItems, {
+        placeHolder: "Select a repository",
+        matchOnDescription: true,
+      });
+
+      if (!selectedRepo) {
+        return; // User cancelled
+      }
+
+      // Validate owner and name
+      if (!selectedRepo.owner || !selectedRepo.name) {
+        vscode.window.showErrorMessage(
+          "Invalid repository format. Expected owner/repository format.",
+        );
+        return;
+      }
+      const owner = selectedRepo.owner;
+      const name = selectedRepo.name;
+
+      // Step 2: Fetch issues and PRs from the selected repository
+      const ghRepo = GitHubRepository.getInstance();
+
+      // Show progress indicator while fetching
+      const result = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Fetching issues and pull requests...",
+          cancellable: false,
+        },
+        async () => {
+          return await ghRepo.getOpenIssuesAndPullRequests(owner, name, 50);
+        },
+      );
+
+      const { issues: allIssues, pullRequests: allPRs } = result;
+
+      // Get existing items in the project to filter them out
+      const getFilteredItems = async () => {
+        try {
+          const projectData = await ProjectDataService.getProjectData(
+            this.project,
+            msg.viewKey,
+          );
+
+          // Extract content IDs from existing project items
+          const existingContentIds = new Set<string>(
+            projectData.snapshot.items
+              .filter((item) => item.content?.id)
+              .map((item) => String(item.content.id)),
+          );
+
+          // Filter out items that are already in the project
+          return {
+            issues: allIssues.filter(
+              (issue) => !existingContentIds.has(String(issue.id)),
+            ),
+            pullRequests: allPRs.filter(
+              (pr) => !existingContentIds.has(String(pr.id)),
+            ),
+          };
+        } catch (filterError) {
+          logger.debug(
+            `Failed to filter existing items for project ${this.project.id}: ${String(filterError)}`,
+          );
+          // Return unfiltered list if filtering fails
+          return { issues: allIssues, pullRequests: allPRs };
+        }
+      };
+
+      const { issues, pullRequests } = await getFilteredItems();
+
+      // Step 3: Create quick pick items for issues and PRs
+      const items: any[] = [];
+
+      // Add issues
+      if (issues.length > 0) {
+        items.push({
+          label: "Issues",
+          kind: vscode.QuickPickItemKind.Separator,
+        });
+
+        for (const issue of issues) {
+          items.push({
+            label: `$(issue-opened) #${issue.number}: ${issue.title}`,
+            description: issue.author?.login || "",
+            detail: issue.repository?.nameWithOwner,
+            contentId: issue.id,
+            type: "issue",
+          });
+        }
+      }
+
+      // Add pull requests
+      if (pullRequests.length > 0) {
+        items.push({
+          label: "Pull Requests",
+          kind: vscode.QuickPickItemKind.Separator,
+        });
+
+        for (const pr of pullRequests) {
+          items.push({
+            label: `$(git-pull-request) #${pr.number}: ${pr.title}`,
+            description: pr.author?.login || "",
+            detail: pr.repository?.nameWithOwner,
+            contentId: pr.id,
+            type: "pr",
+          });
+        }
+      }
+
+      if (items.length === 0) {
+        vscode.window.showInformationMessage(
+          "No open issues or pull requests found that aren't already in the project.",
+        );
+        return;
+      }
+
+      // Step 4: Show picker for issues/PRs
+      const selectedItem = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select an issue or pull request to add",
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+
+      if (!selectedItem || !selectedItem.contentId) {
+        return; // User cancelled or separator selected
+      }
+
+      // Step 5: Add the selected item to the project
+      if (!this.project.id) {
+        vscode.window.showErrorMessage("Project ID is missing");
+        return;
+      }
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Adding item to project...",
+          cancellable: false,
+        },
+        async () => {
+          const addResult = await ghRepo.addItemToProject(
+            this.project.id,
+            selectedItem.contentId,
+          );
+
+          if (addResult.success) {
+            vscode.window.showInformationMessage(
+              `Successfully added ${selectedItem.type === "issue" ? "issue" : "PR"} to project`,
+            );
+
+            // Refresh the webview to show the new item
+            try {
+              const data = await ProjectDataService.getProjectData(
+                this.project,
+                msg.viewKey,
+                true,
+              );
+
+              this.panel.webview.postMessage({
+                command: "fields",
+                viewKey: msg.viewKey,
+                payload: data.snapshot,
+                effectiveFilter: data.effectiveFilter,
+              });
+            } catch (refreshError) {
+              logger.debug(
+                "Failed to refresh after adding item: " + String(refreshError),
+              );
+            }
+          } else {
+            vscode.window.showErrorMessage(
+              `Failed to add item to project: ${addResult.error || "Unknown error"}`,
+            );
+          }
+        },
+      );
+    } catch (e) {
+      const sanitized = String((e as any)?.message || e || "");
+      logger.error("webview.addItem:addFromRepo failed: " + sanitized);
+      vscode.window.showErrorMessage(`Failed to add item: ${sanitized}`);
     }
   }
 
@@ -130,6 +831,11 @@ export class MessageHandler {
     try {
       const { snapshot, effectiveFilter, itemsCount } =
         await ProjectDataService.getProjectData(this.project, reqViewKey);
+
+      // Update local project repos if fresh data available
+      if (snapshot.project.repos) {
+        this.project.repos = snapshot.project.repos;
+      }
 
       this.panel.webview.postMessage({
         command: "fields",
@@ -199,7 +905,7 @@ export class MessageHandler {
         await this.context.workspaceState.update(
           storageKey,
           (view && (view as any).details && (view as any).details.filter) ||
-            undefined,
+          undefined,
         );
       } catch (e) {
         logger.debug("workspaceState.update failed: " + String(e));
@@ -296,7 +1002,7 @@ export class MessageHandler {
             (view as any).details.groupByFields.nodes &&
             (view as any).details.groupByFields.nodes[0] &&
             (view as any).details.groupByFields.nodes[0].name) ||
-            undefined,
+          undefined,
         );
       } catch (e) {
         logger.debug("workspaceState.update (grouping) failed: " + String(e));
@@ -512,6 +1218,6 @@ export class MessageHandler {
         },
       };
       this.panel.webview.postMessage(resend);
-    } catch (e) {}
+    } catch (e) { }
   }
 }

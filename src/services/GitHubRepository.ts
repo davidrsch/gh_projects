@@ -9,6 +9,8 @@ import {
   NormalizedValue,
   ParsedRepoEntry,
   ProjectV2FieldType,
+  IssueSummary,
+  PRSummary,
 } from "../lib/types";
 import { normalizeFieldConfig } from "../lib/parsers/fieldConfigParser";
 import { parseFieldValue } from "../lib/parsers/valueParsers";
@@ -162,10 +164,10 @@ export class GitHubRepository {
     const LIMITS = makeLimits(first);
 
     // 1. Fetch Project Metadata
-    const metaQuery = `query{ node(id:${JSON.stringify(projectId)}){ __typename ... on ProjectV2 { id title } } }`;
-    let project: ProjectMetaNode | undefined;
+    const metaQuery = `query{ node(id:${JSON.stringify(projectId)}){ __typename ... on ProjectV2 { id title repositories(first: 20) { nodes { nameWithOwner url } } } } }`;
+    let project: any | undefined;
     try {
-      const metaRes = await this.query<{ node?: ProjectMetaNode }>(metaQuery);
+      const metaRes = await this.query<{ node?: any }>(metaQuery);
       project = metaRes?.node;
     } catch (e: any) {
       logger.error("fetchMeta error: " + e.message);
@@ -173,6 +175,15 @@ export class GitHubRepository {
     }
 
     if (!project) throw createCodeError("No project found", "ENOPROJECT");
+
+    // Parses repositories to format expected by ProjectEntry
+    const projectRepos = (project.repositories?.nodes || []).map(
+      (r: any) => ({
+        owner: r.nameWithOwner.split("/")[0],
+        name: r.nameWithOwner.split("/")[1],
+        url: r.url
+      })
+    );
 
     // 2. Fetch Fields
     const fieldsQuery = buildFieldsQuery(project.id, LIMITS);
@@ -388,7 +399,7 @@ export class GitHubRepository {
     }
 
     return {
-      project: { id: project.id, title: project.title },
+      project: { id: project.id, title: project.title, repos: projectRepos },
       fields,
       items,
     };
@@ -490,6 +501,148 @@ export class GitHubRepository {
       logger.debug("fetchRepoOptions error: " + e);
     }
     return repoOptionsMap;
+  }
+
+  /**
+   * Returns a list of open issues and pull requests for a repository.
+   * Used by the Add Item from Repository flow to present candidate
+   * items that are not yet part of the current project.
+   */
+  public async getOpenIssuesAndPullRequests(
+    owner: string,
+    name: string,
+    first: number = 50,
+  ): Promise<{ issues: IssueSummary[]; pullRequests: PRSummary[] }> {
+    const gql = `
+      query($owner: String!, $name: String!, $first: Int!) {
+        repository(owner: $owner, name: $name) {
+          issues(first: $first, states: OPEN, orderBy: { field: UPDATED_AT, direction: DESC }) {
+            nodes {
+              id
+              number
+              title
+              url
+              state
+              repository { nameWithOwner url }
+              author { login avatarUrl url }
+              labels(first: 10) { nodes { id name color } }
+            }
+          }
+          pullRequests(first: $first, states: OPEN, orderBy: { field: UPDATED_AT, direction: DESC }) {
+            nodes {
+              id
+              number
+              title
+              url
+              state
+              merged
+              mergedAt
+              repository { nameWithOwner url }
+              author { login avatarUrl url }
+              labels(first: 10) { nodes { id name color } }
+            }
+          }
+        }
+      }
+    `;
+
+    try {
+      const res = await this.query<any>(gql, { owner, name, first });
+      const repo = res?.repository;
+      const issuesNodes = (repo?.issues?.nodes || []) as any[];
+      const prNodes = (repo?.pullRequests?.nodes || []) as any[];
+
+      const issues: IssueSummary[] = issuesNodes.map((n) => ({
+        id: n.id,
+        number: n.number,
+        title: n.title,
+        url: n.url,
+        state: n.state,
+        repository: n.repository
+          ? {
+            id: undefined,
+            nameWithOwner: n.repository.nameWithOwner,
+            url: n.repository.url,
+          }
+          : undefined,
+        author: n.author
+          ? {
+            id: undefined,
+            login: n.author.login,
+            avatarUrl: n.author.avatarUrl,
+            url: n.author.url,
+            name: undefined,
+          }
+          : undefined,
+        labels: Array.isArray(n.labels?.nodes)
+          ? n.labels.nodes.map((l: any) => ({
+            id: l.id,
+            name: l.name,
+            color: l.color,
+          }))
+          : undefined,
+      }));
+
+      const pullRequests: PRSummary[] = prNodes.map((n) => ({
+        id: n.id,
+        number: n.number,
+        title: n.title,
+        url: n.url,
+        state: n.state,
+        merged: n.merged,
+        mergedAt: n.mergedAt,
+        repository: n.repository
+          ? {
+            id: undefined,
+            nameWithOwner: n.repository.nameWithOwner,
+            url: n.repository.url,
+          }
+          : undefined,
+        author: n.author
+          ? {
+            id: undefined,
+            login: n.author.login,
+            avatarUrl: n.author.avatarUrl,
+            url: n.author.url,
+            name: undefined,
+          }
+          : undefined,
+        labels: Array.isArray(n.labels?.nodes)
+          ? n.labels.nodes.map((l: any) => ({
+            id: l.id,
+            name: l.name,
+            color: l.color,
+          }))
+          : undefined,
+      }));
+
+      return { issues, pullRequests };
+    } catch (e: any) {
+      logger.error(
+        `getOpenIssuesAndPullRequests failed for ${owner}/${name}: ${e.message || e}`,
+      );
+      return { issues: [], pullRequests: [] };
+    }
+  }
+
+  /**
+   * Fetches the canonical repository name (owner/name) to handle redirects/renames.
+   */
+  public async getRepoCanonicalName(owner: string, name: string): Promise<string | null> {
+    const gql = `
+      query($owner: String!, $name: String!) {
+        repository(owner: $owner, name: $name) {
+          nameWithOwner
+        }
+      }
+    `;
+    try {
+      const res = await this.query<any>(gql, { owner, name });
+      return res?.repository?.nameWithOwner || null;
+    } catch (e) {
+      // It's common to fail if the repo doesn't exist or no access
+      return null;
+    }
   }
 
   /**
@@ -851,6 +1004,65 @@ export class GitHubRepository {
       return {
         success: false,
         error: error.message || "Failed to update milestone",
+      };
+    }
+  }
+
+  /**
+   * Adds an issue or pull request to a project.
+   * @param projectId - The global ID of the project
+   * @param contentId - The global ID of the issue or pull request to add
+   * @returns Result object with success status and optional error message
+   */
+  public async addItemToProject(
+    projectId: string,
+    contentId: string,
+  ): Promise<{ success: boolean; error?: string; itemId?: string }> {
+    try {
+      const mutation = `
+        mutation($input: AddProjectV2ItemByIdInput!) {
+          addProjectV2ItemById(input: $input) {
+            item {
+              id
+            }
+          }
+        }
+      `;
+
+      const result = await this.query<any>(mutation, {
+        input: {
+          projectId,
+          contentId,
+        },
+      });
+
+      const itemId = result?.addProjectV2ItemById?.item?.id;
+      if (!itemId) {
+        const technicalError =
+          "Failed to add item to project - no item ID returned from GraphQL mutation";
+        logger.error(technicalError);
+        throw new Error("Failed to add item to project");
+      }
+
+      logger.info(
+        `Successfully added item ${contentId} to project ${projectId}`,
+      );
+      return { success: true, itemId };
+    } catch (error: any) {
+      const technicalError = error.message || String(error);
+      logger.error(`Failed to add item to project: ${technicalError}`);
+      // Return a user-friendly error message
+      const userMessage =
+        technicalError.includes("not found") ||
+          technicalError.includes("does not exist")
+          ? "Item or project not found"
+          : technicalError.includes("permission") ||
+            technicalError.includes("unauthorized")
+            ? "Permission denied"
+            : "Failed to add item to project";
+      return {
+        success: false,
+        error: userMessage,
       };
     }
   }

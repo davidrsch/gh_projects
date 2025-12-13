@@ -153,7 +153,7 @@ export class TitleRenderer implements CellRendererStrategy {
           isClosed = true;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // Choose base icon based on type/state
     let iconName = "issue-opened";
@@ -176,27 +176,61 @@ export class TitleRenderer implements CellRendererStrategy {
 
     const blockedIcon = isBlocked
       ? getIconSvg("blocked" as any, {
-          size: 9,
-          className: "field-icon blocked-icon",
-          fill: "#dc3545",
-        })
+        size: 9,
+        className: "field-icon blocked-icon",
+        fill: "#dc3545",
+      })
       : "";
 
     // Create tooltip with full title and number
     const tooltipText = f ? `${t} #${o}` : t;
 
+    const safeUrl = escapeHtml(String(l || ""));
+    const safeTooltip = escapeHtml(tooltipText);
+
+    // When we have a URL, render as an actual anchor so that the tests can
+    // assert on href/target attributes. We keep data-gh-open for in-webview
+    // click handling while also supporting native browser semantics.
+    if (safeUrl) {
+      return (
+        '<a href="' +
+        safeUrl +
+        '" data-gh-open="' +
+        safeUrl +
+        '" title="' +
+        safeTooltip +
+        '" target="_blank" rel="noopener noreferrer" style="cursor:pointer;color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
+        "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>" +
+        baseIcon +
+        (blockedIcon
+          ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
+          blockedIcon +
+          "</span>"
+          : "") +
+        "</span>" +
+        '<span style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block">' +
+        g +
+        "</span>" +
+        (f
+          ? '<span style="flex:none;margin-left:6px;color:var(--vscode-descriptionForeground);white-space:nowrap">#' +
+          f +
+          "</span>"
+          : "") +
+        "</a>"
+      );
+    }
+
+    // Fallback when there is no URL: keep the non-link wrapper with tooltip.
     return (
-      '<a href="' +
-      escapeHtml(String(l || "")) +
-      '" target="_blank" rel="noopener noreferrer" title="' +
-      escapeHtml(tooltipText) +
-      '" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
+      '<span title="' +
+      safeTooltip +
+      '" style="color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
       "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>" +
       baseIcon +
       (blockedIcon
         ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
-          blockedIcon +
-          "</span>"
+        blockedIcon +
+        "</span>"
         : "") +
       "</span>" +
       '<span style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block">' +
@@ -204,10 +238,10 @@ export class TitleRenderer implements CellRendererStrategy {
       "</span>" +
       (f
         ? '<span style="flex:none;margin-left:6px;color:var(--vscode-descriptionForeground);white-space:nowrap">#' +
-          f +
-          "</span>"
+        f +
+        "</span>"
         : "") +
-      "</a>"
+      "</span>"
     );
   }
 }
@@ -466,10 +500,10 @@ export class PullRequestRenderer implements CellRendererStrategy {
 
       const blockedIcon = hasBlockedLabel
         ? getIconSvg("blocked" as any, {
-            size: 8,
-            className: "field-icon blocked-icon",
-            fill: "#dc3545",
-          })
+          size: 8,
+          className: "field-icon blocked-icon",
+          fill: "#dc3545",
+        })
         : "";
 
       // Create tooltip with number and title
@@ -480,10 +514,10 @@ export class PullRequestRenderer implements CellRendererStrategy {
       out +=
         "<a href='" +
         url +
-        "' target='_blank' rel='noopener noreferrer' style='text-decoration:none;color:inherit'>" +
-        "<span title='" +
+        "' title='" +
         tooltip +
-        "' style='display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid " +
+        "' target='_blank' rel='noopener noreferrer' style='cursor:pointer;text-decoration:none;color:inherit'>" +
+        "<span style='display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid " +
         escapeHtml(border) +
         ";background:" +
         escapeHtml(bg) +
@@ -494,8 +528,8 @@ export class PullRequestRenderer implements CellRendererStrategy {
         baseIcon +
         (blockedIcon
           ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
-            blockedIcon +
-            "</span>"
+          blockedIcon +
+          "</span>"
           : "") +
         "</span>" +
         "<span style='flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>#" +
@@ -532,60 +566,91 @@ export class IssueRenderer implements CellRendererStrategy {
 
 export class AssigneesRenderer implements CellRendererStrategy {
   render(value: any): string {
-    let t = value.assignees || [];
-    if (t.length === 0) return "<div></div>";
-    let l = t
-        .slice(0, 3)
-        .map((g: any, f: any) => {
-          let h = escapeHtml(g.avatarUrl || g.avatar || ""),
-            w = f === 0 ? "0px" : f === 1 ? "-8px" : "-14px",
-            x = Math.max(1, 3 - f);
-          if (h)
-            return (
-              "<span title='" +
-              escapeHtml(g.login || g.name || "") +
-              "' style='display:inline-block;width:20px;height:20px;border-radius:50%;overflow:hidden;background-size:cover;background-position:center;background-image:url(" +
-              h +
-              ");border:2px solid var(--vscode-editor-background);margin-left:" +
-              w +
-              ";vertical-align:middle;position:relative;z-index:" +
-              x +
-              "'></span>"
-            );
-          let k = escapeHtml(
-            (g.name || g.login || "")
-              .split(" ")
-              .map((L: any) => L[0] || "")
-              .join("")
-              .toUpperCase()
-              .slice(0, 2),
-          );
+    const assignees = value.assignees || [];
+    if (!assignees || assignees.length === 0) return "<div></div>";
+
+    // Helper to build a GitHub profile URL for an assignee
+    const getProfileUrl = (g: any): string => {
+      const login = g && (g.login || g.name || "");
+      const direct = (g && (g.url || g.html_url)) || "";
+      if (direct) return String(direct);
+      if (login) return `https://github.com/${login}`;
+      return "";
+    };
+
+    const avatarHtml = assignees
+      .slice(0, 3)
+      .map((g: any, index: number) => {
+        const avatarUrl = escapeHtml(g.avatarUrl || g.avatar || "");
+        const offset = index === 0 ? "0px" : index === 1 ? "-8px" : "-14px";
+        const zIndex = Math.max(1, 3 - index);
+        const login = g.login || g.name || "";
+        const initials = escapeHtml(
+          (g.name || g.login || "")
+            .split(" ")
+            .map((part: any) => part[0] || "")
+            .join("")
+            .toUpperCase()
+            .slice(0, 2),
+        );
+        const profileUrl = escapeHtml(getProfileUrl(g));
+
+        const commonStyle =
+          "display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:2px solid var(--vscode-editor-background);margin-left:" +
+          offset +
+          ";vertical-align:middle;position:relative;z-index:" +
+          zIndex +
+          ";";
+
+        if (avatarUrl) {
           return (
             "<span title='" +
-            escapeHtml(g.login || g.name || "") +
-            "' style='display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#777;color:#fff;font-size:11px;border:2px solid var(--vscode-editor-background);margin-left:" +
-            w +
-            ";vertical-align:middle;position:relative;z-index:" +
-            x +
-            "'>" +
-            k +
-            "</span>"
+            escapeHtml(login || "") +
+            "' data-gh-open='" +
+            profileUrl +
+            "' style='" +
+            commonStyle +
+            "overflow:hidden;background-size:cover;background-position:center;background-image:url(" +
+            avatarUrl +
+            ");'></span>"
           );
-        })
-        .join(""),
-      r = t.map((g: any) => g.login || g.name || ""),
-      a = "";
-    if (r.length === 1) a = r[0];
-    else if (r.length === 2) a = r[0] + " and " + r[1];
-    else a = r.slice(0, -1).join(", ") + " and " + r.slice(-1)[0];
+        }
+
+        return (
+          "<span title='" +
+          escapeHtml(login || "") +
+          "' data-gh-open='" +
+          profileUrl +
+          "' style='" +
+          commonStyle +
+          "background:#777;color:#fff;font-size:11px;'>" +
+          initials +
+          "</span>"
+        );
+      })
+      .join("");
+
+    const names = assignees.map((g: any) => g.login || g.name || "");
+    let summary = "";
+    if (names.length === 1) summary = names[0];
+    else if (names.length === 2) summary = names[0] + " and " + names[1];
+    else summary = names.slice(0, -1).join(", ") + " and " + names.slice(-1)[0];
+
+    // Use the first assignee as a primary profile target when clicking the
+    // text summary area. Individual avatars already have their own targets.
+    const primaryProfileUrl = escapeHtml(getProfileUrl(assignees[0]));
 
     return (
-      "<div style='display:flex;align-items:center;gap:8px'><span style='display:flex;align-items:center'>" +
-      ("<span style='display:inline-block;vertical-align:middle;height:20px;line-height:20px;margin-right:8px;'>" +
-        l +
-        "</span>") +
-      "</span><span style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>" +
-      escapeHtml(a) +
+      "<div style='display:flex;align-items:center;gap:8px'>" +
+      "<span style='display:flex;align-items:center'>" +
+      "<span style='display:inline-block;vertical-align:middle;height:20px;line-height:20px;margin-right:8px;'>" +
+      avatarHtml +
+      "</span>" +
+      "</span>" +
+      "<span data-gh-open='" +
+      primaryProfileUrl +
+      "' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer'>" +
+      escapeHtml(summary) +
       "</span></div>"
     );
   }
@@ -593,15 +658,32 @@ export class AssigneesRenderer implements CellRendererStrategy {
 
 export class RequestedReviewersRenderer implements CellRendererStrategy {
   render(value: any): string {
-    return (
-      "<div>" +
-      escapeHtml(
-        (value.reviewers || [])
-          .map((t: any) => t.login || t.name || t.kind || "")
-          .join(", "),
-      ) +
-      "</div>"
-    );
+    const reviewers = value.reviewers || [];
+    if (!reviewers || reviewers.length === 0) return "<div></div>";
+
+    const parts = reviewers.map((r: any) => {
+      const login = r.login || r.name || r.kind || "";
+      const display = escapeHtml(login);
+      const direct = (r && (r.url || r.html_url)) || "";
+      const url = direct || (login ? `https://github.com/${login}` : "");
+      const safeUrl = escapeHtml(url);
+
+      if (!url) {
+        return display;
+      }
+
+      return (
+        "<a href='" +
+        safeUrl +
+        "' target='_blank' rel='noopener noreferrer' data-gh-open='" +
+        safeUrl +
+        "' style='text-decoration:none;color:inherit'>" +
+        display +
+        "</a>"
+      );
+    });
+
+    return "<div>" + parts.join(", ") + "</div>";
   }
 }
 
@@ -665,17 +747,17 @@ export class ParentIssueRenderer implements CellRendererStrategy {
     let parentIsDoneByStatus = false;
 
     let t =
-        (value &&
-          (value.parent ||
-            value.parentIssue ||
-            value.issue ||
-            value.option ||
-            value.item ||
-            value.value)) ||
-        (value &&
-          value.raw &&
-          (value.raw.parent || value.raw.itemContent || value.raw.item)) ||
-        null,
+      (value &&
+        (value.parent ||
+          value.parentIssue ||
+          value.issue ||
+          value.option ||
+          value.item ||
+          value.value)) ||
+      (value &&
+        value.raw &&
+        (value.raw.parent || value.raw.itemContent || value.raw.item)) ||
+      null,
       o =
         (t &&
           (t.number || t.id || (t.raw && t.raw.number)) &&
@@ -699,22 +781,22 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       var itemsList = Array.isArray(allItems) ? allItems : allItems || [];
       if (Array.isArray(itemsList) && itemsList.length > 0 && (o || t)) {
         let B =
-            (t &&
-              t.repository &&
-              (t.repository.nameWithOwner || t.repository.name)) ||
-            (t &&
-              t.content &&
-              t.content.repository &&
-              t.content.repository.nameWithOwner) ||
-            null,
+          (t &&
+            t.repository &&
+            (t.repository.nameWithOwner || t.repository.name)) ||
+          (t &&
+            t.content &&
+            t.content.repository &&
+            t.content.repository.nameWithOwner) ||
+          null,
           O: string[] = [];
         (o && O.push(String(o)),
           t &&
-            (t.id || (t.raw && t.raw.id)) &&
-            O.push(String(t.id || (t.raw && t.raw.id))),
+          (t.id || (t.raw && t.raw.id)) &&
+          O.push(String(t.id || (t.raw && t.raw.id))),
           t &&
-            (t.url || (t.raw && t.raw.url)) &&
-            O.push(String(t.url || (t.raw && t.raw.url))),
+          (t.url || (t.raw && t.raw.url)) &&
+          O.push(String(t.url || (t.raw && t.raw.url))),
           t && (t.title || t.name) && O.push(String(t.title || t.name)));
         let $ = itemsList.find((A) => {
           let d = (A && (A.content || (A.raw && A.raw.itemContent))) || null;
@@ -722,14 +804,14 @@ export class ParentIssueRenderer implements CellRendererStrategy {
           let M = [];
           if (
             (d.number && M.push(String(d.number)),
-            d.id && M.push(String(d.id)),
-            d.url && M.push(String(d.url)),
-            d.title && M.push(String(d.title)),
-            d.name && M.push(String(d.name)),
-            d.raw && d.raw.number && M.push(String(d.raw.number)),
-            d.raw && d.raw.id && M.push(String(d.raw.id)),
-            d.raw && d.raw.url && M.push(String(d.raw.url)),
-            B)
+              d.id && M.push(String(d.id)),
+              d.url && M.push(String(d.url)),
+              d.title && M.push(String(d.title)),
+              d.name && M.push(String(d.name)),
+              d.raw && d.raw.number && M.push(String(d.raw.number)),
+              d.raw && d.raw.id && M.push(String(d.raw.id)),
+              d.raw && d.raw.url && M.push(String(d.raw.url)),
+              B)
           ) {
             let V =
               (d.repository &&
@@ -773,7 +855,7 @@ export class ParentIssueRenderer implements CellRendererStrategy {
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { }
     f ||
       (f =
         (t &&
@@ -826,7 +908,7 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       if (hasDoneLabel || parentIsDoneByStatus) {
         isClosed = true;
       }
-    } catch (e) {}
+    } catch (e) { }
 
     let parentIconName = "issue-opened";
     if (isClosed) parentIconName = "issue-closed";
@@ -840,10 +922,10 @@ export class ParentIssueRenderer implements CellRendererStrategy {
 
     const blockedIcon = isBlocked
       ? getIconSvg("blocked" as any, {
-          size: 9,
-          className: "field-icon blocked-icon",
-          fill: "#dc3545",
-        })
+        size: 9,
+        className: "field-icon blocked-icon",
+        fill: "#dc3545",
+      })
       : "";
 
     let q =
@@ -859,8 +941,8 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       parentIcon +
       (blockedIcon
         ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
-          blockedIcon +
-          "</span>"
+        blockedIcon +
+        "</span>"
         : "") +
       "</span>" +
       "<span class='parent-issue-title' style='flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block'>" +
@@ -868,8 +950,8 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       "</span>" +
       (p
         ? "<span style='margin-left:6px;color:var(--vscode-descriptionForeground);white-space:nowrap'>#" +
-          p +
-          "</span>"
+        p +
+        "</span>"
         : "") +
       "</div></span>";
     const parentWrapper =

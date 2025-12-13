@@ -25,6 +25,6 @@
   "exclude": [
     "node_modules",
     ".vscode-test",
-    "tests/integration"
+    "tests/integration/tmp"
   ]
 }

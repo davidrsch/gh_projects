@@ -6,10 +6,21 @@ import { AssigneesPicker } from "../../../../src/webviews/client/components/Assi
 import { ReviewersPicker } from "../../../../src/webviews/client/components/ReviewersPicker";
 import { MilestonePicker } from "../../../../src/webviews/client/components/MilestonePicker";
 
-// Mock window.getIconSvg
-(global as any).window = {
-  getIconSvg: jest.fn().mockReturnValue("<svg></svg>"),
+// Mock window.getIconSvg and webview messaging bridge
+const messagingMock = {
+  postMessage: jest.fn(),
 };
+
+const globalAny: any = global;
+const windowAny: any = globalAny.window || {};
+
+windowAny.getIconSvg = jest.fn().mockReturnValue("<svg></svg>");
+// New preferred bridge
+windowAny.APP_MESSAGING = messagingMock;
+// Backwards-compatible alias used in other parts of the codebase/tests
+windowAny.__APP_MESSAGING__ = messagingMock;
+
+globalAny.window = windowAny;
 
 describe("LabelsPicker", () => {
   let container: HTMLElement;
@@ -245,6 +256,74 @@ describe("AssigneesPicker", () => {
     // Check that onUpdate was called with the selected assignee
     expect(onUpdate).toHaveBeenCalledWith(["user1"]);
   });
+
+  test("includes current assignees even when not in field options", () => {
+    const field = {
+      id: "assignees",
+      name: "Assignees",
+      type: "assignees",
+      options: [{ login: "user1", name: "User One" }],
+    };
+
+    const item = { id: "item1", fieldValues: [] };
+    const currentAssignees: any[] = [{ login: "user2", name: "User Two" }];
+
+    const picker = new AssigneesPicker({
+      anchorElement,
+      field,
+      item,
+      currentAssignees,
+      onClose: jest.fn(),
+      onUpdate: jest.fn(),
+      onError: jest.fn(),
+    });
+
+    picker.show();
+
+    const assigneeItems = Array.from(
+      document.querySelectorAll(".assignee-item"),
+    ).map((el) => el.textContent || "");
+
+    expect(assigneeItems.join(" ")).toContain("user1");
+    expect(assigneeItems.join(" ")).toContain("user2");
+  });
+
+  test("assignee picker provides open-in-browser action", () => {
+    const field = {
+      id: "assignees",
+      name: "Assignees",
+      type: "assignees",
+      options: [{ login: "user1", name: "User One" }],
+    };
+
+    const item = { id: "item1", fieldValues: [] };
+    const currentAssignees: any[] = [];
+
+    const picker = new AssigneesPicker({
+      anchorElement,
+      field,
+      item,
+      currentAssignees,
+      onClose: jest.fn(),
+      onUpdate: jest.fn(),
+      onError: jest.fn(),
+    });
+
+    picker.show();
+
+    const openBtn = document.querySelector(
+      ".assignee-open-button",
+    ) as HTMLButtonElement | null;
+    expect(openBtn).toBeTruthy();
+
+    const messaging = (window as any).APP_MESSAGING;
+
+    openBtn?.click();
+
+    expect(messaging.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ command: "openUrl" }),
+    );
+  });
 });
 
 describe("MilestonePicker", () => {
@@ -367,5 +446,93 @@ describe("MilestonePicker", () => {
 
     // Check that onUpdate was called with null
     expect(onUpdate).toHaveBeenCalledWith(null);
+  });
+});
+
+describe("ReviewersPicker", () => {
+  let anchorElement: HTMLElement;
+
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    anchorElement = document.createElement("div");
+    document.body.appendChild(anchorElement);
+
+    // Ensure messaging mock is reset before each reviewers test
+    messagingMock.postMessage.mockClear();
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  test("includes current reviewers even when not in field options", () => {
+    const field = {
+      id: "reviewers",
+      name: "Reviewers",
+      type: "reviewers",
+      options: [{ login: "rev1", name: "Reviewer One" }],
+    };
+
+    const item = { id: "item1", fieldValues: [] };
+    const currentReviewers: any[] = [{ login: "rev2", name: "Reviewer Two" }];
+
+    const picker = new ReviewersPicker({
+      anchorElement,
+      field,
+      item,
+      currentReviewers,
+      onClose: jest.fn(),
+      onUpdate: jest.fn(),
+      onError: jest.fn(),
+    });
+
+    picker.show();
+
+    const reviewerItems = Array.from(
+      document.querySelectorAll(".reviewer-item"),
+    ).map((el) => el.textContent || "");
+
+    expect(reviewerItems.join(" ")).toContain("rev1");
+    expect(reviewerItems.join(" ")).toContain("rev2");
+  });
+
+  test("reviewer picker provides open-in-browser action", () => {
+    const field = {
+      id: "reviewers",
+      name: "Reviewers",
+      type: "reviewers",
+      options: [{ login: "rev1", name: "Reviewer One" }],
+    };
+
+    const item = { id: "item1", fieldValues: [] };
+    const currentReviewers: any[] = [];
+
+    const picker = new ReviewersPicker({
+      anchorElement,
+      field,
+      item,
+      currentReviewers,
+      onClose: jest.fn(),
+      onUpdate: jest.fn(),
+      onError: jest.fn(),
+    });
+
+    picker.show();
+
+    const openBtn = document.querySelector(
+      ".reviewer-open-button",
+    ) as HTMLButtonElement | null;
+    expect(openBtn).toBeTruthy();
+
+    const messaging = (window as any).APP_MESSAGING;
+
+    // Clear any previous calls before asserting
+    (messaging.postMessage as jest.Mock).mockClear();
+
+    openBtn?.click();
+
+    expect(messaging.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ command: "openUrl" }),
+    );
   });
 });
