@@ -230,34 +230,38 @@ export class MessageHandler {
         },
       );
 
-      let { issues, pullRequests } = result;
+      const { issues: allIssues, pullRequests: allPRs } = result;
 
       // Get existing items in the project to filter them out
+      let issues = allIssues;
+      let pullRequests = allPRs;
+
       try {
         const projectData = await ProjectDataService.getProjectData(
           this.project,
           msg.viewKey,
         );
-        const existingContentIds = new Set<string>();
 
         // Extract content IDs from existing project items
-        for (const item of projectData.snapshot.items) {
-          if (item.content && item.content.id) {
-            existingContentIds.add(String(item.content.id));
-          }
-        }
+        const existingContentIds = new Set<string>(
+          projectData.snapshot.items
+            .filter((item) => item.content?.id)
+            .map((item) => String(item.content.id)),
+        );
 
         // Filter out items that are already in the project
         if (existingContentIds.size > 0) {
-          issues = issues.filter(
+          issues = allIssues.filter(
             (issue) => !existingContentIds.has(String(issue.id)),
           );
-          pullRequests = pullRequests.filter(
+          pullRequests = allPRs.filter(
             (pr) => !existingContentIds.has(String(pr.id)),
           );
         }
       } catch (filterError) {
-        logger.debug("Failed to filter existing items: " + String(filterError));
+        logger.debug(
+          `Failed to filter existing items for project ${this.project.id}: ${String(filterError)}`,
+        );
         // Continue with unfiltered list if filtering fails
       }
 
