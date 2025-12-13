@@ -82,24 +82,7 @@ export class MessageHandler {
         }
         break;
       case "openUrl":
-        if (typeof (msg as any).url === "string") {
-          try {
-            const u = vscode.Uri.parse(String((msg as any).url));
-            try {
-              // Prefer the generic vscode.open command so that other
-              // extensions (like the official GitHub Pull Requests
-              // extension) can participate in handling GitHub links.
-              await vscode.commands.executeCommand("vscode.open", u);
-            } catch (primaryError) {
-              // Fallback to the default external browser behavior.
-              await vscode.env.openExternal(u);
-            }
-          } catch (e) {
-            const sanitized = String((e as any)?.message || e || "");
-            logger.error("webview.openUrl failed: " + sanitized);
-            vscode.window.showErrorMessage("Failed to open URL: " + sanitized);
-          }
-        }
+        await this.handleOpenUrl(msg);
         break;
       case "addItem:createIssue":
         await this.handleAddItemCreateIssue(msg);
@@ -128,6 +111,161 @@ export class MessageHandler {
       case "updateFieldValue":
         await this.handleUpdateFieldValue(msg);
         break;
+    }
+  }
+
+  private async handleOpenUrl(msg: any) {
+    if (typeof (msg as any).url !== "string") return;
+
+    const urlString = String((msg as any).url);
+    logger.info(`[handleOpenUrl] Requested to open: ${urlString}`);
+
+    try {
+      let uriToOpen = vscode.Uri.parse(urlString);
+
+      // Attempt to resolve to a local file URI if it matches a workspace repository
+      // This helps the GitHub extension identify the context and open the issue/PR within VS Code
+      if (
+        ((msg as any).tryExtension || urlString.includes("github.com")) &&
+        vscode.workspace.workspaceFolders
+      ) {
+        try {
+          // Helper to clean URL using Regex (reused logic)
+          const getSlugFromUrl = (url: string): string | null => {
+            try {
+              const regex = /(?:git@|https:\/\/|http:\/\/|ssh:\/\/|git:\/\/)(?:.*@)?github\.com[:\/]([^\/]+)\/([^\/.]+)(?:\.git)?/i;
+              const match = url.match(regex);
+              if (match && match.length >= 3) {
+                return `${match[1]}/${match[2]}`.toLowerCase();
+              }
+              return null;
+            } catch (e) { return null; }
+          };
+
+          const targetSlug = getSlugFromUrl(urlString);
+          if (targetSlug) {
+            const gitExtension = vscode.extensions.getExtension<any>("vscode.git");
+            if (gitExtension) {
+              const git = gitExtension.isActive
+                ? gitExtension.exports.getAPI(1)
+                : await gitExtension.activate().then((ext) => ext.getAPI(1));
+
+              if (git && git.repositories) {
+                for (const local of git.repositories) {
+                  const remote = local.state.remotes?.find((r: any) => r.name === "origin") || local.state.remotes?.[0];
+                  if (remote && remote.fetchUrl) {
+                    const localSlug = getSlugFromUrl(remote.fetchUrl);
+                    if (localSlug === targetSlug) {
+                      logger.info(`[handleOpenUrl] Matched URL to local repo: ${local.rootUri.fsPath}`);
+                      // We found the local repo!
+                      // The GitHub extension often works better if we pass the *same* generic URL
+                      // BUT make sure we have focus or context.
+                      // Actually, vscode.open(uri) with a http URI is just generic. 
+                      // To force the GitHub extension to take it, strictly speaking it should just work if the extension is active.
+                      // However, the user reports it failing. 
+                      // Let's try to verify if there is a way to trigger via command.
+                      // Since we can't find a specific command, we will stick to vscode.open but ensue we activate the extension first.
+                      // But we ALREADY do that. 
+                      // HYPOTHESIS: exact URL mismatch? 
+                      // Try opening the issue/PR using the specific issue/pr command if we can parse it.
+
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (resolveErr) {
+          logger.warn(`[handleOpenUrl] Failed to resolve local repo: ${resolveErr}`);
+        }
+      }
+
+      // If specific instruction to try extension (or just generally for GitHub URLs)
+      if (
+        (msg as any).tryExtension ||
+        urlString.includes("github.com")
+      ) {
+        try {
+          const ghExtension = vscode.extensions.getExtension(
+            "github.vscode-pull-request-github",
+          );
+          if (ghExtension) {
+            if (!ghExtension.isActive) {
+              await ghExtension.activate();
+              logger.info(`[handleOpenUrl] Activated GitHub extension.`);
+            }
+
+            // Wait a tick for activation to settle
+            await new Promise(r => setTimeout(r, 500));
+          }
+
+          // Use the GitHub extension's URI handler to open issues/PRs
+          // Format: vscode://github.vscode-pull-request-github/open-issue-webview?{"owner":"...","repo":"...","issueNumber":123}
+          // Parse owner/repo/number from the GitHub URL
+          const ghUrlMatch = urlString.match(/github\.com\/([^\/]+)\/([^\/]+)\/(issues|pull)\/(\d+)/);
+
+          if (ghUrlMatch) {
+            const [, owner, repo, type, numberStr] = ghUrlMatch;
+            const number = parseInt(numberStr, 10);
+
+            logger.info(`[handleOpenUrl] Parsed GitHub URL: owner=${owner}, repo=${repo}, type=${type}, number=${number}`);
+
+            try {
+              let handlerUri: vscode.Uri;
+
+              if (type === 'issues') {
+                // Construct issue URI
+                const query = JSON.stringify({ owner, repo, issueNumber: number });
+                handlerUri = vscode.Uri.from({
+                  scheme: vscode.env.uriScheme,
+                  authority: 'github.vscode-pull-request-github',
+                  path: '/open-issue-webview',
+                  query
+                });
+              } else {
+                // Construct PR URI
+                const query = JSON.stringify({ owner, repo, pullRequestNumber: number });
+                handlerUri = vscode.Uri.from({
+                  scheme: vscode.env.uriScheme,
+                  authority: 'github.vscode-pull-request-github',
+                  path: '/open-pull-request-webview',
+                  query
+                });
+              }
+
+              logger.info(`[handleOpenUrl] Constructed vscode URI: ${handlerUri.toString()}`);
+
+              // Open using vscode.env.openExternal which triggers the extension's UriHandler
+              const opened = await vscode.env.openExternal(handlerUri);
+              if (opened) {
+                logger.info(`[handleOpenUrl] openExternal completed successfully.`);
+                return;
+              } else {
+                logger.warn(`[handleOpenUrl] openExternal returned false. Falling back to browser.`);
+              }
+            } catch (uriErr) {
+              logger.warn(`[handleOpenUrl] URI handler failed: ${uriErr}. Falling back to browser.`);
+            }
+          }
+
+        } catch (e) {
+          logger.error(`[handleOpenUrl] Error activating extension: ${e}`);
+        }
+      }
+
+      // Fallback: open in browser
+      try {
+        logger.info(`[handleOpenUrl] Opening in browser: ${uriToOpen.toString()}`);
+        await vscode.env.openExternal(uriToOpen);
+        logger.info(`[handleOpenUrl] Browser open completed.`);
+      } catch (browserError) {
+        logger.error(`[handleOpenUrl] Failed to open in browser: ${browserError}`);
+      }
+    } catch (e) {
+      const sanitized = String((e as any)?.message || e || "");
+      logger.error("webview.openUrl failed: " + sanitized);
+      vscode.window.showErrorMessage("Failed to open URL: " + sanitized);
     }
   }
 
@@ -313,95 +451,113 @@ export class MessageHandler {
 
       if (!selectedRepoConfig) return;
 
-      // Check if we have a local path for the repo
-      if (selectedRepoConfig.path) {
-        const repoKey = `${selectedRepoConfig.owner}/${selectedRepoConfig.name}`.toLowerCase();
-        const matchType = repoMatchType.get(repoKey);
+      // ALWAYS try the extension first if available
+      let extensionSucceeded = false;
+      const ghExtension = vscode.extensions.getExtension("github.vscode-pull-request-github");
 
-        // Always prefer extension if we can make it work
-        if (matchType === 'strict') {
-          try {
-            const ghExtension = vscode.extensions.getExtension(
-              "github.vscode-pull-request-github",
-            );
-            if (ghExtension) {
-              if (!ghExtension.isActive) {
-                await ghExtension.activate();
-              }
-              const uri = repoUriMap.get(repoKey) || vscode.Uri.file(selectedRepoConfig.path);
-              logger.info(`Invoking issue.createIssue with URI: ${uri.toString()}`);
-              await vscode.commands.executeCommand("issue.createIssue", uri);
-              return;
-            }
-          } catch (cmdErr) {
-            vscode.window.showWarningMessage(`Extension failed: ${cmdErr}. Opening in browser.`);
+      if (ghExtension) {
+        try {
+          if (!ghExtension.isActive) {
+            await ghExtension.activate();
           }
-        } else if (matchType === 'redirect') {
-          // It's a redirect/OLD NAME. This causes the "second picker" if we don't fix it.
-          // Offer to fix the remote URL
-          const action = await vscode.window.showWarningMessage(
-            `Local repo '${selectedRepoConfig.name}' remote is outdated (Old Name). Update to match Project and avoid picker?`,
-            "Update & Create Issue",
-            "Open in Browser"
-          );
 
-          if (action === "Update & Create Issue") {
-            try {
-              const localRepo = repoGitMap.get(repoKey);
-              if (localRepo) {
-                const newUrl = `https://github.com/${selectedRepoConfig.owner}/${selectedRepoConfig.name}.git`;
-                // Remove old 'origin' and add proper one
-                // Using 'origin' is standard. We could check which remote matched, but 'origin' is safe bet for primary.
-                await localRepo.removeRemote('origin');
-                await localRepo.addRemote('origin', newUrl);
-                await localRepo.fetch();
+          // Try to invoke issue.createIssue
+          // The command uses active editor context, so we try to help by providing a URI
+          const repoKey = selectedRepoConfig.owner && selectedRepoConfig.name
+            ? `${selectedRepoConfig.owner}/${selectedRepoConfig.name}`.toLowerCase()
+            : "";
+          const uri = repoUriMap.get(repoKey) ||
+            (selectedRepoConfig.path ? vscode.Uri.file(selectedRepoConfig.path) : undefined);
 
-                logger.info(`Updated remote to ${newUrl}. Refreshing git state...`);
+          // Set up a listener to auto-fill the project field when NewIssue.md opens
+          const projectTitle = this.project?.title;
+          let disposable: vscode.Disposable | undefined;
 
-                // Force a git refresh and wait for Extension to update its cache
-                await vscode.commands.executeCommand('git.refresh');
-                await new Promise(resolve => setTimeout(resolve, 2000));
+          if (projectTitle) {
+            disposable = vscode.window.onDidChangeActiveTextEditor(async (editor) => {
+              if (editor && editor.document.uri.scheme === 'newissue') {
+                // Found the NewIssue.md file, edit the Projects line
+                try {
+                  const document = editor.document;
+                  const text = document.getText();
 
-                const ghExtension = vscode.extensions.getExtension(
-                  "github.vscode-pull-request-github",
-                );
-                if (ghExtension) {
-                  if (!ghExtension.isActive) {
-                    await ghExtension.activate();
+                  // Find the "Projects:" line and add the project title
+                  // The line format is: "Projects: " (may have trailing space)
+                  const projectsLineMatch = text.match(/^(Projects:\s*)$/m);
+                  if (projectsLineMatch) {
+                    const lineIndex = text.substring(0, text.indexOf(projectsLineMatch[0])).split('\n').length - 1;
+                    const line = document.lineAt(lineIndex);
+
+                    const edit = new vscode.WorkspaceEdit();
+                    edit.replace(
+                      document.uri,
+                      new vscode.Range(line.range.start, line.range.end),
+                      `Projects: ${projectTitle}`
+                    );
+                    await vscode.workspace.applyEdit(edit);
+                    logger.info(`[handleAddItemCreateIssue] Auto-filled project: ${projectTitle}`);
                   }
-                  const uri = repoUriMap.get(repoKey) || vscode.Uri.file(selectedRepoConfig.path);
-                  await vscode.commands.executeCommand("issue.createIssue", uri);
-                  return;
+                } catch (editErr) {
+                  logger.warn(`[handleAddItemCreateIssue] Failed to auto-fill project: ${editErr}`);
+                } finally {
+                  // Clean up listener after first use
+                  if (disposable) {
+                    disposable.dispose();
+                  }
                 }
-              } else {
-                vscode.window.showErrorMessage("Could not access Git API for this repository.");
               }
-            } catch (fixErr) {
-              logger.error(`Failed to update remote: ${fixErr}`);
-              vscode.window.showErrorMessage(`Failed to update remote: ${fixErr}`);
-            }
-          } else {
-            // User chose Browser or dismissed
-            logger.info("User chose browser fallback for redirect.");
+            });
+
+            // Auto-cleanup after 10 seconds if file never opens
+            setTimeout(() => {
+              if (disposable) {
+                disposable.dispose();
+              }
+            }, 10000);
           }
-        } else {
-          // Fallback for unknown state
-          logger.info("Unknown match type, falling back to browser.");
+
+          logger.info(`[handleAddItemCreateIssue] Attempting issue.createIssue via extension${uri ? ` with URI: ${uri.toString()}` : ''}`);
+          await vscode.commands.executeCommand("issue.createIssue", uri);
+          extensionSucceeded = true;
+          logger.info(`[handleAddItemCreateIssue] Extension command succeeded.`);
+          return;
+        } catch (cmdErr) {
+          logger.warn(`[handleAddItemCreateIssue] Extension command failed: ${cmdErr}. Falling back to browser.`);
         }
       } else {
-        logger.info("No local path for repository, falling back to browser.");
+        logger.info(`[handleAddItemCreateIssue] GitHub extension not installed. Using browser.`);
       }
 
-      // Fallback: Build GitHub "new issue" URL
-      let targetUrl: string;
-      if (selectedRepoConfig.owner && selectedRepoConfig.name) {
-        targetUrl = `https://github.com/${selectedRepoConfig.owner}/${selectedRepoConfig.name}/issues/new`;
-      } else {
-        targetUrl = this.project?.url || "https://github.com/projects";
-      }
+      // Fallback: Build GitHub "new issue" URL with PROJECT PRE-FILLED
+      if (!extensionSucceeded) {
+        let targetUrl: string;
+        if (selectedRepoConfig.owner && selectedRepoConfig.name) {
+          const baseUrl = `https://github.com/${selectedRepoConfig.owner}/${selectedRepoConfig.name}/issues/new`;
 
-      const uri = vscode.Uri.parse(targetUrl);
-      await vscode.env.openExternal(uri);
+          // Extract project owner and number from project URL
+          // Format: https://github.com/users/{owner}/projects/{number} 
+          // OR: https://github.com/orgs/{org}/projects/{number}
+          const projectUrl = this.project?.url || "";
+          const projectMatch = projectUrl.match(/github\.com\/(?:users|orgs)\/([^\/]+)\/projects\/(\d+)/);
+
+          if (projectMatch) {
+            const [, projectOwner, projectNumber] = projectMatch;
+            // Format: projects=owner/projectNumber
+            const params = new URLSearchParams();
+            params.set('projects', `${projectOwner}/${projectNumber}`);
+            targetUrl = `${baseUrl}?${params.toString()}`;
+            logger.info(`[handleAddItemCreateIssue] Opening browser with project pre-filled: ${targetUrl}`);
+          } else {
+            targetUrl = baseUrl;
+            logger.info(`[handleAddItemCreateIssue] Could not parse project URL, opening without pre-fill: ${projectUrl}`);
+          }
+        } else {
+          targetUrl = this.project?.url || "https://github.com/projects";
+        }
+
+        const uri = vscode.Uri.parse(targetUrl);
+        await vscode.env.openExternal(uri);
+      }
 
 
     } catch (e) {

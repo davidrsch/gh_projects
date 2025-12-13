@@ -153,7 +153,7 @@ export class TitleRenderer implements CellRendererStrategy {
           isClosed = true;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // Choose base icon based on type/state
     let iconName = "issue-opened";
@@ -176,27 +176,27 @@ export class TitleRenderer implements CellRendererStrategy {
 
     const blockedIcon = isBlocked
       ? getIconSvg("blocked" as any, {
-          size: 9,
-          className: "field-icon blocked-icon",
-          fill: "#dc3545",
-        })
+        size: 9,
+        className: "field-icon blocked-icon",
+        fill: "#dc3545",
+      })
       : "";
 
     // Create tooltip with full title and number
     const tooltipText = f ? `${t} #${o}` : t;
 
     return (
-      '<a href="' +
+      '<span data-gh-open="' +
       escapeHtml(String(l || "")) +
-      '" target="_blank" rel="noopener noreferrer" title="' +
+      '" title="' +
       escapeHtml(tooltipText) +
-      '" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
+      '" style="cursor:pointer;color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
       "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>" +
       baseIcon +
       (blockedIcon
         ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
-          blockedIcon +
-          "</span>"
+        blockedIcon +
+        "</span>"
         : "") +
       "</span>" +
       '<span style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block">' +
@@ -204,10 +204,10 @@ export class TitleRenderer implements CellRendererStrategy {
       "</span>" +
       (f
         ? '<span style="flex:none;margin-left:6px;color:var(--vscode-descriptionForeground);white-space:nowrap">#' +
-          f +
-          "</span>"
+        f +
+        "</span>"
         : "") +
-      "</a>"
+      "</span>"
     );
   }
 }
@@ -466,10 +466,10 @@ export class PullRequestRenderer implements CellRendererStrategy {
 
       const blockedIcon = hasBlockedLabel
         ? getIconSvg("blocked" as any, {
-            size: 8,
-            className: "field-icon blocked-icon",
-            fill: "#dc3545",
-          })
+          size: 8,
+          className: "field-icon blocked-icon",
+          fill: "#dc3545",
+        })
         : "";
 
       // Create tooltip with number and title
@@ -478,9 +478,9 @@ export class PullRequestRenderer implements CellRendererStrategy {
         : escapeHtml(`#${p.number}`);
 
       out +=
-        "<a href='" +
+        "<span data-gh-open='" +
         url +
-        "' target='_blank' rel='noopener noreferrer' style='text-decoration:none;color:inherit'>" +
+        "' style='cursor:pointer;text-decoration:none;color:inherit'>" +
         "<span title='" +
         tooltip +
         "' style='display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid " +
@@ -494,13 +494,13 @@ export class PullRequestRenderer implements CellRendererStrategy {
         baseIcon +
         (blockedIcon
           ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
-            blockedIcon +
-            "</span>"
+          blockedIcon +
+          "</span>"
           : "") +
         "</span>" +
         "<span style='flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>#" +
         num +
-        "</span></span></a>";
+        "</span></span></span>";
     }
     out += "</div>";
     return out;
@@ -713,17 +713,17 @@ export class ParentIssueRenderer implements CellRendererStrategy {
     let parentIsDoneByStatus = false;
 
     let t =
-        (value &&
-          (value.parent ||
-            value.parentIssue ||
-            value.issue ||
-            value.option ||
-            value.item ||
-            value.value)) ||
-        (value &&
-          value.raw &&
-          (value.raw.parent || value.raw.itemContent || value.raw.item)) ||
-        null,
+      (value &&
+        (value.parent ||
+          value.parentIssue ||
+          value.issue ||
+          value.option ||
+          value.item ||
+          value.value)) ||
+      (value &&
+        value.raw &&
+        (value.raw.parent || value.raw.itemContent || value.raw.item)) ||
+      null,
       o =
         (t &&
           (t.number || t.id || (t.raw && t.raw.number)) &&
@@ -747,22 +747,22 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       var itemsList = Array.isArray(allItems) ? allItems : allItems || [];
       if (Array.isArray(itemsList) && itemsList.length > 0 && (o || t)) {
         let B =
-            (t &&
-              t.repository &&
-              (t.repository.nameWithOwner || t.repository.name)) ||
-            (t &&
-              t.content &&
-              t.content.repository &&
-              t.content.repository.nameWithOwner) ||
-            null,
+          (t &&
+            t.repository &&
+            (t.repository.nameWithOwner || t.repository.name)) ||
+          (t &&
+            t.content &&
+            t.content.repository &&
+            t.content.repository.nameWithOwner) ||
+          null,
           O: string[] = [];
         (o && O.push(String(o)),
           t &&
-            (t.id || (t.raw && t.raw.id)) &&
-            O.push(String(t.id || (t.raw && t.raw.id))),
+          (t.id || (t.raw && t.raw.id)) &&
+          O.push(String(t.id || (t.raw && t.raw.id))),
           t &&
-            (t.url || (t.raw && t.raw.url)) &&
-            O.push(String(t.url || (t.raw && t.raw.url))),
+          (t.url || (t.raw && t.raw.url)) &&
+          O.push(String(t.url || (t.raw && t.raw.url))),
           t && (t.title || t.name) && O.push(String(t.title || t.name)));
         let $ = itemsList.find((A) => {
           let d = (A && (A.content || (A.raw && A.raw.itemContent))) || null;
@@ -770,14 +770,14 @@ export class ParentIssueRenderer implements CellRendererStrategy {
           let M = [];
           if (
             (d.number && M.push(String(d.number)),
-            d.id && M.push(String(d.id)),
-            d.url && M.push(String(d.url)),
-            d.title && M.push(String(d.title)),
-            d.name && M.push(String(d.name)),
-            d.raw && d.raw.number && M.push(String(d.raw.number)),
-            d.raw && d.raw.id && M.push(String(d.raw.id)),
-            d.raw && d.raw.url && M.push(String(d.raw.url)),
-            B)
+              d.id && M.push(String(d.id)),
+              d.url && M.push(String(d.url)),
+              d.title && M.push(String(d.title)),
+              d.name && M.push(String(d.name)),
+              d.raw && d.raw.number && M.push(String(d.raw.number)),
+              d.raw && d.raw.id && M.push(String(d.raw.id)),
+              d.raw && d.raw.url && M.push(String(d.raw.url)),
+              B)
           ) {
             let V =
               (d.repository &&
@@ -821,7 +821,7 @@ export class ParentIssueRenderer implements CellRendererStrategy {
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { }
     f ||
       (f =
         (t &&
@@ -874,7 +874,7 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       if (hasDoneLabel || parentIsDoneByStatus) {
         isClosed = true;
       }
-    } catch (e) {}
+    } catch (e) { }
 
     let parentIconName = "issue-opened";
     if (isClosed) parentIconName = "issue-closed";
@@ -888,10 +888,10 @@ export class ParentIssueRenderer implements CellRendererStrategy {
 
     const blockedIcon = isBlocked
       ? getIconSvg("blocked" as any, {
-          size: 9,
-          className: "field-icon blocked-icon",
-          fill: "#dc3545",
-        })
+        size: 9,
+        className: "field-icon blocked-icon",
+        fill: "#dc3545",
+      })
       : "";
 
     let q =
@@ -907,8 +907,8 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       parentIcon +
       (blockedIcon
         ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
-          blockedIcon +
-          "</span>"
+        blockedIcon +
+        "</span>"
         : "") +
       "</span>" +
       "<span class='parent-issue-title' style='flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block'>" +
@@ -916,8 +916,8 @@ export class ParentIssueRenderer implements CellRendererStrategy {
       "</span>" +
       (p
         ? "<span style='margin-left:6px;color:var(--vscode-descriptionForeground);white-space:nowrap'>#" +
-          p +
-          "</span>"
+        p +
+        "</span>"
         : "") +
       "</div></span>";
     const parentWrapper =
