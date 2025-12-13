@@ -233,37 +233,39 @@ export class MessageHandler {
       const { issues: allIssues, pullRequests: allPRs } = result;
 
       // Get existing items in the project to filter them out
-      let issues = allIssues;
-      let pullRequests = allPRs;
-
-      try {
-        const projectData = await ProjectDataService.getProjectData(
-          this.project,
-          msg.viewKey,
-        );
-
-        // Extract content IDs from existing project items
-        const existingContentIds = new Set<string>(
-          projectData.snapshot.items
-            .filter((item) => item.content?.id)
-            .map((item) => String(item.content.id)),
-        );
-
-        // Filter out items that are already in the project
-        if (existingContentIds.size > 0) {
-          issues = allIssues.filter(
-            (issue) => !existingContentIds.has(String(issue.id)),
+      const getFilteredItems = async () => {
+        try {
+          const projectData = await ProjectDataService.getProjectData(
+            this.project,
+            msg.viewKey,
           );
-          pullRequests = allPRs.filter(
-            (pr) => !existingContentIds.has(String(pr.id)),
+
+          // Extract content IDs from existing project items
+          const existingContentIds = new Set<string>(
+            projectData.snapshot.items
+              .filter((item) => item.content?.id)
+              .map((item) => String(item.content.id)),
           );
+
+          // Filter out items that are already in the project
+          return {
+            issues: allIssues.filter(
+              (issue) => !existingContentIds.has(String(issue.id)),
+            ),
+            pullRequests: allPRs.filter(
+              (pr) => !existingContentIds.has(String(pr.id)),
+            ),
+          };
+        } catch (filterError) {
+          logger.debug(
+            `Failed to filter existing items for project ${this.project.id}: ${String(filterError)}`,
+          );
+          // Return unfiltered list if filtering fails
+          return { issues: allIssues, pullRequests: allPRs };
         }
-      } catch (filterError) {
-        logger.debug(
-          `Failed to filter existing items for project ${this.project.id}: ${String(filterError)}`,
-        );
-        // Continue with unfiltered list if filtering fails
-      }
+      };
+
+      const { issues, pullRequests } = await getFilteredItems();
 
       // Step 3: Create quick pick items for issues and PRs
       const items: any[] = [];
