@@ -142,8 +142,12 @@ export class MessageHandler {
       );
 
       if (ghExtension) {
-        // Extension is installed - try to use its command to create an issue
+        // Extension is installed - activate it and use its command to create an issue
         try {
+          // Ensure extension is activated before calling its commands
+          if (!ghExtension.isActive) {
+            await ghExtension.activate();
+          }
           // The GitHub extension provides the "issue.create" command
           await vscode.commands.executeCommand("issue.create");
           return;
