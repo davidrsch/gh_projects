@@ -136,36 +136,31 @@ export class MessageHandler {
 
   private async handleAddItemCreateIssue(msg: any) {
     try {
-      // Check if GitHub Pull Requests & Issues extension is installed
-      const ghExtension = vscode.extensions.getExtension(
-        GITHUB_PR_EXTENSION_ID,
-      );
+      // Get repositories linked to this project
+      const repos = this.project.repos || [];
 
-      if (ghExtension) {
-        // Extension is installed - activate it and use its command to create an issue
-        try {
-          // Ensure extension is activated before calling its commands
-          if (!ghExtension.isActive) {
-            await ghExtension.activate();
-          }
-          // The GitHub extension provides the "issue.create" command
-          await vscode.commands.executeCommand("issue.create");
-          return;
-        } catch (commandError) {
-          logger.debug(
-            "GitHub extension command not available, falling back to URL",
-          );
-        }
+      // Build GitHub "new issue" URL for the first repository
+      // The GitHub Pull Requests & Issues extension will intercept this URL
+      // if installed, allowing issue creation within VS Code
+      let targetUrl: string;
+
+      if (repos.length > 0 && repos[0].owner && repos[0].name) {
+        // Construct GitHub new issue URL: https://github.com/{owner}/{repo}/issues/new
+        targetUrl = `https://github.com/${repos[0].owner}/${repos[0].name}/issues/new`;
+      } else {
+        // Fallback to project URL if no repos available
+        targetUrl =
+          (this.project && (this.project as any).url) ||
+          "https://github.com/projects";
       }
 
-      // Fallback: open the project URL in browser
-      const target =
-        (this.project && (this.project as any).url) ||
-        "https://github.com/projects";
-      const uri = vscode.Uri.parse(String(target));
+      const uri = vscode.Uri.parse(targetUrl);
       try {
+        // Use vscode.open to allow the GitHub extension to intercept the URL
+        // This is the recommended approach for extension interoperability
         await vscode.commands.executeCommand("vscode.open", uri);
       } catch (primaryError) {
+        // Fallback to opening in external browser
         await vscode.env.openExternal(uri);
       }
     } catch (e) {
