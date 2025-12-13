@@ -144,9 +144,8 @@ export class MessageHandler {
       if (ghExtension) {
         // Extension is installed - try to use its command to create an issue
         try {
-          // The GitHub extension provides commands for creating issues
-          // Try to execute the create issue command if available
-          await vscode.commands.executeCommand("github.createIssue");
+          // The GitHub extension provides the "issue.create" command
+          await vscode.commands.executeCommand("issue.create");
           return;
         } catch (commandError) {
           logger.debug(
@@ -231,7 +230,36 @@ export class MessageHandler {
         },
       );
 
-      const { issues, pullRequests } = result;
+      let { issues, pullRequests } = result;
+
+      // Get existing items in the project to filter them out
+      try {
+        const projectData = await ProjectDataService.getProjectData(
+          this.project,
+          msg.viewKey,
+        );
+        const existingContentIds = new Set<string>();
+
+        // Extract content IDs from existing project items
+        for (const item of projectData.snapshot.items) {
+          if (item.content && item.content.id) {
+            existingContentIds.add(String(item.content.id));
+          }
+        }
+
+        // Filter out items that are already in the project
+        if (existingContentIds.size > 0) {
+          issues = issues.filter(
+            (issue) => !existingContentIds.has(String(issue.id)),
+          );
+          pullRequests = pullRequests.filter(
+            (pr) => !existingContentIds.has(String(pr.id)),
+          );
+        }
+      } catch (filterError) {
+        logger.debug("Failed to filter existing items: " + String(filterError));
+        // Continue with unfiltered list if filtering fails
+      }
 
       // Step 3: Create quick pick items for issues and PRs
       const items: any[] = [];
@@ -274,7 +302,7 @@ export class MessageHandler {
 
       if (items.length === 0) {
         vscode.window.showInformationMessage(
-          "No open issues or pull requests found in this repository.",
+          "No open issues or pull requests found that aren't already in the project.",
         );
         return;
       }
