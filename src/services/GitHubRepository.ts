@@ -164,10 +164,10 @@ export class GitHubRepository {
     const LIMITS = makeLimits(first);
 
     // 1. Fetch Project Metadata
-    const metaQuery = `query{ node(id:${JSON.stringify(projectId)}){ __typename ... on ProjectV2 { id title } } }`;
-    let project: ProjectMetaNode | undefined;
+    const metaQuery = `query{ node(id:${JSON.stringify(projectId)}){ __typename ... on ProjectV2 { id title repositories(first: 20) { nodes { nameWithOwner url } } } } }`;
+    let project: any | undefined;
     try {
-      const metaRes = await this.query<{ node?: ProjectMetaNode }>(metaQuery);
+      const metaRes = await this.query<{ node?: any }>(metaQuery);
       project = metaRes?.node;
     } catch (e: any) {
       logger.error("fetchMeta error: " + e.message);
@@ -175,6 +175,15 @@ export class GitHubRepository {
     }
 
     if (!project) throw createCodeError("No project found", "ENOPROJECT");
+
+    // Parses repositories to format expected by ProjectEntry
+    const projectRepos = (project.repositories?.nodes || []).map(
+      (r: any) => ({
+        owner: r.nameWithOwner.split("/")[0],
+        name: r.nameWithOwner.split("/")[1],
+        url: r.url
+      })
+    );
 
     // 2. Fetch Fields
     const fieldsQuery = buildFieldsQuery(project.id, LIMITS);
@@ -390,7 +399,7 @@ export class GitHubRepository {
     }
 
     return {
-      project: { id: project.id, title: project.title },
+      project: { id: project.id, title: project.title, repos: projectRepos },
       fields,
       items,
     };
@@ -551,26 +560,26 @@ export class GitHubRepository {
         state: n.state,
         repository: n.repository
           ? {
-              id: undefined,
-              nameWithOwner: n.repository.nameWithOwner,
-              url: n.repository.url,
-            }
+            id: undefined,
+            nameWithOwner: n.repository.nameWithOwner,
+            url: n.repository.url,
+          }
           : undefined,
         author: n.author
           ? {
-              id: undefined,
-              login: n.author.login,
-              avatarUrl: n.author.avatarUrl,
-              url: n.author.url,
-              name: undefined,
-            }
+            id: undefined,
+            login: n.author.login,
+            avatarUrl: n.author.avatarUrl,
+            url: n.author.url,
+            name: undefined,
+          }
           : undefined,
         labels: Array.isArray(n.labels?.nodes)
           ? n.labels.nodes.map((l: any) => ({
-              id: l.id,
-              name: l.name,
-              color: l.color,
-            }))
+            id: l.id,
+            name: l.name,
+            color: l.color,
+          }))
           : undefined,
       }));
 
@@ -584,26 +593,26 @@ export class GitHubRepository {
         mergedAt: n.mergedAt,
         repository: n.repository
           ? {
-              id: undefined,
-              nameWithOwner: n.repository.nameWithOwner,
-              url: n.repository.url,
-            }
+            id: undefined,
+            nameWithOwner: n.repository.nameWithOwner,
+            url: n.repository.url,
+          }
           : undefined,
         author: n.author
           ? {
-              id: undefined,
-              login: n.author.login,
-              avatarUrl: n.author.avatarUrl,
-              url: n.author.url,
-              name: undefined,
-            }
+            id: undefined,
+            login: n.author.login,
+            avatarUrl: n.author.avatarUrl,
+            url: n.author.url,
+            name: undefined,
+          }
           : undefined,
         labels: Array.isArray(n.labels?.nodes)
           ? n.labels.nodes.map((l: any) => ({
-              id: l.id,
-              name: l.name,
-              color: l.color,
-            }))
+            id: l.id,
+            name: l.name,
+            color: l.color,
+          }))
           : undefined,
       }));
 
@@ -613,6 +622,26 @@ export class GitHubRepository {
         `getOpenIssuesAndPullRequests failed for ${owner}/${name}: ${e.message || e}`,
       );
       return { issues: [], pullRequests: [] };
+    }
+  }
+
+  /**
+   * Fetches the canonical repository name (owner/name) to handle redirects/renames.
+   */
+  public async getRepoCanonicalName(owner: string, name: string): Promise<string | null> {
+    const gql = `
+      query($owner: String!, $name: String!) {
+        repository(owner: $owner, name: $name) {
+          nameWithOwner
+        }
+      }
+    `;
+    try {
+      const res = await this.query<any>(gql, { owner, name });
+      return res?.repository?.nameWithOwner || null;
+    } catch (e) {
+      // It's common to fail if the repo doesn't exist or no access
+      return null;
     }
   }
 
@@ -975,6 +1004,65 @@ export class GitHubRepository {
       return {
         success: false,
         error: error.message || "Failed to update milestone",
+      };
+    }
+  }
+
+  /**
+   * Adds an issue or pull request to a project.
+   * @param projectId - The global ID of the project
+   * @param contentId - The global ID of the issue or pull request to add
+   * @returns Result object with success status and optional error message
+   */
+  public async addItemToProject(
+    projectId: string,
+    contentId: string,
+  ): Promise<{ success: boolean; error?: string; itemId?: string }> {
+    try {
+      const mutation = `
+        mutation($input: AddProjectV2ItemByIdInput!) {
+          addProjectV2ItemById(input: $input) {
+            item {
+              id
+            }
+          }
+        }
+      `;
+
+      const result = await this.query<any>(mutation, {
+        input: {
+          projectId,
+          contentId,
+        },
+      });
+
+      const itemId = result?.addProjectV2ItemById?.item?.id;
+      if (!itemId) {
+        const technicalError =
+          "Failed to add item to project - no item ID returned from GraphQL mutation";
+        logger.error(technicalError);
+        throw new Error("Failed to add item to project");
+      }
+
+      logger.info(
+        `Successfully added item ${contentId} to project ${projectId}`,
+      );
+      return { success: true, itemId };
+    } catch (error: any) {
+      const technicalError = error.message || String(error);
+      logger.error(`Failed to add item to project: ${technicalError}`);
+      // Return a user-friendly error message
+      const userMessage =
+        technicalError.includes("not found") ||
+          technicalError.includes("does not exist")
+          ? "Item or project not found"
+          : technicalError.includes("permission") ||
+            technicalError.includes("unauthorized")
+            ? "Permission denied"
+            : "Failed to add item to project";
+      return {
+        success: false,
+        error: userMessage,
       };
     }
   }

@@ -102,8 +102,7 @@ export class AddItemMenu {
       iconSpan.style.alignItems = "center";
       iconSpan.style.justifyContent = "center";
       iconSpan.style.marginRight = "8px";
-      iconSpan.innerHTML =
-        (window as any).getIconSvg?.(iconName as any) || "";
+      iconSpan.innerHTML = (window as any).getIconSvg?.(iconName as any) || "";
       row.appendChild(iconSpan);
 
       const textContainer = document.createElement("div");
