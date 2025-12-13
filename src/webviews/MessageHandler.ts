@@ -13,7 +13,7 @@ export class MessageHandler {
     private panelKey: string,
     private context: vscode.ExtensionContext,
     private resources: any, // Pass resources for re-init
-  ) {}
+  ) { }
 
   public attach() {
     this.panel.webview.onDidReceiveMessage(
@@ -37,7 +37,7 @@ export class MessageHandler {
         this.sendInitMessage();
         return;
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // Basic validation
     if (!msg || typeof msg !== "object" || typeof msg.command !== "string") {
@@ -133,35 +133,286 @@ export class MessageHandler {
 
   private async handleAddItemCreateIssue(msg: any) {
     try {
+      // Map to store exact Uri objects to avoid fsPath roundtrip issues
+      const repoUriMap = new Map<string, vscode.Uri>();
+      // Map to store match type: 'strict' (safe for extension) or 'redirect' (needs fix)
+      const repoMatchType = new Map<string, 'strict' | 'redirect'>();
+      // Map to store the actual Git Repository object for fixing remotes
+      const repoGitMap = new Map<string, any>();
+
       // Get repositories linked to this project
       const repos = this.project.repos || [];
 
-      // Build GitHub "new issue" URL for the first repository
-      // The GitHub Pull Requests & Issues extension will intercept this URL
-      // if installed, allowing issue creation within VS Code
-      let targetUrl: string;
+      // Attempt to resolve local paths for repositories using VS Code Git Extension
+      try {
+        const gitExtension = vscode.extensions.getExtension<any>("vscode.git");
+        if (gitExtension) {
+          const git = gitExtension.isActive
+            ? gitExtension.exports.getAPI(1)
+            : await gitExtension.activate().then((ext) => ext.getAPI(1));
 
-      if (repos[0]?.owner && repos[0]?.name) {
-        // Construct GitHub new issue URL: https://github.com/{owner}/{repo}/issues/new
-        targetUrl = `https://github.com/${repos[0].owner}/${repos[0].name}/issues/new`;
-      } else {
+          if (git && git.repositories) {
+            const localRepos = git.repositories;
+            const projectRepoSlugs = new Set(
+              repos
+                .map((r) =>
+                  r.owner && r.name
+                    ? `${r.owner}/${r.name}`.toLowerCase()
+                    : null,
+                )
+                .filter(Boolean),
+            );
+
+            // Helper to clean URL using Regex
+            const getSlugFromUrl = (url: string): string | null => {
+              try {
+                // Regex handles:
+                // - git@github.com:owner/repo.git
+                // - https://github.com/owner/repo.git
+                // - ssh://git@github.com/owner/repo
+                // - git://github.com/owner/repo
+                // Capture groups: 1=Owner, 2=Name
+                const regex = /(?:git@|https:\/\/|http:\/\/|ssh:\/\/|git:\/\/)(?:.*@)?github\.com[:\/]([^\/]+)\/([^\/.]+)(?:\.git)?/i;
+                const match = url.match(regex);
+                if (match && match.length >= 3) {
+                  return `${match[1]}/${match[2]}`.toLowerCase();
+                }
+                logger.debug(`[PathRes] Failed to parse slug from: ${url}`);
+                return null;
+              } catch (e) {
+                logger.debug(`[PathRes] Error parsing slug: ${e}`);
+                return null;
+              }
+            };
+
+            for (const local of localRepos) {
+              // Determine the "slug" for this local repo
+              let localSlug: string | null = null;
+              const remote =
+                local.state.remotes?.find((r: any) => r.name === "origin") ||
+                local.state.remotes?.[0];
+              if (!remote) continue;
+
+              const fetchUrl = remote.fetchUrl || "";
+              localSlug = getSlugFromUrl(fetchUrl);
+
+              logger.debug(`[PathRes] Checking local repo: ${local.rootUri.fsPath}`);
+              logger.debug(`[PathRes] Remote URL: ${fetchUrl} -> Slug: ${localSlug}`);
+
+              // Strategy 1: Direct String Match
+              if (localSlug && projectRepoSlugs.has(localSlug)) {
+                // Match found! Assign path to the corresponding project repo
+                const matchingProjectRepo = repos.find(
+                  (r) => `${r.owner}/${r.name}`.toLowerCase() === localSlug,
+                );
+                if (matchingProjectRepo) {
+                  matchingProjectRepo.path = local.rootUri.fsPath;
+                  const key = `${matchingProjectRepo.owner}/${matchingProjectRepo.name}`.toLowerCase();
+                  repoUriMap.set(key, local.rootUri);
+                  repoMatchType.set(key, 'strict');
+                  repoGitMap.set(key, local);
+                  logger.debug(
+                    `[PathRes] STRICT MATCH: ${matchingProjectRepo.owner}/${matchingProjectRepo.name} -> ${matchingProjectRepo.path}`,
+                  );
+                }
+                continue;
+              }
+
+              logger.debug(`[PathRes] No strict match for ${localSlug}. Checking API for redirects...`);
+
+              // Strategy 2: API Resolution (for renames/redirects)
+              // If localSlug is valid but didn't match, maybe it's an old name?
+              if (localSlug) {
+                const [owner, name] = localSlug.split("/");
+                if (owner && name) {
+                  try {
+                    const canonical =
+                      await GitHubRepository.getInstance().getRepoCanonicalName(
+                        owner,
+                        name,
+                      );
+                    logger.debug(
+                      `[PathRes] API Resolution: ${localSlug} canonical is ${canonical}`,
+                    );
+                    if (
+                      canonical &&
+                      projectRepoSlugs.has(canonical.toLowerCase())
+                    ) {
+                      const matchingProjectRepo = repos.find(
+                        (r) =>
+                          `${r.owner}/${r.name}`.toLowerCase() ===
+                          canonical.toLowerCase(),
+                      );
+                      if (matchingProjectRepo) {
+                        matchingProjectRepo.path = local.rootUri.fsPath;
+                        const key = `${matchingProjectRepo.owner}/${matchingProjectRepo.name}`.toLowerCase();
+                        repoUriMap.set(key, local.rootUri);
+                        repoMatchType.set(key, 'redirect');
+                        repoGitMap.set(key, local);
+                        logger.debug(
+                          `[PathRes] REDIRECT MATCH: ${matchingProjectRepo.owner}/${matchingProjectRepo.name} (from ${localSlug}) -> ${matchingProjectRepo.path}`,
+                        );
+                      }
+                    }
+                  } catch (e) {
+                    logger.warn(
+                      `Failed to resolve canonical name for local repo ${localSlug}: ${e}`,
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (gitErr) {
+        logger.warn("Failed to resolve local git repositories: " + String(gitErr));
+      }
+
+      if (repos.length === 0) {
         // Fallback to project URL if no repos available
+        const targetUrl = this.project?.url || "https://github.com/projects";
+        const uri = vscode.Uri.parse(targetUrl);
+        await vscode.env.openExternal(uri);
+        return;
+      }
+
+      let selectedRepoConfig: { owner?: string; name?: string; path?: string } | undefined;
+
+      if (repos.length === 1) {
+        selectedRepoConfig = repos[0];
+      } else {
+        // Show picker
+        const items = repos.map((r) => {
+          const label =
+            r.owner && r.name ? `${r.owner}/${r.name}` : r.path || "Unknown";
+
+          let desc = "Remote Repository (Browser only)";
+          if (r.path) {
+            const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(r.path));
+            const key = r.owner && r.name ? `${r.owner}/${r.name}`.toLowerCase() : "";
+            const type = repoMatchType.get(key);
+            const typeLabel = type === 'strict' ? "Strict" : type === 'redirect' ? "Redirect" : "Unknown";
+
+            desc = `$(folder) ${workspaceFolder ? workspaceFolder.name : r.path} [${typeLabel}]`;
+          }
+
+          return {
+            label: `$(repo) ${label}`,
+            description: desc,
+            repo: r,
+          };
+        });
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: "Select repository to create issue in",
+        });
+
+        if (!selected) return;
+        selectedRepoConfig = selected.repo;
+      }
+
+      if (!selectedRepoConfig) return;
+
+      // Check if we have a local path for the repo
+      if (selectedRepoConfig.path) {
+        const repoKey = `${selectedRepoConfig.owner}/${selectedRepoConfig.name}`.toLowerCase();
+        const matchType = repoMatchType.get(repoKey);
+
+        // Always prefer extension if we can make it work
+        if (matchType === 'strict') {
+          try {
+            const ghExtension = vscode.extensions.getExtension(
+              "github.vscode-pull-request-github",
+            );
+            if (ghExtension) {
+              if (!ghExtension.isActive) {
+                await ghExtension.activate();
+              }
+              const uri = repoUriMap.get(repoKey) || vscode.Uri.file(selectedRepoConfig.path);
+              logger.info(`Invoking issue.createIssue with URI: ${uri.toString()}`);
+              await vscode.commands.executeCommand("issue.createIssue", uri);
+              return;
+            }
+          } catch (cmdErr) {
+            vscode.window.showWarningMessage(`Extension failed: ${cmdErr}. Opening in browser.`);
+          }
+        } else if (matchType === 'redirect') {
+          // It's a redirect/OLD NAME. This causes the "second picker" if we don't fix it.
+          // Offer to fix the remote URL
+          const action = await vscode.window.showWarningMessage(
+            `Local repo '${selectedRepoConfig.name}' remote is outdated (Old Name). Update to match Project and avoid picker?`,
+            "Update & Create Issue",
+            "Open in Browser"
+          );
+
+          if (action === "Update & Create Issue") {
+            try {
+              const localRepo = repoGitMap.get(repoKey);
+              if (localRepo) {
+                const newUrl = `https://github.com/${selectedRepoConfig.owner}/${selectedRepoConfig.name}.git`;
+                // Remove old 'origin' and add proper one
+                // Using 'origin' is standard. We could check which remote matched, but 'origin' is safe bet for primary.
+                await localRepo.removeRemote('origin');
+                await localRepo.addRemote('origin', newUrl);
+                await localRepo.fetch();
+
+                logger.info(`Updated remote to ${newUrl}. Refreshing git state...`);
+
+                // Force a git refresh and wait for Extension to update its cache
+                await vscode.commands.executeCommand('git.refresh');
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                const ghExtension = vscode.extensions.getExtension(
+                  "github.vscode-pull-request-github",
+                );
+                if (ghExtension) {
+                  if (!ghExtension.isActive) {
+                    await ghExtension.activate();
+                  }
+                  const uri = repoUriMap.get(repoKey) || vscode.Uri.file(selectedRepoConfig.path);
+                  await vscode.commands.executeCommand("issue.createIssue", uri);
+                  return;
+                }
+              } else {
+                vscode.window.showErrorMessage("Could not access Git API for this repository.");
+              }
+            } catch (fixErr) {
+              logger.error(`Failed to update remote: ${fixErr}`);
+              vscode.window.showErrorMessage(`Failed to update remote: ${fixErr}`);
+            }
+          } else {
+            // User chose Browser or dismissed
+            logger.info("User chose browser fallback for redirect.");
+          }
+        } else {
+          // Fallback for unknown state
+          logger.info("Unknown match type, falling back to browser.");
+        }
+      } else {
+        logger.info("No local path for repository, falling back to browser.");
+      }
+
+      // Fallback: Build GitHub "new issue" URL
+      let targetUrl: string;
+      if (selectedRepoConfig.owner && selectedRepoConfig.name) {
+        targetUrl = `https://github.com/${selectedRepoConfig.owner}/${selectedRepoConfig.name}/issues/new`;
+      } else {
         targetUrl = this.project?.url || "https://github.com/projects";
       }
 
       const uri = vscode.Uri.parse(targetUrl);
-      try {
-        // Use vscode.open to allow the GitHub extension to intercept the URL
-        // This is the recommended approach for extension interoperability
-        await vscode.commands.executeCommand("vscode.open", uri);
-      } catch (primaryError) {
-        // Fallback to opening in external browser
-        await vscode.env.openExternal(uri);
-      }
+      await vscode.env.openExternal(uri);
+
+
     } catch (e) {
       const sanitized = String((e as any)?.message || e || "");
       logger.error("webview.addItem:createIssue failed: " + sanitized);
     }
+  }
+
+  private getWorkspaceOrFsPath(uri: vscode.Uri): string {
+    const wsFolder = vscode.workspace.getWorkspaceFolder(uri);
+    return wsFolder ? wsFolder.uri.fsPath : uri.fsPath;
   }
 
   private async handleAddItemAddFromRepo(msg: any) {
@@ -406,6 +657,11 @@ export class MessageHandler {
       const { snapshot, effectiveFilter, itemsCount } =
         await ProjectDataService.getProjectData(this.project, reqViewKey);
 
+      // Update local project repos if fresh data available
+      if (snapshot.project.repos) {
+        this.project.repos = snapshot.project.repos;
+      }
+
       this.panel.webview.postMessage({
         command: "fields",
         viewKey: reqViewKey,
@@ -474,7 +730,7 @@ export class MessageHandler {
         await this.context.workspaceState.update(
           storageKey,
           (view && (view as any).details && (view as any).details.filter) ||
-            undefined,
+          undefined,
         );
       } catch (e) {
         logger.debug("workspaceState.update failed: " + String(e));
@@ -571,7 +827,7 @@ export class MessageHandler {
             (view as any).details.groupByFields.nodes &&
             (view as any).details.groupByFields.nodes[0] &&
             (view as any).details.groupByFields.nodes[0].name) ||
-            undefined,
+          undefined,
         );
       } catch (e) {
         logger.debug("workspaceState.update (grouping) failed: " + String(e));
@@ -787,6 +1043,6 @@ export class MessageHandler {
         },
       };
       this.panel.webview.postMessage(resend);
-    } catch (e) {}
+    } catch (e) { }
   }
 }
