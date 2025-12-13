@@ -6,9 +6,6 @@ import logger from "../lib/logger";
 import { wrapError } from "../lib/errors";
 import messages, { isGhNotFound } from "../lib/messages";
 
-// GitHub Pull Requests & Issues extension ID
-const GITHUB_PR_EXTENSION_ID = "GitHub.vscode-pull-request-github";
-
 export class MessageHandler {
   constructor(
     private panel: vscode.WebviewPanel,
