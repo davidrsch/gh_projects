@@ -141,14 +141,12 @@ export class MessageHandler {
       // if installed, allowing issue creation within VS Code
       let targetUrl: string;
 
-      if (repos.length > 0 && repos[0].owner && repos[0].name) {
+      if (repos[0]?.owner && repos[0]?.name) {
         // Construct GitHub new issue URL: https://github.com/{owner}/{repo}/issues/new
         targetUrl = `https://github.com/${repos[0].owner}/${repos[0].name}/issues/new`;
       } else {
         // Fallback to project URL if no repos available
-        targetUrl =
-          (this.project && (this.project as any).url) ||
-          "https://github.com/projects";
+        targetUrl = this.project?.url || "https://github.com/projects";
       }
 
       const uri = vscode.Uri.parse(targetUrl);
