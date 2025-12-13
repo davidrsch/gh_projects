@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as dotenv from 'dotenv';
 import { connectToCDP, findWebviewPage, captureArtifacts } from './playwrightHelpers';
 import { ScreenshotHelper } from './helpers/screenshotHelper';
 import { HTMLReportGenerator } from './helpers/htmlReportGenerator';
+import * as dotenv from 'dotenv';
 import { runComprehensiveTests } from './specs/comprehensiveUITests';
 
-// Load .env
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+// Load .env for local development only.
+// In CI, we rely on GitHub environment variables instead.
+if (!process.env.CI) {
+    dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+}
 
 export async function run() {
     const outDir = path.resolve(__dirname, '../../../out/test-artifacts');

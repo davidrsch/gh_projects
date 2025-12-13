@@ -4,14 +4,29 @@ import { runTests } from '@vscode/test-electron';
 
 async function main() {
     try {
-        // 1. Load Environment Variables
-        const envPath = path.resolve(__dirname, '../../../.env');
-        const result = dotenv.config({ path: envPath });
+        // 1. Load Environment Variables (local only)
+        // In CI, we rely on environment variables provided by GitHub,
+        // so we skip loading from .env to avoid noisy warnings.
+        if (!process.env.CI) {
+            const envPath = path.resolve(__dirname, '../../../.env');
+            const result = dotenv.config({ path: envPath });
 
-        if (result.error) {
-            console.warn(`Warning: .env file not found at ${envPath}. Ensure environment variables are set manually.`);
+            if (result.error) {
+                console.warn(`Warning: .env file not found at ${envPath}. Ensure environment variables are set manually.`);
+            } else {
+                console.log(`Loaded environment variables from ${envPath}`);
+            }
         } else {
-            console.log(`Loaded environment variables from ${envPath}`);
+            console.log('CI environment detected; relying on GitHub-provided environment variables.');
+        }
+
+        // 1a. Ensure required env vars are present before launching VS Code
+        const token = process.env.GH_PROJECTS_TOKEN_FOR_TESTING;
+        const projectId = process.env.GH_PROJECTS_TEST_PROJECT_ID;
+
+        if (!token || !projectId) {
+            console.warn('Integration tests skipped: GH_PROJECTS_TOKEN_FOR_TESTING or GH_PROJECTS_TEST_PROJECT_ID is not set.');
+            return;
         }
 
         // 2. Define Paths
