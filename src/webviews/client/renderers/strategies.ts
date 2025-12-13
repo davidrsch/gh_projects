@@ -185,12 +185,46 @@ export class TitleRenderer implements CellRendererStrategy {
     // Create tooltip with full title and number
     const tooltipText = f ? `${t} #${o}` : t;
 
+    const safeUrl = escapeHtml(String(l || ""));
+    const safeTooltip = escapeHtml(tooltipText);
+
+    // When we have a URL, render as an actual anchor so that the tests can
+    // assert on href/target attributes. We keep data-gh-open for in-webview
+    // click handling while also supporting native browser semantics.
+    if (safeUrl) {
+      return (
+        '<a href="' +
+        safeUrl +
+        '" data-gh-open="' +
+        safeUrl +
+        '" title="' +
+        safeTooltip +
+        '" target="_blank" rel="noopener noreferrer" style="cursor:pointer;color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
+        "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>" +
+        baseIcon +
+        (blockedIcon
+          ? "<span class='blocked-overlay' style='position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:999px;background:var(--vscode-editor-background);display:flex;align-items:center;justify-content:center;box-sizing:border-box;'>" +
+          blockedIcon +
+          "</span>"
+          : "") +
+        "</span>" +
+        '<span style="flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block">' +
+        g +
+        "</span>" +
+        (f
+          ? '<span style="flex:none;margin-left:6px;color:var(--vscode-descriptionForeground);white-space:nowrap">#' +
+          f +
+          "</span>"
+          : "") +
+        "</a>"
+      );
+    }
+
+    // Fallback when there is no URL: keep the non-link wrapper with tooltip.
     return (
-      '<span data-gh-open="' +
-      escapeHtml(String(l || "")) +
-      '" title="' +
-      escapeHtml(tooltipText) +
-      '" style="cursor:pointer;color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
+      '<span title="' +
+      safeTooltip +
+      '" style="color:inherit;display:inline-flex;align-items:center;gap:8px;width:100%;">' +
       "<span style='position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0'>" +
       baseIcon +
       (blockedIcon
@@ -478,12 +512,12 @@ export class PullRequestRenderer implements CellRendererStrategy {
         : escapeHtml(`#${p.number}`);
 
       out +=
-        "<span data-gh-open='" +
+        "<a href='" +
         url +
-        "' style='cursor:pointer;text-decoration:none;color:inherit'>" +
-        "<span title='" +
+        "' title='" +
         tooltip +
-        "' style='display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid " +
+        "' target='_blank' rel='noopener noreferrer' style='cursor:pointer;text-decoration:none;color:inherit'>" +
+        "<span style='display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid " +
         escapeHtml(border) +
         ";background:" +
         escapeHtml(bg) +
@@ -500,7 +534,7 @@ export class PullRequestRenderer implements CellRendererStrategy {
         "</span>" +
         "<span style='flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>#" +
         num +
-        "</span></span></span>";
+        "</span></span></a>";
     }
     out += "</div>";
     return out;

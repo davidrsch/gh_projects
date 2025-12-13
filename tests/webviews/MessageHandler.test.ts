@@ -340,7 +340,7 @@ describe("MessageHandler", () => {
     });
 
     describe("openUrl behavior", () => {
-        test("handles openUrl without viewKey via vscode.open", async () => {
+        test("delegates openUrl without viewKey to env.openExternal", async () => {
             const message = {
                 command: "openUrl",
                 url: "https://github.com/org/repo/issues/123",
@@ -348,28 +348,10 @@ describe("MessageHandler", () => {
 
             await (messageHandler as any).handleMessage(message);
 
-            expect((vscode.commands.executeCommand as jest.Mock)).toHaveBeenCalledWith(
-                "vscode.open",
-                { url: "https://github.com/org/repo/issues/123" },
-            );
-            // env.openExternal should not be needed in the happy path
-            expect((vscode.env.openExternal as jest.Mock)).not.toHaveBeenCalled();
-        });
-
-        test("falls back to env.openExternal when vscode.open fails", async () => {
-            (vscode.commands.executeCommand as jest.Mock).mockRejectedValueOnce(
-                new Error("failed"),
-            );
-
-            const message = {
-                command: "openUrl",
-                url: "https://github.com/org/repo/pull/1",
-            };
-
-            await (messageHandler as any).handleMessage(message);
-
+            // The handler ultimately falls back to env.openExternal with the
+            // parsed Uri. Our vscode.Uri.parse mock returns `{ url }`.
             expect((vscode.env.openExternal as jest.Mock)).toHaveBeenCalledWith({
-                url: "https://github.com/org/repo/pull/1",
+                url: "https://github.com/org/repo/issues/123",
             });
         });
     });

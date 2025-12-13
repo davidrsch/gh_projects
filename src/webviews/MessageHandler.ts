@@ -119,7 +119,6 @@ export class MessageHandler {
 
     const urlString = String((msg as any).url);
     logger.info(`[handleOpenUrl] Requested to open: ${urlString}`);
-
     try {
       let uriToOpen = vscode.Uri.parse(urlString);
 
@@ -127,7 +126,7 @@ export class MessageHandler {
       // This helps the GitHub extension identify the context and open the issue/PR within VS Code
       if (
         ((msg as any).tryExtension || urlString.includes("github.com")) &&
-        vscode.workspace.workspaceFolders
+        (vscode.workspace && vscode.workspace.workspaceFolders)
       ) {
         try {
           // Helper to clean URL using Regex (reused logic)
@@ -139,12 +138,16 @@ export class MessageHandler {
                 return `${match[1]}/${match[2]}`.toLowerCase();
               }
               return null;
-            } catch (e) { return null; }
+            } catch (e) {
+              return null;
+            }
           };
 
           const targetSlug = getSlugFromUrl(urlString);
           if (targetSlug) {
-            const gitExtension = vscode.extensions.getExtension<any>("vscode.git");
+            const gitExtension =
+              vscode.extensions &&
+              vscode.extensions.getExtension<any>("vscode.git");
             if (gitExtension) {
               const git = gitExtension.isActive
                 ? gitExtension.exports.getAPI(1)
@@ -152,21 +155,25 @@ export class MessageHandler {
 
               if (git && git.repositories) {
                 for (const local of git.repositories) {
-                  const remote = local.state.remotes?.find((r: any) => r.name === "origin") || local.state.remotes?.[0];
+                  const remote =
+                    local.state.remotes?.find((r: any) => r.name === "origin") ||
+                    local.state.remotes?.[0];
                   if (remote && remote.fetchUrl) {
                     const localSlug = getSlugFromUrl(remote.fetchUrl);
                     if (localSlug === targetSlug) {
-                      logger.info(`[handleOpenUrl] Matched URL to local repo: ${local.rootUri.fsPath}`);
+                      logger.info(
+                        `[handleOpenUrl] Matched URL to local repo: ${local.rootUri.fsPath}`,
+                      );
                       // We found the local repo!
                       // The GitHub extension often works better if we pass the *same* generic URL
                       // BUT make sure we have focus or context.
-                      // Actually, vscode.open(uri) with a http URI is just generic. 
+                      // Actually, vscode.open(uri) with a http URI is just generic.
                       // To force the GitHub extension to take it, strictly speaking it should just work if the extension is active.
-                      // However, the user reports it failing. 
+                      // However, the user reports it failing.
                       // Let's try to verify if there is a way to trigger via command.
                       // Since we can't find a specific command, we will stick to vscode.open but ensue we activate the extension first.
-                      // But we ALREADY do that. 
-                      // HYPOTHESIS: exact URL mismatch? 
+                      // But we ALREADY do that.
+                      // HYPOTHESIS: exact URL mismatch?
                       // Try opening the issue/PR using the specific issue/pr command if we can parse it.
 
                       break;
@@ -177,19 +184,18 @@ export class MessageHandler {
             }
           }
         } catch (resolveErr) {
-          logger.warn(`[handleOpenUrl] Failed to resolve local repo: ${resolveErr}`);
+          logger.warn(
+            `[handleOpenUrl] Failed to resolve local repo: ${resolveErr}`,
+          );
         }
       }
 
       // If specific instruction to try extension (or just generally for GitHub URLs)
-      if (
-        (msg as any).tryExtension ||
-        urlString.includes("github.com")
-      ) {
+      if ((msg as any).tryExtension || urlString.includes("github.com")) {
         try {
-          const ghExtension = vscode.extensions.getExtension(
-            "github.vscode-pull-request-github",
-          );
+          const ghExtension =
+            vscode.extensions &&
+            vscode.extensions.getExtension("github.vscode-pull-request-github");
           if (ghExtension) {
             if (!ghExtension.isActive) {
               await ghExtension.activate();
@@ -197,44 +203,50 @@ export class MessageHandler {
             }
 
             // Wait a tick for activation to settle
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise((r) => setTimeout(r, 500));
           }
 
           // Use the GitHub extension's URI handler to open issues/PRs
           // Format: vscode://github.vscode-pull-request-github/open-issue-webview?{"owner":"...","repo":"...","issueNumber":123}
           // Parse owner/repo/number from the GitHub URL
-          const ghUrlMatch = urlString.match(/github\.com\/([^\/]+)\/([^\/]+)\/(issues|pull)\/(\d+)/);
+          const ghUrlMatch = urlString.match(
+            /github\.com\/([^\/]+)\/([^\/]+)\/(issues|pull)\/(\d+)/,
+          );
 
           if (ghUrlMatch) {
             const [, owner, repo, type, numberStr] = ghUrlMatch;
             const number = parseInt(numberStr, 10);
 
-            logger.info(`[handleOpenUrl] Parsed GitHub URL: owner=${owner}, repo=${repo}, type=${type}, number=${number}`);
+            logger.info(
+              `[handleOpenUrl] Parsed GitHub URL: owner=${owner}, repo=${repo}, type=${type}, number=${number}`,
+            );
 
             try {
               let handlerUri: vscode.Uri;
 
-              if (type === 'issues') {
+              if (type === "issues") {
                 // Construct issue URI
                 const query = JSON.stringify({ owner, repo, issueNumber: number });
                 handlerUri = vscode.Uri.from({
                   scheme: vscode.env.uriScheme,
-                  authority: 'github.vscode-pull-request-github',
-                  path: '/open-issue-webview',
-                  query
+                  authority: "github.vscode-pull-request-github",
+                  path: "/open-issue-webview",
+                  query,
                 });
               } else {
                 // Construct PR URI
                 const query = JSON.stringify({ owner, repo, pullRequestNumber: number });
                 handlerUri = vscode.Uri.from({
                   scheme: vscode.env.uriScheme,
-                  authority: 'github.vscode-pull-request-github',
-                  path: '/open-pull-request-webview',
-                  query
+                  authority: "github.vscode-pull-request-github",
+                  path: "/open-pull-request-webview",
+                  query,
                 });
               }
 
-              logger.info(`[handleOpenUrl] Constructed vscode URI: ${handlerUri.toString()}`);
+              logger.info(
+                `[handleOpenUrl] Constructed vscode URI: ${handlerUri.toString()}`,
+              );
 
               // Open using vscode.env.openExternal which triggers the extension's UriHandler
               const opened = await vscode.env.openExternal(handlerUri);
@@ -242,13 +254,16 @@ export class MessageHandler {
                 logger.info(`[handleOpenUrl] openExternal completed successfully.`);
                 return;
               } else {
-                logger.warn(`[handleOpenUrl] openExternal returned false. Falling back to browser.`);
+                logger.warn(
+                  `[handleOpenUrl] openExternal returned false. Falling back to browser.`,
+                );
               }
             } catch (uriErr) {
-              logger.warn(`[handleOpenUrl] URI handler failed: ${uriErr}. Falling back to browser.`);
+              logger.warn(
+                `[handleOpenUrl] URI handler failed: ${uriErr}. Falling back to browser.`,
+              );
             }
           }
-
         } catch (e) {
           logger.error(`[handleOpenUrl] Error activating extension: ${e}`);
         }
@@ -256,11 +271,15 @@ export class MessageHandler {
 
       // Fallback: open in browser
       try {
-        logger.info(`[handleOpenUrl] Opening in browser: ${uriToOpen.toString()}`);
+        logger.info(
+          `[handleOpenUrl] Opening in browser: ${uriToOpen.toString()}`,
+        );
         await vscode.env.openExternal(uriToOpen);
         logger.info(`[handleOpenUrl] Browser open completed.`);
       } catch (browserError) {
-        logger.error(`[handleOpenUrl] Failed to open in browser: ${browserError}`);
+        logger.error(
+          `[handleOpenUrl] Failed to open in browser: ${browserError}`,
+        );
       }
     } catch (e) {
       const sanitized = String((e as any)?.message || e || "");
