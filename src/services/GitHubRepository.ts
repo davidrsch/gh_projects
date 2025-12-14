@@ -177,13 +177,11 @@ export class GitHubRepository {
     if (!project) throw createCodeError("No project found", "ENOPROJECT");
 
     // Parses repositories to format expected by ProjectEntry
-    const projectRepos = (project.repositories?.nodes || []).map(
-      (r: any) => ({
-        owner: r.nameWithOwner.split("/")[0],
-        name: r.nameWithOwner.split("/")[1],
-        url: r.url
-      })
-    );
+    const projectRepos = (project.repositories?.nodes || []).map((r: any) => ({
+      owner: r.nameWithOwner.split("/")[0],
+      name: r.nameWithOwner.split("/")[1],
+      url: r.url,
+    }));
 
     // 2. Fetch Fields
     const fieldsQuery = buildFieldsQuery(project.id, LIMITS);
@@ -560,26 +558,26 @@ export class GitHubRepository {
         state: n.state,
         repository: n.repository
           ? {
-            id: undefined,
-            nameWithOwner: n.repository.nameWithOwner,
-            url: n.repository.url,
-          }
+              id: undefined,
+              nameWithOwner: n.repository.nameWithOwner,
+              url: n.repository.url,
+            }
           : undefined,
         author: n.author
           ? {
-            id: undefined,
-            login: n.author.login,
-            avatarUrl: n.author.avatarUrl,
-            url: n.author.url,
-            name: undefined,
-          }
+              id: undefined,
+              login: n.author.login,
+              avatarUrl: n.author.avatarUrl,
+              url: n.author.url,
+              name: undefined,
+            }
           : undefined,
         labels: Array.isArray(n.labels?.nodes)
           ? n.labels.nodes.map((l: any) => ({
-            id: l.id,
-            name: l.name,
-            color: l.color,
-          }))
+              id: l.id,
+              name: l.name,
+              color: l.color,
+            }))
           : undefined,
       }));
 
@@ -593,26 +591,26 @@ export class GitHubRepository {
         mergedAt: n.mergedAt,
         repository: n.repository
           ? {
-            id: undefined,
-            nameWithOwner: n.repository.nameWithOwner,
-            url: n.repository.url,
-          }
+              id: undefined,
+              nameWithOwner: n.repository.nameWithOwner,
+              url: n.repository.url,
+            }
           : undefined,
         author: n.author
           ? {
-            id: undefined,
-            login: n.author.login,
-            avatarUrl: n.author.avatarUrl,
-            url: n.author.url,
-            name: undefined,
-          }
+              id: undefined,
+              login: n.author.login,
+              avatarUrl: n.author.avatarUrl,
+              url: n.author.url,
+              name: undefined,
+            }
           : undefined,
         labels: Array.isArray(n.labels?.nodes)
           ? n.labels.nodes.map((l: any) => ({
-            id: l.id,
-            name: l.name,
-            color: l.color,
-          }))
+              id: l.id,
+              name: l.name,
+              color: l.color,
+            }))
           : undefined,
       }));
 
@@ -628,7 +626,10 @@ export class GitHubRepository {
   /**
    * Fetches the canonical repository name (owner/name) to handle redirects/renames.
    */
-  public async getRepoCanonicalName(owner: string, name: string): Promise<string | null> {
+  public async getRepoCanonicalName(
+    owner: string,
+    name: string,
+  ): Promise<string | null> {
     const gql = `
       query($owner: String!, $name: String!) {
         repository(owner: $owner, name: $name) {
@@ -1054,10 +1055,10 @@ export class GitHubRepository {
       // Return a user-friendly error message
       const userMessage =
         technicalError.includes("not found") ||
-          technicalError.includes("does not exist")
+        technicalError.includes("does not exist")
           ? "Item or project not found"
           : technicalError.includes("permission") ||
-            technicalError.includes("unauthorized")
+              technicalError.includes("unauthorized")
             ? "Permission denied"
             : "Failed to add item to project";
       return {

@@ -22,7 +22,7 @@ window.tableViewFetcher = function (
     view && (view.name || view.id) ? view.name || view.id : "Table View";
   try {
     setLoadingState(container, viewName);
-  } catch (e) { }
+  } catch (e) {}
 
   // Extract projectId from global project data
   const projectId =
@@ -87,7 +87,7 @@ window.tableViewFetcher = function (
             if (
               (window as any).__APP_MESSAGING__ &&
               typeof (window as any).__APP_MESSAGING__.postMessage ===
-              "function"
+                "function"
             ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "setViewGrouping",
@@ -104,7 +104,7 @@ window.tableViewFetcher = function (
             if (
               (window as any).__APP_MESSAGING__ &&
               typeof (window as any).__APP_MESSAGING__.postMessage ===
-              "function"
+                "function"
             ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "setViewHiddenFields",
@@ -118,7 +118,7 @@ window.tableViewFetcher = function (
                 ? `ghProjects.table.${viewKey}.hiddenFields`
                 : null;
               if (key) localStorage.setItem(key, JSON.stringify(hiddenArr));
-            } catch (e) { }
+            } catch (e) {}
             unsavedHiddenFields = null;
           }
 
@@ -127,7 +127,7 @@ window.tableViewFetcher = function (
             if (
               (window as any).__APP_MESSAGING__ &&
               typeof (window as any).__APP_MESSAGING__.postMessage ===
-              "function"
+                "function"
             ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "setViewSlice",
@@ -139,7 +139,7 @@ window.tableViewFetcher = function (
             try {
               const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null;
               if (key) localStorage.setItem(key, JSON.stringify(unsavedSlice));
-            } catch (e) { }
+            } catch (e) {}
             unsavedSlice = null;
           }
 
@@ -158,10 +158,10 @@ window.tableViewFetcher = function (
                   localStorage.setItem(key, JSON.stringify(unsavedSort));
                 }
               }
-            } catch (e) { }
+            } catch (e) {}
             unsavedSort = undefined;
           }
-        } catch (e) { }
+        } catch (e) {}
       },
       onDiscard: () => {
         try {
@@ -170,7 +170,7 @@ window.tableViewFetcher = function (
             if (
               (window as any).__APP_MESSAGING__ &&
               typeof (window as any).__APP_MESSAGING__.postMessage ===
-              "function"
+                "function"
             ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "discardViewGrouping",
@@ -185,7 +185,7 @@ window.tableViewFetcher = function (
             if (
               (window as any).__APP_MESSAGING__ &&
               typeof (window as any).__APP_MESSAGING__.postMessage ===
-              "function"
+                "function"
             ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "discardViewHiddenFields",
@@ -202,7 +202,7 @@ window.tableViewFetcher = function (
             if (
               (window as any).__APP_MESSAGING__ &&
               typeof (window as any).__APP_MESSAGING__.postMessage ===
-              "function"
+                "function"
             ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "discardViewSlice",
@@ -214,7 +214,7 @@ window.tableViewFetcher = function (
             try {
               const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null;
               if (key) localStorage.removeItem(key);
-            } catch (e) { }
+            } catch (e) {}
             // Re-request fields to refresh UI from server state
             requestFields();
           }
@@ -226,7 +226,7 @@ window.tableViewFetcher = function (
             // Re-request fields to refresh UI from server/default + stored sort
             requestFields();
           }
-        } catch (e) { }
+        } catch (e) {}
       },
     });
 
@@ -241,9 +241,9 @@ window.tableViewFetcher = function (
       ) {
         try {
           barApi.setEffectiveFilter(effectiveFilter);
-        } catch (e) { }
+        } catch (e) {}
       }
-    } catch (e) { }
+    } catch (e) {}
 
     // Fallback Header if Filter Bar fails or returns null
     if (!barApi) {
@@ -305,7 +305,7 @@ window.tableViewFetcher = function (
           `ghProjects.table.${viewKey}.sortConfig`,
         );
         if (stored) sortConfig = JSON.parse(stored);
-      } catch (e) { }
+      } catch (e) {}
     }
 
     // Apply sorting
@@ -326,8 +326,8 @@ window.tableViewFetcher = function (
     // it picks up view-default hidden fields.
     const viewFieldNodes =
       (snapshot as any).details &&
-        (snapshot as any).details.fields &&
-        Array.isArray((snapshot as any).details.fields.nodes)
+      (snapshot as any).details.fields &&
+      Array.isArray((snapshot as any).details.fields.nodes)
         ? (snapshot as any).details.fields.nodes
         : null;
 
@@ -360,7 +360,7 @@ window.tableViewFetcher = function (
           viewKey,
         });
       }
-    } catch (e) { }
+    } catch (e) {}
 
     const table = new ProjectTable(tableContainer, allFields, displayItems, {
       groupingFieldName: groupingFieldName || undefined,
@@ -430,9 +430,9 @@ window.tableViewFetcher = function (
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) { }
+            } catch (e) {}
           }
-        } catch (e) { }
+        } catch (e) {}
       },
       onSortChange: (config: SortConfig | null) => {
         try {
@@ -446,9 +446,9 @@ window.tableViewFetcher = function (
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) { }
+            } catch (e) {}
           }
-        } catch (e) { }
+        } catch (e) {}
       },
       onGroupChange: (fieldName: string) => {
         // Defer persistence of grouping until user explicitly Saves from the filter bar
@@ -463,9 +463,9 @@ window.tableViewFetcher = function (
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) { }
+            } catch (e) {}
           }
-        } catch (e) { }
+        } catch (e) {}
       },
       onSliceChange: (field: any) => {
         // Track slice as unsaved change (requires Save/Discard)
@@ -481,7 +481,7 @@ window.tableViewFetcher = function (
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) { }
+            } catch (e) {}
           }
 
           // Log for debugging
@@ -498,7 +498,7 @@ window.tableViewFetcher = function (
               viewKey: viewKey,
             });
           }
-        } catch (e) { }
+        } catch (e) {}
       },
     });
     table.render();
@@ -533,7 +533,7 @@ window.tableViewFetcher = function (
           render(msg.payload, msg.effectiveFilter);
         }
       }
-    } catch (e) { }
+    } catch (e) {}
   }
 
   function requestFields() {
@@ -548,7 +548,7 @@ window.tableViewFetcher = function (
           viewKey: viewKey,
         });
       }
-    } catch (e) { }
+    } catch (e) {}
   }
 
   try {
@@ -571,7 +571,7 @@ function getGroupingFieldName(snapshot: any): string | null {
       if (vgb && vgb.length > 0) return vgb[0].name || null;
       if (gb && gb.length > 0) return gb[0].name || null;
     }
-  } catch (e) { }
+  } catch (e) {}
   return null;
 }
 
@@ -592,10 +592,10 @@ if (!(window as any).__GH_OPEN_LISTENER_ADDED__) {
           (window as any).__APP_MESSAGING__.postMessage({
             command: "debugLog",
             level: "info",
-            message: "Global Listener Caught Click: " + url
+            message: "Global Listener Caught Click: " + url,
           });
         }
-      } catch (e) { }
+      } catch (e) {}
 
       if (url) {
         if (
