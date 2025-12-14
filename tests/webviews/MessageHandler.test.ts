@@ -339,6 +339,42 @@ describe("MessageHandler", () => {
         });
     });
 
+    describe("applyInitialBoardColumn", () => {
+        test("sets single_select column value when board metadata is provided", async () => {
+            // Arrange a snapshot that includes the column field with single_select data type
+            (ProjectDataService.getProjectData as jest.Mock).mockResolvedValueOnce({
+                snapshot: {
+                    allFields: [
+                        { id: 'status-field', name: 'Status', dataType: 'single_select' },
+                    ],
+                    fields: [],
+                    items: [],
+                },
+                effectiveFilter: undefined,
+                itemsCount: 0,
+            });
+
+            const msg = {
+                viewKey: 'project-123:view-0',
+                columnFieldId: 'status-field',
+                columnValueId: 'option-todo',
+                columnValueName: 'Todo',
+            };
+
+            // Act: invoke the private helper via any-cast
+            await (messageHandler as any).applyInitialBoardColumn(msg, 'item-999');
+
+            // Assert: updateFieldValue is called with the expected arguments
+            expect(gitHubRepoMock.updateFieldValue).toHaveBeenCalledWith(
+                'project-123',
+                'item-999',
+                'status-field',
+                'option-todo',
+                'single_select'
+            );
+        });
+    });
+
     describe("openUrl behavior", () => {
         test("delegates openUrl without viewKey to env.openExternal", async () => {
             const message = {

@@ -21,19 +21,29 @@ export function computeMatches(
       }
     } catch (e) {}
 
-    // parse qualifiers like name:"some value" or name:token or -name:token
+    // parse qualifiers like name:"some value" or "name with space":"value" or name:token
     const qualifiers: Record<string, string[]> = {};
-    const qualRe = /(\-?\w+):"([^"]+)"|(\-?\w+):(\S+)/g;
+    // Regex matches: (simple-key OR "quoted-key"):("quoted-val" OR simple-val)
+    const qualRe = /(?:(\-?[\w\-]+)|"([^"]+)"):([^\s"]+|"([^"]+)")/g;
     let m;
     let cleaned = raw;
     while ((m = qualRe.exec(raw)) !== null) {
-      const name = (m[1] || m[3] || "").toLowerCase();
-      const rawVal = m[2] || m[4] || "";
+      const name = (m[1] || m[2] || "").toLowerCase();
+      // Value is m[3] (full) -> but we want inner if quoted.
+      // m[3] captures `"val"` or `val`.
+      // Actually my regex above: `([^\s"]+|"([^"]+)")`
+      // Group 3 is whole value part.
+      // Group 4 is inner quoted value.
+      // If group 4 is set, it was quoted.
+      // If group 4 is undefined, use group 3.
+      const isQuoted = !!m[4];
+      const rawVal = m[4] || m[3] || "";
+
       if (!name) continue;
       // split comma lists for unquoted values, preserve quoted values intact
       const vals: string[] = [];
       try {
-        if (m[2]) {
+        if (isQuoted) {
           // quoted — keep as single value
           vals.push(String(rawVal).toLowerCase());
         } else {
@@ -119,6 +129,20 @@ export function computeMatches(
                   if (p && p.number) parts.push(String(p.number));
                 });
               }
+            } else if (v.type === "milestone") {
+              if (v.milestone && v.milestone.title)
+                parts.push(String(v.milestone.title));
+            } else if (v.type === "iteration") {
+              if (v.title) parts.push(String(v.title));
+            } else if (v.type === "repository") {
+              if (v.repositoryName) parts.push(String(v.repositoryName));
+            } else if (v.type === "assignees") {
+              if (v.assignees && Array.isArray(v.assignees)) {
+                v.assignees.forEach((a: any) => {
+                  if (a.login) parts.push(String(a.login));
+                  if (a.name) parts.push(String(a.name));
+                });
+              }
             } else {
               if (v && v.raw) parts.push(JSON.stringify(v.raw));
             }
@@ -187,6 +211,52 @@ export function computeMatches(
               if (repoName.indexOf(val) !== -1) matched = true;
             }
 
+            // assignee: qualifier
+            if (
+              !matched &&
+              (realName === "assignee" || realName === "assignees")
+            ) {
+              const assignees =
+                (it &&
+                  it.content &&
+                  it.content.assignees &&
+                  it.content.assignees.nodes) ||
+                (it && it.content && Array.isArray(it.content.assignees)
+                  ? it.content.assignees
+                  : []) ||
+                // Try to find in fieldValues
+                (
+                  it &&
+                  Array.isArray(it.fieldValues) &&
+                  it.fieldValues.find(
+                    (v: any) => v.type === "assignees" || v.assignees,
+                  )
+                )?.assignees ||
+                [];
+              const names = (Array.isArray(assignees) ? assignees : [])
+                .map((a: any) => String(a.login || a.name || "").toLowerCase())
+                .join(" ");
+              if (names.includes(val)) matched = true;
+            }
+
+            // parent: qualifier maps to parent issue title matching
+            if (!matched && realName === "parent") {
+              // Check all parent_issue fields
+              const fv = Array.isArray(it.fieldValues) ? it.fieldValues : [];
+              for (let vi = 0; vi < fv.length; vi++) {
+                const v = fv[vi];
+                if (v && (v.type === "parent_issue" || v.type === "issue")) {
+                  const pTitle = String(
+                    (v.parent && v.parent.title) || "",
+                  ).toLowerCase();
+                  if (pTitle.includes(val)) {
+                    matched = true;
+                    break;
+                  }
+                }
+              }
+            }
+
             // has:field / no:field presence checks — val is expected to be a field name
             if (!matched && (realName === "has" || realName === "no")) {
               const fieldName = String(val || "").toLowerCase();
@@ -205,13 +275,15 @@ export function computeMatches(
                       ? String(fv.text || "").length > 0
                       : fv.type === "number"
                         ? fv.number !== undefined && fv.number !== null
-                        : Boolean(
-                            fv &&
-                            (fv.option ||
-                              fv.raw ||
-                              fv.parent ||
-                              fv.pullRequests),
-                          ));
+                        : fv.type === "assignees"
+                          ? fv.assignees && fv.assignees.length > 0
+                          : Boolean(
+                              fv &&
+                              (fv.option ||
+                                fv.raw ||
+                                fv.parent ||
+                                fv.pullRequests),
+                            ));
                 if (realName === "has") matched = !!hasValue;
                 else matched = !hasValue;
               } else {
@@ -221,8 +293,9 @@ export function computeMatches(
             }
 
             // field-scoped matching (including numeric comparisons and wildcard)
-            if (!matched && fieldIndexByName[realName] !== undefined) {
-              const idx = fieldIndexByName[realName];
+            const fieldIdx = fieldIndexByName[realName.toLowerCase()];
+            if (!matched && fieldIdx !== undefined) {
+              const idx = fieldIdx;
               const fv =
                 (it && Array.isArray(it.fieldValues) && it.fieldValues[idx]) ||
                 null;
@@ -276,24 +349,42 @@ export function computeMatches(
                           .map((L: any) => String((L && (L.name || L)) || ""))
                           .join(" ")
                           .toLowerCase();
+                      if (v.type === "assignees")
+                        return (v.assignees || [])
+                          .map((a: any) => String(a.login || a.name || ""))
+                          .join(" ")
+                          .toLowerCase();
                       if (v.type === "text")
                         return String(v.text || "").toLowerCase();
                       if (v.type === "number")
                         return String(v.number || "").toLowerCase();
+                      if (v.type === "date")
+                        return String(v.date || "")
+                          .split("T")[0]
+                          .toLowerCase();
                       if (v.type === "issue" || v.type === "parent_issue")
                         return String(
                           (v.parent && v.parent.title) || "",
                         ).toLowerCase();
-                      if (v.type === "pull_request")
-                        return (
-                          v.pullRequests && Array.isArray(v.pullRequests.nodes)
-                            ? v.pullRequests.nodes
-                                .map((p: any) =>
-                                  String(p.title || p.number || ""),
-                                )
-                                .join(" ")
-                            : ""
+                      if (v.type === "milestone")
+                        return String(
+                          (v.milestone && v.milestone.title) || "",
                         ).toLowerCase();
+                      if (v.type === "iteration")
+                        return String(v.title || "").toLowerCase();
+                      if (v.type === "repository")
+                        return String(v.repositoryName || "").toLowerCase();
+
+                      return (
+                        v.pullRequests && Array.isArray(v.pullRequests.nodes)
+                          ? v.pullRequests.nodes
+                              .map((p: any) =>
+                                String(p.title || p.number || ""),
+                              )
+                              .join(" ")
+                          : ""
+                      ).toLowerCase();
+
                       if (v && v.raw)
                         return JSON.stringify(v.raw).toLowerCase();
                     } catch (e) {}
@@ -308,14 +399,28 @@ export function computeMatches(
                       if (rx.test(oneText)) matched = true;
                     } catch (e) {}
                   } else {
-                    if (oneText.indexOf(val) !== -1) matched = true;
+                    // Exact match required
+                    if (oneText === val) matched = true;
                   }
                 }
               }
             }
 
             // fallback: search the whole item text
-            if (!matched) {
+            // Skip fallback for structural qualifiers
+            const strictQualifiers = [
+              "parent",
+              "type",
+              "is",
+              "repo",
+              "has",
+              "no",
+            ];
+            if (
+              !matched &&
+              !strictQualifiers.includes(realName) &&
+              fieldIndexByName[realName.toLowerCase()] === undefined
+            ) {
               if (val.indexOf("*") !== -1) {
                 try {
                   const rx = new RegExp(

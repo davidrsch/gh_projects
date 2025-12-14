@@ -13,7 +13,7 @@ export class MessageHandler {
     private panelKey: string,
     private context: vscode.ExtensionContext,
     private resources: any, // Pass resources for re-init
-  ) { }
+  ) {}
 
   public attach() {
     this.panel.webview.onDidReceiveMessage(
@@ -37,7 +37,7 @@ export class MessageHandler {
         this.sendInitMessage();
         return;
       }
-    } catch (e) { }
+    } catch (e) {}
 
     // Basic validation
     if (!msg || typeof msg !== "object" || typeof msg.command !== "string") {
@@ -81,6 +81,24 @@ export class MessageHandler {
           );
         }
         break;
+      case "openUrlExternal":
+        // Use vscode.env.openExternal to force opening in the default system browser
+        const urlToOpen = (msg as any).url;
+        logger.info(
+          `[MessageHandler] openUrlExternal called with: ${urlToOpen}`,
+        );
+        if (urlToOpen) {
+          try {
+            await vscode.env.openExternal(vscode.Uri.parse(urlToOpen));
+            logger.info(`[MessageHandler] openExternal success`);
+          } catch (e) {
+            logger.error(`[MessageHandler] openExternal failed: ${e}`);
+            vscode.window.showErrorMessage(`Failed to open URL: ${urlToOpen}`);
+          }
+        } else {
+          logger.error(`[MessageHandler] openUrlExternal missing URL`);
+        }
+        break;
       case "openUrl":
         await this.handleOpenUrl(msg);
         break;
@@ -89,6 +107,9 @@ export class MessageHandler {
         break;
       case "addItem:addFromRepo":
         await this.handleAddItemAddFromRepo(msg);
+        break;
+      case "moveItem":
+        await this.handleMoveItem(msg);
         break;
       case "requestFields":
         await this.handleRequestFields(msg);
@@ -126,13 +147,15 @@ export class MessageHandler {
       // This helps the GitHub extension identify the context and open the issue/PR within VS Code
       if (
         ((msg as any).tryExtension || urlString.includes("github.com")) &&
-        (vscode.workspace && vscode.workspace.workspaceFolders)
+        vscode.workspace &&
+        vscode.workspace.workspaceFolders
       ) {
         try {
           // Helper to clean URL using Regex (reused logic)
           const getSlugFromUrl = (url: string): string | null => {
             try {
-              const regex = /(?:git@|https:\/\/|http:\/\/|ssh:\/\/|git:\/\/)(?:.*@)?github\.com[:\/]([^\/]+)\/([^\/.]+)(?:\.git)?/i;
+              const regex =
+                /(?:git@|https:\/\/|http:\/\/|ssh:\/\/|git:\/\/)(?:.*@)?github\.com[:\/]([^\/]+)\/([^\/.]+)(?:\.git)?/i;
               const match = url.match(regex);
               if (match && match.length >= 3) {
                 return `${match[1]}/${match[2]}`.toLowerCase();
@@ -156,8 +179,9 @@ export class MessageHandler {
               if (git && git.repositories) {
                 for (const local of git.repositories) {
                   const remote =
-                    local.state.remotes?.find((r: any) => r.name === "origin") ||
-                    local.state.remotes?.[0];
+                    local.state.remotes?.find(
+                      (r: any) => r.name === "origin",
+                    ) || local.state.remotes?.[0];
                   if (remote && remote.fetchUrl) {
                     const localSlug = getSlugFromUrl(remote.fetchUrl);
                     if (localSlug === targetSlug) {
@@ -226,16 +250,43 @@ export class MessageHandler {
 
               if (type === "issues") {
                 // Construct issue URI
-                const query = JSON.stringify({ owner, repo, issueNumber: number });
+                const query = JSON.stringify({
+                  owner,
+                  repo,
+                  issueNumber: number,
+                });
                 handlerUri = vscode.Uri.from({
                   scheme: vscode.env.uriScheme,
                   authority: "github.vscode-pull-request-github",
                   path: "/open-issue-webview",
                   query,
                 });
+
+                logger.info(
+                  `[handleOpenUrl] Constructed vscode URI: ${handlerUri.toString()}`,
+                );
+
+                // Open using vscode.env.openExternal which triggers the extension's UriHandler
+                const opened = await vscode.env.openExternal(handlerUri);
+                if (opened) {
+                  logger.info(
+                    `[handleOpenUrl] openExternal completed successfully.`,
+                  );
+                  return;
+                } else {
+                  logger.warn(
+                    `[handleOpenUrl] openExternal returned false. Falling back to browser.`,
+                  );
+                }
               } else {
-                // Construct PR URI
-                const query = JSON.stringify({ owner, repo, pullRequestNumber: number });
+                // Construct PR URI with additional context to help extension avoid null reference errors
+                const query = JSON.stringify({
+                  owner,
+                  repo,
+                  pullRequestNumber: number,
+                  number: number, // Fallback
+                  url: urlString, // Original URL for full context
+                });
                 handlerUri = vscode.Uri.from({
                   scheme: vscode.env.uriScheme,
                   authority: "github.vscode-pull-request-github",
@@ -251,7 +302,9 @@ export class MessageHandler {
               // Open using vscode.env.openExternal which triggers the extension's UriHandler
               const opened = await vscode.env.openExternal(handlerUri);
               if (opened) {
-                logger.info(`[handleOpenUrl] openExternal completed successfully.`);
+                logger.info(
+                  `[handleOpenUrl] openExternal completed successfully.`,
+                );
                 return;
               } else {
                 logger.warn(
@@ -293,7 +346,7 @@ export class MessageHandler {
       // Map to store exact Uri objects to avoid fsPath roundtrip issues
       const repoUriMap = new Map<string, vscode.Uri>();
       // Map to store match type: 'strict' (safe for extension) or 'redirect' (needs fix)
-      const repoMatchType = new Map<string, 'strict' | 'redirect'>();
+      const repoMatchType = new Map<string, "strict" | "redirect">();
       // Map to store the actual Git Repository object for fixing remotes
       const repoGitMap = new Map<string, any>();
 
@@ -329,7 +382,8 @@ export class MessageHandler {
                 // - ssh://git@github.com/owner/repo
                 // - git://github.com/owner/repo
                 // Capture groups: 1=Owner, 2=Name
-                const regex = /(?:git@|https:\/\/|http:\/\/|ssh:\/\/|git:\/\/)(?:.*@)?github\.com[:\/]([^\/]+)\/([^\/.]+)(?:\.git)?/i;
+                const regex =
+                  /(?:git@|https:\/\/|http:\/\/|ssh:\/\/|git:\/\/)(?:.*@)?github\.com[:\/]([^\/]+)\/([^\/.]+)(?:\.git)?/i;
                 const match = url.match(regex);
                 if (match && match.length >= 3) {
                   return `${match[1]}/${match[2]}`.toLowerCase();
@@ -353,8 +407,12 @@ export class MessageHandler {
               const fetchUrl = remote.fetchUrl || "";
               localSlug = getSlugFromUrl(fetchUrl);
 
-              logger.debug(`[PathRes] Checking local repo: ${local.rootUri.fsPath}`);
-              logger.debug(`[PathRes] Remote URL: ${fetchUrl} -> Slug: ${localSlug}`);
+              logger.debug(
+                `[PathRes] Checking local repo: ${local.rootUri.fsPath}`,
+              );
+              logger.debug(
+                `[PathRes] Remote URL: ${fetchUrl} -> Slug: ${localSlug}`,
+              );
 
               // Strategy 1: Direct String Match
               if (localSlug && projectRepoSlugs.has(localSlug)) {
@@ -364,9 +422,10 @@ export class MessageHandler {
                 );
                 if (matchingProjectRepo) {
                   matchingProjectRepo.path = local.rootUri.fsPath;
-                  const key = `${matchingProjectRepo.owner}/${matchingProjectRepo.name}`.toLowerCase();
+                  const key =
+                    `${matchingProjectRepo.owner}/${matchingProjectRepo.name}`.toLowerCase();
                   repoUriMap.set(key, local.rootUri);
-                  repoMatchType.set(key, 'strict');
+                  repoMatchType.set(key, "strict");
                   repoGitMap.set(key, local);
                   logger.debug(
                     `[PathRes] STRICT MATCH: ${matchingProjectRepo.owner}/${matchingProjectRepo.name} -> ${matchingProjectRepo.path}`,
@@ -375,7 +434,9 @@ export class MessageHandler {
                 continue;
               }
 
-              logger.debug(`[PathRes] No strict match for ${localSlug}. Checking API for redirects...`);
+              logger.debug(
+                `[PathRes] No strict match for ${localSlug}. Checking API for redirects...`,
+              );
 
               // Strategy 2: API Resolution (for renames/redirects)
               // If localSlug is valid but didn't match, maybe it's an old name?
@@ -402,9 +463,10 @@ export class MessageHandler {
                       );
                       if (matchingProjectRepo) {
                         matchingProjectRepo.path = local.rootUri.fsPath;
-                        const key = `${matchingProjectRepo.owner}/${matchingProjectRepo.name}`.toLowerCase();
+                        const key =
+                          `${matchingProjectRepo.owner}/${matchingProjectRepo.name}`.toLowerCase();
                         repoUriMap.set(key, local.rootUri);
-                        repoMatchType.set(key, 'redirect');
+                        repoMatchType.set(key, "redirect");
                         repoGitMap.set(key, local);
                         logger.debug(
                           `[PathRes] REDIRECT MATCH: ${matchingProjectRepo.owner}/${matchingProjectRepo.name} (from ${localSlug}) -> ${matchingProjectRepo.path}`,
@@ -422,7 +484,9 @@ export class MessageHandler {
           }
         }
       } catch (gitErr) {
-        logger.warn("Failed to resolve local git repositories: " + String(gitErr));
+        logger.warn(
+          "Failed to resolve local git repositories: " + String(gitErr),
+        );
       }
 
       if (repos.length === 0) {
@@ -433,7 +497,9 @@ export class MessageHandler {
         return;
       }
 
-      let selectedRepoConfig: { owner?: string; name?: string; path?: string } | undefined;
+      let selectedRepoConfig:
+        | { owner?: string; name?: string; path?: string }
+        | undefined;
 
       if (repos.length === 1) {
         selectedRepoConfig = repos[0];
@@ -445,10 +511,18 @@ export class MessageHandler {
 
           let desc = "Remote Repository (Browser only)";
           if (r.path) {
-            const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(r.path));
-            const key = r.owner && r.name ? `${r.owner}/${r.name}`.toLowerCase() : "";
+            const workspaceFolder = vscode.workspace.getWorkspaceFolder(
+              vscode.Uri.file(r.path),
+            );
+            const key =
+              r.owner && r.name ? `${r.owner}/${r.name}`.toLowerCase() : "";
             const type = repoMatchType.get(key);
-            const typeLabel = type === 'strict' ? "Strict" : type === 'redirect' ? "Redirect" : "Unknown";
+            const typeLabel =
+              type === "strict"
+                ? "Strict"
+                : type === "redirect"
+                  ? "Redirect"
+                  : "Unknown";
 
             desc = `$(folder) ${workspaceFolder ? workspaceFolder.name : r.path} [${typeLabel}]`;
           }
@@ -472,7 +546,9 @@ export class MessageHandler {
 
       // ALWAYS try the extension first if available
       let extensionSucceeded = false;
-      const ghExtension = vscode.extensions.getExtension("github.vscode-pull-request-github");
+      const ghExtension = vscode.extensions.getExtension(
+        "github.vscode-pull-request-github",
+      );
 
       if (ghExtension) {
         try {
@@ -482,50 +558,63 @@ export class MessageHandler {
 
           // Try to invoke issue.createIssue
           // The command uses active editor context, so we try to help by providing a URI
-          const repoKey = selectedRepoConfig.owner && selectedRepoConfig.name
-            ? `${selectedRepoConfig.owner}/${selectedRepoConfig.name}`.toLowerCase()
-            : "";
-          const uri = repoUriMap.get(repoKey) ||
-            (selectedRepoConfig.path ? vscode.Uri.file(selectedRepoConfig.path) : undefined);
+          const repoKey =
+            selectedRepoConfig.owner && selectedRepoConfig.name
+              ? `${selectedRepoConfig.owner}/${selectedRepoConfig.name}`.toLowerCase()
+              : "";
+          const uri =
+            repoUriMap.get(repoKey) ||
+            (selectedRepoConfig.path
+              ? vscode.Uri.file(selectedRepoConfig.path)
+              : undefined);
 
           // Set up a listener to auto-fill the project field when NewIssue.md opens
           const projectTitle = this.project?.title;
           let disposable: vscode.Disposable | undefined;
 
           if (projectTitle) {
-            disposable = vscode.window.onDidChangeActiveTextEditor(async (editor) => {
-              if (editor && editor.document.uri.scheme === 'newissue') {
-                // Found the NewIssue.md file, edit the Projects line
-                try {
-                  const document = editor.document;
-                  const text = document.getText();
+            disposable = vscode.window.onDidChangeActiveTextEditor(
+              async (editor) => {
+                if (editor && editor.document.uri.scheme === "newissue") {
+                  // Found the NewIssue.md file, edit the Projects line
+                  try {
+                    const document = editor.document;
+                    const text = document.getText();
 
-                  // Find the "Projects:" line and add the project title
-                  // The line format is: "Projects: " (may have trailing space)
-                  const projectsLineMatch = text.match(/^(Projects:\s*)$/m);
-                  if (projectsLineMatch) {
-                    const lineIndex = text.substring(0, text.indexOf(projectsLineMatch[0])).split('\n').length - 1;
-                    const line = document.lineAt(lineIndex);
+                    // Find the "Projects:" line and add the project title
+                    // The line format is: "Projects: " (may have trailing space)
+                    const projectsLineMatch = text.match(/^(Projects:\s*)$/m);
+                    if (projectsLineMatch) {
+                      const lineIndex =
+                        text
+                          .substring(0, text.indexOf(projectsLineMatch[0]))
+                          .split("\n").length - 1;
+                      const line = document.lineAt(lineIndex);
 
-                    const edit = new vscode.WorkspaceEdit();
-                    edit.replace(
-                      document.uri,
-                      new vscode.Range(line.range.start, line.range.end),
-                      `Projects: ${projectTitle}`
+                      const edit = new vscode.WorkspaceEdit();
+                      edit.replace(
+                        document.uri,
+                        new vscode.Range(line.range.start, line.range.end),
+                        `Projects: ${projectTitle}`,
+                      );
+                      await vscode.workspace.applyEdit(edit);
+                      logger.info(
+                        `[handleAddItemCreateIssue] Auto-filled project: ${projectTitle}`,
+                      );
+                    }
+                  } catch (editErr) {
+                    logger.warn(
+                      `[handleAddItemCreateIssue] Failed to auto-fill project: ${editErr}`,
                     );
-                    await vscode.workspace.applyEdit(edit);
-                    logger.info(`[handleAddItemCreateIssue] Auto-filled project: ${projectTitle}`);
-                  }
-                } catch (editErr) {
-                  logger.warn(`[handleAddItemCreateIssue] Failed to auto-fill project: ${editErr}`);
-                } finally {
-                  // Clean up listener after first use
-                  if (disposable) {
-                    disposable.dispose();
+                  } finally {
+                    // Clean up listener after first use
+                    if (disposable) {
+                      disposable.dispose();
+                    }
                   }
                 }
-              }
-            });
+              },
+            );
 
             // Auto-cleanup after 10 seconds if file never opens
             setTimeout(() => {
@@ -535,16 +624,24 @@ export class MessageHandler {
             }, 10000);
           }
 
-          logger.info(`[handleAddItemCreateIssue] Attempting issue.createIssue via extension${uri ? ` with URI: ${uri.toString()}` : ''}`);
+          logger.info(
+            `[handleAddItemCreateIssue] Attempting issue.createIssue via extension${uri ? ` with URI: ${uri.toString()}` : ""}`,
+          );
           await vscode.commands.executeCommand("issue.createIssue", uri);
           extensionSucceeded = true;
-          logger.info(`[handleAddItemCreateIssue] Extension command succeeded.`);
+          logger.info(
+            `[handleAddItemCreateIssue] Extension command succeeded.`,
+          );
           return;
         } catch (cmdErr) {
-          logger.warn(`[handleAddItemCreateIssue] Extension command failed: ${cmdErr}. Falling back to browser.`);
+          logger.warn(
+            `[handleAddItemCreateIssue] Extension command failed: ${cmdErr}. Falling back to browser.`,
+          );
         }
       } else {
-        logger.info(`[handleAddItemCreateIssue] GitHub extension not installed. Using browser.`);
+        logger.info(
+          `[handleAddItemCreateIssue] GitHub extension not installed. Using browser.`,
+        );
       }
 
       // Fallback: Build GitHub "new issue" URL with PROJECT PRE-FILLED
@@ -554,21 +651,27 @@ export class MessageHandler {
           const baseUrl = `https://github.com/${selectedRepoConfig.owner}/${selectedRepoConfig.name}/issues/new`;
 
           // Extract project owner and number from project URL
-          // Format: https://github.com/users/{owner}/projects/{number} 
+          // Format: https://github.com/users/{owner}/projects/{number}
           // OR: https://github.com/orgs/{org}/projects/{number}
           const projectUrl = this.project?.url || "";
-          const projectMatch = projectUrl.match(/github\.com\/(?:users|orgs)\/([^\/]+)\/projects\/(\d+)/);
+          const projectMatch = projectUrl.match(
+            /github\.com\/(?:users|orgs)\/([^\/]+)\/projects\/(\d+)/,
+          );
 
           if (projectMatch) {
             const [, projectOwner, projectNumber] = projectMatch;
             // Format: projects=owner/projectNumber
             const params = new URLSearchParams();
-            params.set('projects', `${projectOwner}/${projectNumber}`);
+            params.set("projects", `${projectOwner}/${projectNumber}`);
             targetUrl = `${baseUrl}?${params.toString()}`;
-            logger.info(`[handleAddItemCreateIssue] Opening browser with project pre-filled: ${targetUrl}`);
+            logger.info(
+              `[handleAddItemCreateIssue] Opening browser with project pre-filled: ${targetUrl}`,
+            );
           } else {
             targetUrl = baseUrl;
-            logger.info(`[handleAddItemCreateIssue] Could not parse project URL, opening without pre-fill: ${projectUrl}`);
+            logger.info(
+              `[handleAddItemCreateIssue] Could not parse project URL, opening without pre-fill: ${projectUrl}`,
+            );
           }
         } else {
           targetUrl = this.project?.url || "https://github.com/projects";
@@ -577,8 +680,6 @@ export class MessageHandler {
         const uri = vscode.Uri.parse(targetUrl);
         await vscode.env.openExternal(uri);
       }
-
-
     } catch (e) {
       const sanitized = String((e as any)?.message || e || "");
       logger.error("webview.addItem:createIssue failed: " + sanitized);
@@ -763,6 +864,13 @@ export class MessageHandler {
           );
 
           if (addResult.success) {
+            // If this was launched from a specific board column, attempt to
+            // set the column field value on the newly created project item so
+            // it appears in the expected column immediately.
+            if (addResult.itemId) {
+              await this.applyInitialBoardColumn(msg, addResult.itemId);
+            }
+
             vscode.window.showInformationMessage(
               `Successfully added ${selectedItem.type === "issue" ? "issue" : "PR"} to project`,
             );
@@ -795,14 +903,197 @@ export class MessageHandler {
       );
     } catch (e) {
       const sanitized = String((e as any)?.message || e || "");
-      logger.error("webview.addItem:addFromRepo failed: " + sanitized);
       vscode.window.showErrorMessage(`Failed to add item: ${sanitized}`);
+    }
+  }
+
+  /**
+   * When an item is added from the Boards view, the client can pass
+   * columnFieldId/columnValueId describing the column from which the
+   * "+ Add item" action was launched. Use this information to set the
+   * corresponding project field value on the new item so that it lands in
+   * the expected column immediately.
+   *
+   * This is a best-effort helper: any errors are logged but do not surface
+   * to the user or block the add-item flow.
+   */
+  private async applyInitialBoardColumn(msg: any, itemId: string) {
+    try {
+      const projectId = this.project && this.project.id;
+      const columnFieldId = msg && msg.columnFieldId;
+      const columnValueId = msg && msg.columnValueId;
+
+      if (!projectId || !columnFieldId || !columnValueId) {
+        return;
+      }
+
+      // Fetch project snapshot so we can determine the field data type
+      const data = await ProjectDataService.getProjectData(
+        this.project,
+        msg.viewKey,
+      );
+
+      const snapshot: any = data && data.snapshot ? data.snapshot : {};
+      const fields: any[] =
+        (Array.isArray((snapshot as any).allFields)
+          ? (snapshot as any).allFields
+          : []) ||
+        (Array.isArray((snapshot as any).fields)
+          ? (snapshot as any).fields
+          : []);
+
+      const field = fields.find((f: any) => {
+        const fid = String(f && f.id);
+        const fName = String((f && f.name) || "").toLowerCase();
+        return (
+          (columnFieldId && String(columnFieldId) === fid) ||
+          (msg.columnFieldName &&
+            String(msg.columnFieldName).toLowerCase() === fName)
+        );
+      });
+
+      if (!field) {
+        logger.debug(
+          `[applyInitialBoardColumn] Column field not found for project ${projectId} and fieldId=${columnFieldId}`,
+        );
+        return;
+      }
+
+      const dataType = String(field.dataType || "").toLowerCase();
+      if (dataType !== "single_select" && dataType !== "iteration") {
+        logger.debug(
+          `[applyInitialBoardColumn] Unsupported column field type '${dataType}' for fieldId=${columnFieldId}`,
+        );
+        return;
+      }
+
+      const ghRepo = GitHubRepository.getInstance();
+      const updateResult = await ghRepo.updateFieldValue(
+        projectId,
+        itemId,
+        String(columnFieldId),
+        String(columnValueId),
+        dataType,
+      );
+
+      if (!updateResult || !updateResult.success) {
+        logger.warn(
+          `[applyInitialBoardColumn] Failed to set initial column value for item ${itemId}: ${
+            (updateResult && updateResult.error) || "unknown error"
+          }`,
+        );
+      } else {
+        logger.info(
+          `[applyInitialBoardColumn] Set initial column value for item ${itemId} (fieldId=${columnFieldId}, valueId=${columnValueId}, type=${dataType})`,
+        );
+      }
+    } catch (e) {
+      logger.warn(
+        `[applyInitialBoardColumn] Unexpected error while setting initial column value: ${String(
+          (e as any)?.message || e,
+        )}`,
+      );
+    }
+  }
+
+  private async handleMoveItem(msg: any) {
+    try {
+      logger.debug(`[handleMoveItem] Received: ${JSON.stringify(msg)}`);
+      const { itemId, projectId, fieldId, options, currentValue } = msg;
+
+      if (
+        !itemId ||
+        !projectId ||
+        !fieldId ||
+        !options ||
+        !Array.isArray(options)
+      ) {
+        logger.error(
+          `[handleMoveItem] Invalid arguments: ${JSON.stringify(msg)}`,
+        );
+        return;
+      }
+
+      // Show QuickPick
+      const items = options.map((opt: any) => {
+        // Add indicator for current value?
+        const isCurrent = opt.id === currentValue || opt.name === currentValue;
+
+        // Debug color normalization
+        const normalized = normalizeColor(opt.color) || "#848d97"; // Default to gray
+        logger.debug(
+          `[handleMoveItem] Option ${opt.name}: rawColor=${opt.color}, normalized=${normalized}`,
+        );
+
+        // Map color to ThemeIcon
+        const iconPath = getIconForColor(normalized);
+
+        return {
+          label: opt.name,
+          description: opt.description || "",
+          detail: isCurrent ? "(Current)" : undefined,
+          iconPath: iconPath,
+          option: opt,
+        };
+      });
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: "Select column to move item to",
+      });
+
+      if (!selected) return;
+
+      const option = selected.option;
+      logger.info(
+        `[handleMoveItem] Selected option: ${option.name} (${option.id})`,
+      );
+
+      // Update field value
+      const isIteration = option.startDate !== undefined;
+      const type = isIteration ? "iteration" : "single_select";
+      const value = option.id;
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Moving item to ${option.name}...`,
+        },
+        async () => {
+          const res = await GitHubRepository.getInstance().updateFieldValue(
+            projectId,
+            itemId,
+            fieldId,
+            value,
+            type,
+          );
+
+          if (!res.success) {
+            throw new Error(res.error);
+          }
+
+          // Refresh
+          const data = await ProjectDataService.getProjectData(
+            this.project,
+            msg.viewKey,
+            true,
+          );
+          this.panel.webview.postMessage({
+            command: "fields",
+            viewKey: msg.viewKey,
+            payload: data.snapshot,
+            effectiveFilter: data.effectiveFilter,
+          });
+        },
+      );
+    } catch (e: any) {
+      const msgStr = e.message || String(e);
+      logger.error(`[handleMoveItem] Failed: ${msgStr}`);
+      vscode.window.showErrorMessage(`Failed to move item: ${msgStr}`);
     }
   }
 
   private async handleRequestFields(msg: any) {
     const reqViewKey = (msg as any).viewKey as string | undefined;
-    // validate fields
     if (reqViewKey !== undefined && typeof reqViewKey !== "string") {
       this.panel.webview.postMessage({
         command: "fields",
@@ -832,7 +1123,6 @@ export class MessageHandler {
       const { snapshot, effectiveFilter, itemsCount } =
         await ProjectDataService.getProjectData(this.project, reqViewKey);
 
-      // Update local project repos if fresh data available
       if (snapshot.project.repos) {
         this.project.repos = snapshot.project.repos;
       }
@@ -893,19 +1183,17 @@ export class MessageHandler {
       if (!reqViewKey) return;
       const view = this.getViewFromKey(reqViewKey);
 
-      // Update in-memory details.filter
       if (view) {
         if (!(view as any).details) (view as any).details = {};
         (view as any).details.filter =
           typeof newFilter === "string" ? newFilter : undefined;
       }
-      // Persist saved filter to workspaceState so it survives reloads
       try {
         const storageKey = `viewFilter:${this.project.id}:${view && view.number}`;
         await this.context.workspaceState.update(
           storageKey,
           (view && (view as any).details && (view as any).details.filter) ||
-          undefined,
+            undefined,
         );
       } catch (e) {
         logger.debug("workspaceState.update failed: " + String(e));
@@ -938,14 +1226,12 @@ export class MessageHandler {
       if (!reqViewKey) return;
       const view = this.getViewFromKey(reqViewKey);
 
-      // Restore the saved filter from workspaceState (if any), otherwise keep existing
       try {
         const storageKey = `viewFilter:${this.project.id}:${view && view.number}`;
         const saved = await this.context.workspaceState.get<string>(storageKey);
         if (typeof saved === "string") {
           if (!view)
-            (this.project.views as any)[this.getViewIndex(reqViewKey)] = {}; // Should not happen if view found
-          // Re-fetch view to be safe or just update
+            (this.project.views as any)[this.getViewIndex(reqViewKey)] = {};
           if (view) {
             if (!(view as any).details) (view as any).details = {};
             (view as any).details.filter = saved;
@@ -983,7 +1269,6 @@ export class MessageHandler {
       if (!reqViewKey) return;
       const view = this.getViewFromKey(reqViewKey);
 
-      // Update in-memory details.groupByFields
       if (view) {
         if (!(view as any).details) (view as any).details = {};
         (view as any).details.groupByFields =
@@ -991,7 +1276,6 @@ export class MessageHandler {
             ? { nodes: [{ name: newGrouping }] }
             : undefined;
       }
-      // Persist saved grouping to workspaceState so it survives reloads
       try {
         const storageKey = `viewGrouping:${this.project.id}:${view && view.number}`;
         await this.context.workspaceState.update(
@@ -1002,7 +1286,7 @@ export class MessageHandler {
             (view as any).details.groupByFields.nodes &&
             (view as any).details.groupByFields.nodes[0] &&
             (view as any).details.groupByFields.nodes[0].name) ||
-          undefined,
+            undefined,
         );
       } catch (e) {
         logger.debug("workspaceState.update (grouping) failed: " + String(e));
@@ -1035,7 +1319,6 @@ export class MessageHandler {
       if (!reqViewKey) return;
       const view = this.getViewFromKey(reqViewKey);
 
-      // Restore the saved grouping from workspaceState (if any), otherwise keep existing
       try {
         const storageKey = `viewGrouping:${this.project.id}:${view && view.number}`;
         const saved = await this.context.workspaceState.get<string>(storageKey);
@@ -1096,7 +1379,6 @@ export class MessageHandler {
       const itemId = (msg as any).itemId;
       const fieldId = (msg as any).fieldId;
 
-      // Support both CellEditor (“newValue”) and tableViewFetcher (“value”) APIs
       const newValue =
         (msg as any).newValue !== undefined
           ? (msg as any).newValue
@@ -1218,6 +1500,46 @@ export class MessageHandler {
         },
       };
       this.panel.webview.postMessage(resend);
-    } catch (e) { }
+    } catch (e) {}
   }
+}
+
+/**
+ * Helper to get SVG Data URI for hex color
+ */
+function getIconForColor(hex: string): vscode.Uri {
+  const color = hex || "#848d97";
+  const svg = `<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="5" fill="${color}"/></svg>`;
+  const encoded = Buffer.from(svg).toString("base64");
+  return vscode.Uri.parse(`data:image/svg+xml;base64,${encoded}`);
+}
+
+/**
+ * Normalize color to hex or resolve name
+ */
+function normalizeColor(color: any): string | null {
+  if (!color) return null;
+  let n = String(color).trim();
+  if (
+    /^#?[0-9a-f]{3}$/i.test(n) ||
+    /^#?[0-9a-f]{6}$/i.test(n) ||
+    /^#?[0-9a-f]{8}$/i.test(n)
+  ) {
+    let b = n[0] === "#" ? n.slice(1) : n;
+    return "#" + (b.length === 8 ? b.substring(0, 6) : b);
+  }
+  let s = {
+    GRAY: "#848d97",
+    RED: "#f85149",
+    ORANGE: "#db6d28",
+    YELLOW: "#d29922",
+    GREEN: "#3fb950",
+    BLUE: "#2f81f7",
+    PURPLE: "#a371f7",
+    PINK: "#db61a2",
+    BLACK: "#000000",
+    WHITE: "#ffffff",
+  };
+  let u = n.toUpperCase();
+  return (s as any)[u] || null;
 }

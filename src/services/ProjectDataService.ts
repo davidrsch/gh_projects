@@ -76,7 +76,12 @@ export class ProjectDataService {
     }
     // Always expose the original full fields list on the snapshot under `allFields` so
     // the client can see which fields were present in the project vs the view.
-    effectiveSnapshot = { ...effectiveSnapshot, allFields: originalFields };
+    effectiveSnapshot = {
+      ...effectiveSnapshot,
+      allFields: originalFields,
+      id: project.id,
+      title: project.title,
+    };
 
     if (
       view &&
