@@ -271,6 +271,7 @@ export function getInlineScript(nonce: string, projectData: any): string {
 <script nonce="${nonce}" type="module">
   // Module bootstrap for legacy webviews when running as the fallback.
   const project = ${JSON.stringify(projectData)};
+  window.__PROJECT_DATA__ = project; // Expose globally for tests
   console.log('project.views', project.views);
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -399,6 +400,9 @@ export function getInlineScript(nonce: string, projectData: any): string {
         // Listen for messages from the extension
         window.addEventListener('message', event => {
             const message = event.data;
+            if (message && message.command === 'init' && message.project) {
+              window.__PROJECT_DATA__ = message.project;
+            }
             if (message.command && message.command.startsWith('test:')) {
                 if (window.handleTestCommand) {
                     window.handleTestCommand(message, vscode);

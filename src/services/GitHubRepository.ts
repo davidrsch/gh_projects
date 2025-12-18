@@ -105,7 +105,6 @@ export class GitHubRepository {
       const parsed = await this.query<GetProjectViewsResponse>(gql, {
         id: projectId,
       });
-      // logger.warn(`[ghProjects] Raw views response for ${projectId}: ${JSON.stringify(parsed)}`);
 
       const nodes = parsed?.node?.views?.nodes;
       if (!Array.isArray(nodes)) {
@@ -558,26 +557,26 @@ export class GitHubRepository {
         state: n.state,
         repository: n.repository
           ? {
-              id: undefined,
-              nameWithOwner: n.repository.nameWithOwner,
-              url: n.repository.url,
-            }
+            id: undefined,
+            nameWithOwner: n.repository.nameWithOwner,
+            url: n.repository.url,
+          }
           : undefined,
         author: n.author
           ? {
-              id: undefined,
-              login: n.author.login,
-              avatarUrl: n.author.avatarUrl,
-              url: n.author.url,
-              name: undefined,
-            }
+            id: undefined,
+            login: n.author.login,
+            avatarUrl: n.author.avatarUrl,
+            url: n.author.url,
+            name: undefined,
+          }
           : undefined,
         labels: Array.isArray(n.labels?.nodes)
           ? n.labels.nodes.map((l: any) => ({
-              id: l.id,
-              name: l.name,
-              color: l.color,
-            }))
+            id: l.id,
+            name: l.name,
+            color: l.color,
+          }))
           : undefined,
       }));
 
@@ -591,26 +590,26 @@ export class GitHubRepository {
         mergedAt: n.mergedAt,
         repository: n.repository
           ? {
-              id: undefined,
-              nameWithOwner: n.repository.nameWithOwner,
-              url: n.repository.url,
-            }
+            id: undefined,
+            nameWithOwner: n.repository.nameWithOwner,
+            url: n.repository.url,
+          }
           : undefined,
         author: n.author
           ? {
-              id: undefined,
-              login: n.author.login,
-              avatarUrl: n.author.avatarUrl,
-              url: n.author.url,
-              name: undefined,
-            }
+            id: undefined,
+            login: n.author.login,
+            avatarUrl: n.author.avatarUrl,
+            url: n.author.url,
+            name: undefined,
+          }
           : undefined,
         labels: Array.isArray(n.labels?.nodes)
           ? n.labels.nodes.map((l: any) => ({
-              id: l.id,
-              name: l.name,
-              color: l.color,
-            }))
+            id: l.id,
+            name: l.name,
+            color: l.color,
+          }))
           : undefined,
       }));
 
@@ -1055,10 +1054,10 @@ export class GitHubRepository {
       // Return a user-friendly error message
       const userMessage =
         technicalError.includes("not found") ||
-        technicalError.includes("does not exist")
+          technicalError.includes("does not exist")
           ? "Item or project not found"
           : technicalError.includes("permission") ||
-              technicalError.includes("unauthorized")
+            technicalError.includes("unauthorized")
             ? "Permission denied"
             : "Failed to add item to project";
       return {

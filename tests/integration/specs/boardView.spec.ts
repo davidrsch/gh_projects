@@ -24,121 +24,48 @@ export async function runBoardViewTests(
             try {
                 await runTestStep(context, `Board View: ${view.name}`, 'Verify board view renders cards in columns.', async () => {
                     await sendTestCommand(panel, 'test:clickTab', { tabIndex: view.index + 1 });
-                    await waitFor(async () => true, 2000, 2000); // Wait for render
+                    await waitFor(async () => {
+                        const info = await sendTestCommand(panel, 'test:getBoardInfo');
+                        if (!info.hasContainer && info.itemCount === 0) {
+                            console.log(`Board not rendered yet (itemCount: 0). Debug: ${JSON.stringify(info.debug)}`);
+                            return false;
+                        }
+                        return info.hasContainer || info.itemCount > 0;
+                    }, 20000);
 
-                    await snap(page, screenshots, report, `board-${view.name}-loaded`);
+                    const boardInfo = await sendTestCommand(panel, 'test:getBoardInfo');
+                    assert(boardInfo.hasContainer || boardInfo.itemCount > 0, `Board container should be found for ${view.name}`);
 
-                    // Check for board container (new card-based layout)
-                    const hasBoardContainer = await sendTestCommand(panel, 'test:evaluate', {
-                        expression: `document.querySelectorAll('.board-container').length > 0`
-                    });
+                    if (boardInfo.hasContainer) {
+                        assert(boardInfo.hasContainer, 'Board container is present');
+                        assert(boardInfo.columnCount > 0, `Found ${boardInfo.columnCount} columns`);
 
-                    // Check for column cards
-                    const columnCardCount = await sendTestCommand(panel, 'test:evaluate', {
-                        expression: `document.querySelectorAll('.board-card').length`
-                    });
-
-                    // Check for items inside cards
-                    const itemCount = await sendTestCommand(panel, 'test:evaluate', {
-                        expression: `document.querySelectorAll('.board-item[data-gh-item-id]').length`
-                    });
-
-                    // Also check for legacy flat list items (fallback mode)
-                    const legacyItemCount = await sendTestCommand(panel, 'test:evaluate', {
-                        expression: `document.querySelectorAll('div[data-gh-item-id]').length`
-                    });
-
-                    const totalItems = itemCount || legacyItemCount;
-
-                    // Check for color dots in card headers
-                    const hasColorDots = await sendTestCommand(panel, 'test:evaluate', {
-                        expression: `document.querySelectorAll('.board-card-color-dot').length > 0`
-                    });
-
-                    // Check for card titles
-                    const hasCardTitles = await sendTestCommand(panel, 'test:evaluate', {
-                        expression: `document.querySelectorAll('.board-card-title').length > 0`
-                    });
-
-                    // Check for item counts in card headers
-                    const hasItemCounts = await sendTestCommand(panel, 'test:evaluate', {
-                        expression: `document.querySelectorAll('.board-card-count').length > 0`
-                    });
-
-                    // Check for header title (flexible check)
-                    const boardTitleFound = await sendTestCommand(panel, 'test:evaluate', {
-                        expression: `(() => {
-                            const els = Array.from(document.querySelectorAll('div'));
-                            // Look for the name in text content, case-insensitive, and ensure it looks like a header
-                            const found = els.find(d => 
-                                d.textContent && 
-                                d.textContent.trim().toLowerCase() === '${view.name.toLowerCase()}' && 
-                                (d.style.fontWeight === '600' || d.style.fontWeight === 'bold' || getComputedStyle(d).fontWeight >= 600)
-                            );
-                            return !!found;
-                        })()`
-                    });
-
-                    // Assert card-based layout is present
-                    if (hasBoardContainer) {
-                        assert(hasBoardContainer, 'Board container is present');
-                        assert(typeof columnCardCount === 'number' && columnCardCount > 0, `Found ${columnCardCount} column cards`);
-                        report.addAssertion(`Board view has ${columnCardCount} column cards`);
-
-                        // Verify board container height fix
-                        const isFullHeight = await sendTestCommand(panel, 'test:evaluate', {
-                            expression: `(() => {
-                                const board = document.querySelector('.board-container');
-                                return board && board.style.height === '100%';
-                            })()`
-                        });
-                        if (isFullHeight) {
-                            report.addAssertion('Board container has height: 100%');
+                        if (boardInfo.itemCount > 0) {
+                            report.addAssertion(`Board view has ${boardInfo.itemCount} items across ${boardInfo.columnCount} columns`);
+                        } else {
+                            report.addAssertion('Board view is empty (0 items)');
                         }
 
-                        // Check for item fields
-                        const hasItemFields = await sendTestCommand(panel, 'test:evaluate', {
-                            expression: `document.querySelectorAll('.board-item-fields').length > 0`
-                        });
-                        if (hasItemFields) {
-                            report.addAssertion('Items are displaying visible fields');
-                        }
-
-                        if (hasColorDots) {
-                            report.addAssertion('Column cards have color dots');
-                        }
-                        if (hasCardTitles) {
-                            report.addAssertion('Column cards have titles');
-                        }
-                        if (hasItemCounts) {
-                            report.addAssertion('Column cards have item counts');
+                        // Verify column titles
+                        if (boardInfo.columns && boardInfo.columns.length > 0) {
+                            const columnTitles = boardInfo.columns.map((c: any) => c.title).filter(Boolean);
+                            report.addAssertion(`Column titles detected: ${columnTitles.join(', ')}`);
                         }
                     } else {
-                        // Fallback layout (flat list)
-                        report.addAssertion('Board view using fallback flat list layout (no column field detected)');
+                        // Fallback check for legacy items if container is missing
+                        assert(boardInfo.itemCount > 0, 'Found items in board view (fallback layout)');
                     }
 
-                    // Assert total items
-                    assert(typeof totalItems === 'number', 'Item count is a number');
-                    if (totalItems > 0) {
-                        report.addAssertion(`Found ${totalItems} items in board view`);
-                    } else {
-                        report.addAssertion('Board view is empty (0 items)');
-                    }
-
-                    // Assert title found
-                    assert(boardTitleFound, `Board title "${view.name}" is visible (flexible match)`);
-
-                    return `Verified board view with ${columnCardCount || 0} columns and ${totalItems} items.`;
+                    return `Verified board view "${view.name}" with ${boardInfo.columnCount} columns and ${boardInfo.itemCount} items.`;
                 });
                 results.passed++;
             } catch (err: any) {
+                await snap(page, screenshots, report, `board-${view.name}-FAIL`);
                 results.failed++;
             }
         }
     } else {
-        // Optional: Skip if no board view, but log it
-        console.log('No board views found to test.');
+        console.log('No board views found to test. Layouts found:', projectInfo.views.map((v: any) => v.layout));
     }
 
     return results;

@@ -137,7 +137,7 @@
     "build:webviews": "node ./scripts/build-webviews.js",
     "lint": "npx eslint 'src/**/*.{ts,js}' --fix || npx prettier --write 'src/**/*.{ts,js,json,md}'",
     "test": "jest --runInBand",
-    "test:integration": "npm run compile && node ./out/tests/integration/runIntegrationTests.js",
+    "test:integration": "npm run compile && npm run build:webviews && node ./out/tests/integration/runIntegrationTests.js",
     "test:report": "node ./tests/integration/scripts/openReport.js",
     "fetch-sample": "npx ts-node src/scripts/fetchSample.ts"
   },
