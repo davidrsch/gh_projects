@@ -7,17 +7,18 @@ export const TEST_HANDLER_CODE = `
     const tabsContainer = document.getElementById('tabs-container');
     const panelsContainer = document.getElementById('tab-panels');
     // 'project' is expected to be global or in scope. Fallback to window.__project_data__
-    const projectData = (typeof project !== 'undefined') ? project : (window.__project_data__ || {});
+    const projectData = window.__PROJECT_DATA__ || window.__project_data__ || {};
     
     // Helper: get visible panel
     function getVisiblePanel() {
-      if (!panelsContainer) return null;
-      return Array.from(panelsContainer.children).find(p => {
+      const container = document.getElementById('tab-panels');
+      if (!container) return null;
+      return Array.from(container.children).find(p => {
         const style = window.getComputedStyle(p);
-        return style.display !== 'none';
+        return style.display !== 'none' && style.visibility !== 'hidden';
       });
     }
-    
+
     // Helper: get computed styles for element
     function getStyles(el, props) {
       if (!el) return null;
@@ -27,7 +28,6 @@ export const TEST_HANDLER_CODE = `
       return result;
     }
     
-    // Helper: simulate mouse event
     // Helper: simulate mouse event
     function simulateEvent(el, eventType, options = {}) {
       if (!el) return false;
@@ -55,11 +55,61 @@ export const TEST_HANDLER_CODE = `
             views: (projectData.views || []).map((v, i) => ({ 
                 index: i, 
                 name: v.name || v.id, 
-                layout: v.layout || 'table' 
+                layout: v.layout // Pass the raw layout from the server
             }))
           };
           break;
 
+        case 'test:getBoardInfo': {
+          const visiblePanel = getVisiblePanel();
+          if (!visiblePanel) {
+            result = { error: 'No visible panel', panelCount: document.getElementById('tab-panels')?.children?.length };
+          } else {
+            const hasContainer = visiblePanel.classList.contains('board-container') || !!visiblePanel.querySelector('.board-container');
+            const columns = visiblePanel.querySelectorAll('.board-card, .board-column-items');
+            const items = visiblePanel.querySelectorAll('.board-item');
+            result = {
+              hasContainer,
+              columnCount: columns.length,
+              itemCount: items.length,
+              columns: Array.from(columns).map(col => ({
+                title: col.querySelector('.board-card-title, .board-column-header')?.textContent?.trim(),
+                count: col.querySelector('.board-card-count')?.textContent?.trim()
+              })),
+              debug: {
+                panelId: visiblePanel.id,
+                panelClasses: visiblePanel.className,
+                childCount: visiblePanel.children.length,
+                innerHTML: visiblePanel.innerHTML.substring(0, 100)
+              }
+            };
+          }
+          break;
+        }
+
+        case 'test:getRoadmapInfo': {
+          const visiblePanel = getVisiblePanel();
+          if (!visiblePanel) {
+            result = { error: 'No visible panel', panelCount: document.getElementById('tab-panels')?.children?.length };
+          } else {
+            const hasContainer = visiblePanel.classList.contains('roadmap-container') || !!visiblePanel.querySelector('.roadmap-container');
+            const timeline = visiblePanel.querySelector('.roadmap-timeline');
+            const bars = visiblePanel.querySelectorAll('.roadmap-bar');
+            result = {
+              hasContainer,
+              hasTimeline: !!timeline,
+              barCount: bars.length,
+              zoomLevel: visiblePanel.getAttribute('data-zoom') || visiblePanel.querySelector('.roadmap-container')?.getAttribute('data-zoom') || null,
+              debug: {
+                panelId: visiblePanel.id,
+                panelClasses: visiblePanel.className,
+                childCount: visiblePanel.children.length,
+                innerHTML: visiblePanel.innerHTML.substring(0, 100)
+              }
+            };
+          }
+          break;
+        }
         case 'test:getTabBar': {
           if (!tabsContainer) { result = { error: 'Tabs container not found' }; break; }
           const tabs = tabsContainer.querySelectorAll('.tab');
@@ -129,7 +179,13 @@ export const TEST_HANDLER_CODE = `
               rowCount: rows.length,
               sliceItemCount: sliceItems.length,
               groupHeaderCount: groupHeaders.length,
-              firstRowId: rows.length > 0 ? rows[0].getAttribute('data-gh-item-id') : null
+              firstRowId: rows.length > 0 ? rows[0].getAttribute('data-gh-item-id') : null,
+              debug: {
+                panelId: visiblePanel.id,
+                panelClasses: visiblePanel.className,
+                childCount: visiblePanel.children.length,
+                innerHTML: visiblePanel.innerHTML.substring(0, 100)
+              }
             };
           }
           break;
