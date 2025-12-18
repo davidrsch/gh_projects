@@ -8,6 +8,8 @@ import {
   applyFilterVisibility,
 } from "./viewFetcherUtils";
 import { BoardCardRenderer } from "./renderers/BoardCardRenderer";
+import { parseSortByFields, sortItems } from "./utils/tableSorting";
+import type { SortConfig } from "./utils/tableSorting";
 /// <reference path="./global.d.ts" />
 
 // signal that the board fetcher script executed
@@ -45,12 +47,39 @@ function createBoardFetcher() {
         container.style.flexDirection = "column";
         container.style.overflow = "hidden";
 
+        // Track unsaved sort changes (local-only view state)
+        let unsavedSort: SortConfig | null | undefined = undefined;
+
         let barApi = initFilterBar(container, viewKey, {
           suffix: viewKey,
           step: first,
           onLoadMore: function () {
             first += 50;
             requestFields();
+          },
+          onSave: (newFilter: any) => {
+            // Save sort if changed (persist local override only)
+            if (unsavedSort !== undefined) {
+              try {
+                const key = viewKey
+                  ? `ghProjects.table.${viewKey}.sortConfig`
+                  : null;
+                if (key) {
+                  if (unsavedSort === null) {
+                    localStorage.removeItem(key);
+                  } else {
+                    localStorage.setItem(key, JSON.stringify(unsavedSort));
+                  }
+                }
+              } catch (e) { }
+              unsavedSort = undefined;
+            }
+          },
+          onDiscard: () => {
+            if (unsavedSort !== undefined) {
+              unsavedSort = undefined;
+              requestFields();
+            }
           },
         });
 
@@ -185,6 +214,21 @@ function createBoardFetcher() {
             barApi.inputEl.dispatchEvent(new Event("input", { bubbles: true }));
           }
         };
+
+        // Determine sorting
+        let sortConfig = parseSortByFields(payload && payload.details && payload.details.sortByFields);
+        if (viewKey) {
+          try {
+            const stored = localStorage.getItem(`ghProjects.table.${viewKey}.sortConfig`);
+            if (stored) sortConfig = JSON.parse(stored);
+          } catch (e) { }
+        }
+
+        // Apply sorting to items
+        let displayItems = items;
+        if (sortConfig) {
+          displayItems = sortItems(items, allFields, sortConfig);
+        }
 
         const handleAction = (action: string, item: any, args: any) => {
           if (action === "open-menu" && args) {
@@ -429,7 +473,7 @@ function createBoardFetcher() {
             const visibleFieldIds = fields.map((f: any) => String(f.id));
             const cardRenderer = new BoardCardRenderer(
               allFields,
-              items,
+              displayItems,
               visibleFieldIds,
               handleFilter,
               handleAction,
@@ -483,6 +527,19 @@ function createBoardFetcher() {
                   matched: matchedIds.size,
                   original: items.length,
                 });
+              });
+            }
+            if (typeof barApi.onSortChange === "function") {
+              barApi.onSortChange((config: SortConfig | null) => {
+                unsavedSort = config || null;
+                if (barApi && barApi.saveBtn && barApi.discardBtn) {
+                  barApi.saveBtn.disabled = false;
+                  barApi.discardBtn.disabled = false;
+                  barApi.saveBtn.style.opacity = "1";
+                  barApi.saveBtn.style.cursor = "pointer";
+                  barApi.discardBtn.style.opacity = "1";
+                  barApi.discardBtn.style.cursor = "pointer";
+                }
               });
             }
           }

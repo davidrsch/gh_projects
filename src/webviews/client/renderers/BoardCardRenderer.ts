@@ -1478,21 +1478,30 @@ export class BoardCardRenderer {
   ): HTMLElement {
     const header = document.createElement("div");
     header.className = "board-swimlane-header";
-    header.style.display = "flex";
-    header.style.alignItems = "center";
-    header.style.gap = "8px";
-    header.style.padding = "8px 16px";
+    header.style.position = "sticky";
     header.style.top = "var(--board-headers-height, 72px)";
     header.style.zIndex = "20";
     header.style.cursor = "pointer";
     header.style.userSelect = "none";
+    header.style.background = "var(--vscode-editor-background)";
+
+    // Horizontal sticky container
+    const leftPane = document.createElement("div");
+    leftPane.style.display = "flex";
+    leftPane.style.alignItems = "center";
+    leftPane.style.gap = "8px";
+    leftPane.style.padding = "8px 16px";
+    leftPane.style.position = "sticky";
+    leftPane.style.left = "0";
+    leftPane.style.width = "max-content";
+    leftPane.style.background = "inherit";
 
     // Toggle Icon
     const toggleIcon = document.createElement("span");
     toggleIcon.className = "swimlane-toggle-icon";
     toggleIcon.innerHTML = this.getIconSvg("triangle-down", 16);
     toggleIcon.style.opacity = "0.7";
-    header.appendChild(toggleIcon);
+    leftPane.appendChild(toggleIcon);
 
     // Color dot or Avatar
     if (option.avatarUrl) {
@@ -1501,24 +1510,26 @@ export class BoardCardRenderer {
       avatar.style.width = "20px";
       avatar.style.height = "20px";
       avatar.style.borderRadius = "50%";
-      header.appendChild(avatar);
+      leftPane.appendChild(avatar);
     } else if (option.type === "repository") {
       const repoIcon = document.createElement("span");
       repoIcon.innerHTML = this.getIconSvg("repo", 16);
-      header.appendChild(repoIcon);
+      leftPane.appendChild(repoIcon);
     } else {
       const colorDot = document.createElement("div");
       colorDot.style.width = "12px";
       colorDot.style.height = "12px";
       colorDot.style.borderRadius = "50%";
       colorDot.style.backgroundColor = normalizeColor(option.color) || "gray";
-      header.appendChild(colorDot);
+      leftPane.appendChild(colorDot);
     }
 
     // Title
     const title = document.createElement("span");
+    title.style.fontWeight = "600";
+    title.style.fontSize = "13px";
     title.textContent = option.name || option.title || "Unassigned";
-    header.appendChild(title);
+    leftPane.appendChild(title);
 
     // Count
     const countCircle = document.createElement("span");
@@ -1533,7 +1544,7 @@ export class BoardCardRenderer {
     countCircle.style.fontSize = "12px";
     countCircle.style.padding = "0 4px";
     countCircle.textContent = String(items.length);
-    header.appendChild(countCircle);
+    leftPane.appendChild(countCircle);
 
     // Estimate Sum
     const estSum = this.sumEstimate(items);
@@ -1545,7 +1556,7 @@ export class BoardCardRenderer {
       estEl.style.background = "var(--vscode-input-background)";
       estEl.style.fontSize = "11px";
       estEl.textContent = "Estimate: " + this.formatEstimate(estSum);
-      header.appendChild(estEl);
+      leftPane.appendChild(estEl);
     }
 
     // Iteration Range
@@ -1557,9 +1568,11 @@ export class BoardCardRenderer {
         rangeEl.style.fontSize = "12px";
         rangeEl.style.fontWeight = "400";
         rangeEl.textContent = range;
-        header.appendChild(rangeEl);
+        leftPane.appendChild(rangeEl);
       }
     }
+
+    header.appendChild(leftPane);
 
     return header;
   }
