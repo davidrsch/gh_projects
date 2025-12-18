@@ -163,26 +163,37 @@ export class BoardCardRenderer {
       const fv = item.fieldValues.find(
         (v: any) =>
           String(v.fieldId) === String(columnField.id) ||
-          v.fieldName === columnField.name ||
-          v.type === dataType,
+          String(v.fieldName).toLowerCase() === String(columnField.name).toLowerCase()
       );
 
       let groupKey = "__no_value__";
 
       if (fv) {
-        if (dataType === "single_select" && fv.option) {
-          groupKey = String(fv.option.id || fv.option.name || "__no_value__");
-        } else if (dataType === "iteration" && fv.iterationId) {
-          groupKey = String(fv.iterationId);
-        } else if (dataType === "iteration" && fv.title) {
-          // Find by title match
-          for (const [key, group] of groups) {
-            if (
-              group.option.title === fv.title ||
-              group.option.name === fv.title
-            ) {
-              groupKey = key;
-              break;
+        if (dataType === "single_select") {
+          const optId = fv.optionId || (fv.option && fv.option.id);
+          const optName = fv.name || (fv.option && fv.option.name);
+          if (optId && groups.has(String(optId))) {
+            groupKey = String(optId);
+          } else if (optName) {
+            for (const [key, group] of groups) {
+              if (String(group.option.name).toLowerCase() === String(optName).toLowerCase()) {
+                groupKey = key;
+                break;
+              }
+            }
+          }
+        } else if (dataType === "iteration") {
+          const itId = fv.iterationId || (fv.iteration && fv.iteration.id) || fv.id;
+          const itTitle = fv.title || (fv.iteration && fv.iteration.title);
+          if (itId && groups.has(String(itId))) {
+            groupKey = String(itId);
+          } else if (itTitle) {
+            for (const [key, group] of groups) {
+              if (String(group.option.title).toLowerCase() === String(itTitle).toLowerCase() ||
+                String(group.option.name).toLowerCase() === String(itTitle).toLowerCase()) {
+                groupKey = key;
+                break;
+              }
             }
           }
         }
@@ -226,7 +237,6 @@ export class BoardCardRenderer {
    * Render a single card for a column
    */
   public renderCard(option: any, items: any[], columnField: any): HTMLElement {
-    const dataType = String(columnField.dataType || "").toLowerCase();
     const card = document.createElement("div");
     card.className = "board-card";
     card.setAttribute("data-column-id", String(option.id || option.name || ""));
@@ -241,10 +251,48 @@ export class BoardCardRenderer {
     card.style.flexShrink = "0";
 
     // Card Header
+    const header = this.renderColumnHeaderOnly(option, items, columnField);
+    header.style.borderBottom = "1px solid var(--vscode-editorWidget-border)";
+    card.appendChild(header);
+
+    // Card Items - with scroll for overflow
+    const itemsContainer = document.createElement("div");
+    itemsContainer.className = "board-card-items";
+    itemsContainer.style.padding = "8px";
+    itemsContainer.style.overflowY = "auto";
+    itemsContainer.style.flex = "1";
+    itemsContainer.style.minHeight = "0"; // Important for flex scroll
+
+    // Get the column option color for items
+    const columnColor = normalizeColor(option.color) || "#666666";
+
+    for (const item of items) {
+      const itemEl = this.renderItem(item, columnField, columnColor);
+      itemsContainer.appendChild(itemEl);
+    }
+
+    card.appendChild(itemsContainer);
+
+    // Card Footer - Add item button
+    const footer = this.renderColumnFooterOnly(option, columnField);
+    card.appendChild(footer);
+
+    return card;
+  }
+
+  /**
+   * Render only the column header
+   */
+  private renderColumnHeaderOnly(
+    option: any,
+    items: any[],
+    columnField: any,
+  ): HTMLElement {
+    const dataType = String(columnField.dataType || "").toLowerCase();
     const header = document.createElement("div");
     header.className = "board-card-header";
     header.style.padding = "12px";
-    header.style.borderBottom = "1px solid var(--vscode-editorWidget-border)";
+    header.style.background = "var(--vscode-sideBar-background)";
     header.style.flexShrink = "0";
 
     // Header Row 1: Color dot + Title + Count + Estimate
@@ -324,27 +372,13 @@ export class BoardCardRenderer {
       header.appendChild(descRow);
     }
 
-    card.appendChild(header);
+    return header;
+  }
 
-    // Card Items - with scroll for overflow
-    const itemsContainer = document.createElement("div");
-    itemsContainer.className = "board-card-items";
-    itemsContainer.style.padding = "8px";
-    itemsContainer.style.overflowY = "auto";
-    itemsContainer.style.flex = "1";
-    itemsContainer.style.minHeight = "0"; // Important for flex scroll
-
-    // Get the column option color for items
-    const columnColor = normalizeColor(option.color) || "#666666";
-
-    for (const item of items) {
-      const itemEl = this.renderItem(item, columnField, columnColor);
-      itemsContainer.appendChild(itemEl);
-    }
-
-    card.appendChild(itemsContainer);
-
-    // Card Footer - Add item button
+  /**
+   * Render only the column footer (Add item button)
+   */
+  private renderColumnFooterOnly(option: any, columnField: any): HTMLElement {
     const footer = document.createElement("div");
     footer.className = "board-card-footer";
     footer.style.padding = "8px 12px";
@@ -390,9 +424,7 @@ export class BoardCardRenderer {
       }
     });
 
-    card.appendChild(footer);
-
-    return card;
+    return footer;
   }
 
   /**
@@ -466,7 +498,7 @@ export class BoardCardRenderer {
       const blockedByCount =
         deps && typeof deps.blockedBy === "number" ? deps.blockedBy : 0;
       isBlocked = blockedByCount > 0;
-    } catch (_) {}
+    } catch (_) { }
 
     // Use column color for the icon (matches column header)
     const iconColor = columnColor;
@@ -1129,7 +1161,7 @@ export class BoardCardRenderer {
         blockedBy = parentItem.content.issueDependenciesSummary.blockedBy || 0;
       }
       if (hasBlockedLabel || blockedBy > 0) isBlocked = true;
-    } catch (e) {}
+    } catch (e) { }
 
     const iconName = isClosed ? "issue-closed" : "issue-opened";
     const icon = this.getIconSvg(iconName, 12, p);
@@ -1215,38 +1247,408 @@ export class BoardCardRenderer {
   }
 
   /**
+   * Group items by swimlane field value
+   */
+  public groupItemsBySwimlane(
+    items: any[],
+    swimlaneField: any,
+  ): Map<string, { option: any; items: any[] }> {
+    const groups = new Map<string, { option: any; items: any[] }>();
+    const dataType = String(swimlaneField.dataType || "").toLowerCase();
+
+    // Get all options from the field configuration
+    let options: any[] = [];
+    if (dataType === "single_select" && Array.isArray(swimlaneField.options)) {
+      options = swimlaneField.options;
+    } else if (
+      dataType === "iteration" &&
+      swimlaneField.configuration?.iterations
+    ) {
+      options = swimlaneField.configuration.iterations.map((it: any) => ({
+        id: it.id,
+        name: it.title,
+        title: it.title,
+        color: it.color || null,
+        startDate: it.startDate,
+        duration: it.duration,
+      }));
+    } else if (dataType === "assignees") {
+      // Extract unique assignees from items
+      const assigneeMap = new Map<string, any>();
+      for (const item of items) {
+        const assignees = this.extractAssignees(item);
+        for (const a of assignees) {
+          if (!assigneeMap.has(a.login)) {
+            assigneeMap.set(a.login, a);
+          }
+        }
+      }
+      options = Array.from(assigneeMap.values()).map((a) => ({
+        id: a.login,
+        name: a.login,
+        avatarUrl: a.avatarUrl,
+        type: "assignee",
+      }));
+    } else if (dataType === "repository") {
+      const repoMap = new Map<string, any>();
+      for (const item of items) {
+        const repo =
+          item.content?.repository ||
+          item.raw?.itemContent?.repository ||
+          item.repository;
+        if (repo && (repo.nameWithOwner || repo.name)) {
+          const name = repo.nameWithOwner || repo.name;
+          if (!repoMap.has(name)) {
+            repoMap.set(name, repo);
+          }
+        }
+      }
+      options = Array.from(repoMap.values()).map((r) => ({
+        id: r.nameWithOwner || r.name,
+        name: r.nameWithOwner || r.name,
+        type: "repository",
+      }));
+    } else if (dataType === "milestone") {
+      const milestoneMap = new Map<string, any>();
+      for (const item of items) {
+        const fv = item.fieldValues?.find((v: any) => v.type === "milestone");
+        if (fv?.milestone) {
+          if (!milestoneMap.has(fv.milestone.id || fv.milestone.title)) {
+            milestoneMap.set(
+              fv.milestone.id || fv.milestone.title,
+              fv.milestone,
+            );
+          }
+        }
+      }
+      options = Array.from(milestoneMap.values()).map((m) => ({
+        id: m.id || m.title,
+        name: m.title,
+        type: "milestone",
+      }));
+    } else if (dataType === "labels") {
+      const labelMap = new Map<string, any>();
+      for (const item of items) {
+        const fv = item.fieldValues?.find((v: any) => v.type === "labels");
+        if (fv?.labels?.nodes) {
+          for (const l of fv.labels.nodes) {
+            if (!labelMap.has(l.id || l.name)) {
+              labelMap.set(l.id || l.name, l);
+            }
+          }
+        }
+      }
+      options = Array.from(labelMap.values()).map((l) => ({
+        id: l.id || l.name,
+        name: l.name,
+        color: l.color,
+        type: "label",
+      }));
+    }
+
+    // Initialize groups for each option in order
+    for (const opt of options) {
+      const key = String(opt.id || opt.name || "");
+      if (key) {
+        groups.set(key, { option: opt, items: [] });
+      }
+    }
+
+    // Add "No value" group
+    groups.set("__no_value__", {
+      option: {
+        id: "__no_value__",
+        name: `No ${swimlaneField.name}`,
+        color: null,
+      },
+      items: [],
+    });
+
+    // Assign items to groups
+    for (const item of items) {
+      let groupKey = "__no_value__";
+
+      if (dataType === "assignees") {
+        const assignees = this.extractAssignees(item);
+        if (assignees.length > 0) {
+          // GitHub usually puts items in multiple swimlanes if multiple assignees?
+          // For simplicity, let's pick the first one or duplicate if we want to follow GH exactly.
+          // GH usually shows the item in EACH swimlane.
+          for (const a of assignees) {
+            const key = a.login;
+            if (groups.has(key)) {
+              groups.get(key)!.items.push(item);
+            }
+          }
+          continue; // Skip the default push below
+        }
+      } else if (dataType === "labels") {
+        const fv = item.fieldValues?.find((v: any) => v.type === "labels");
+        if (fv?.labels?.nodes && fv.labels.nodes.length > 0) {
+          for (const l of fv.labels.nodes) {
+            const key = String(l.id || l.name);
+            if (groups.has(key)) {
+              groups.get(key)!.items.push(item);
+            }
+          }
+          continue;
+        }
+      } else if (dataType === "repository") {
+        const repo =
+          item.content?.repository ||
+          item.raw?.itemContent?.repository ||
+          item.repository;
+        if (repo) {
+          groupKey = repo.nameWithOwner || repo.name || "__no_value__";
+        }
+      } else if (dataType === "parent_issue") {
+        const fv = item.fieldValues?.find((v: any) => v.type === "parent_issue" || String(v.fieldName).toLowerCase() === "parent");
+        const p = fv?.parent || fv?.parentIssue || fv?.issue || fv?.item || fv?.value;
+        if (p) {
+          groupKey = String(p.number || p.id || p.title || "__no_value__");
+        }
+      } else if (Array.isArray(item.fieldValues)) {
+        const fv = item.fieldValues.find(
+          (v: any) =>
+            String(v.fieldId) === String(swimlaneField.id) ||
+            String(v.fieldName).toLowerCase() === String(swimlaneField.name).toLowerCase()
+        );
+
+        if (fv) {
+          if (dataType === "single_select") {
+            const optId = fv.optionId || (fv.option && fv.option.id);
+            const optName = fv.name || (fv.option && fv.option.name);
+            if (optId && groups.has(String(optId))) {
+              groupKey = String(optId);
+            } else if (optName) {
+              for (const [key, group] of groups) {
+                if (String(group.option.name).toLowerCase() === String(optName).toLowerCase()) {
+                  groupKey = key;
+                  break;
+                }
+              }
+            }
+          } else if (dataType === "iteration") {
+            const itId = fv.iterationId || (fv.iteration && fv.iteration.id) || fv.id;
+            const itTitle = fv.title || (fv.iteration && fv.iteration.title);
+            if (itId && groups.has(String(itId))) {
+              groupKey = String(itId);
+            } else if (itTitle) {
+              for (const [key, group] of groups) {
+                if (String(group.option.title).toLowerCase() === String(itTitle).toLowerCase() ||
+                  String(group.option.name).toLowerCase() === String(itTitle).toLowerCase()) {
+                  groupKey = key;
+                  break;
+                }
+              }
+            }
+          } else {
+            // Text, Number, Date fallbacks
+            const val = fv.text ?? fv.number ?? fv.date ?? fv.title ?? fv.value;
+            if (val !== undefined && val !== null && val !== "") {
+              groupKey = String(val);
+            }
+          }
+        }
+      }
+
+      const normalizedKey = groups.has(groupKey) ? groupKey : "__no_value__";
+
+      // If we don't have a pre-initialized group for this key (e.g. dynamic types like text/number), create it
+      if (groupKey !== "__no_value__" && !groups.has(groupKey)) {
+        groups.set(groupKey, {
+          option: { id: groupKey, name: groupKey, title: groupKey },
+          items: []
+        });
+      }
+
+      groups.get(groups.has(groupKey) ? groupKey : "__no_value__")!.items.push(item);
+    }
+
+    return groups;
+  }
+
+  /**
+   * Render a swimlane header (similar to GroupRenderer)
+   */
+  private renderSwimlaneHeader(
+    option: any,
+    items: any[],
+    swimlaneField: any,
+  ): HTMLElement {
+    const header = document.createElement("div");
+    header.className = "board-swimlane-header";
+    header.style.display = "flex";
+    header.style.alignItems = "center";
+    header.style.gap = "8px";
+    header.style.padding = "8px 16px";
+    header.style.top = "var(--board-headers-height, 72px)";
+    header.style.zIndex = "20";
+    header.style.cursor = "pointer";
+    header.style.userSelect = "none";
+
+    // Toggle Icon
+    const toggleIcon = document.createElement("span");
+    toggleIcon.className = "swimlane-toggle-icon";
+    toggleIcon.innerHTML = this.getIconSvg("triangle-down", 16);
+    toggleIcon.style.opacity = "0.7";
+    header.appendChild(toggleIcon);
+
+    // Color dot or Avatar
+    if (option.avatarUrl) {
+      const avatar = document.createElement("img");
+      avatar.src = option.avatarUrl;
+      avatar.style.width = "20px";
+      avatar.style.height = "20px";
+      avatar.style.borderRadius = "50%";
+      header.appendChild(avatar);
+    } else if (option.type === "repository") {
+      const repoIcon = document.createElement("span");
+      repoIcon.innerHTML = this.getIconSvg("repo", 16);
+      header.appendChild(repoIcon);
+    } else {
+      const colorDot = document.createElement("div");
+      colorDot.style.width = "12px";
+      colorDot.style.height = "12px";
+      colorDot.style.borderRadius = "50%";
+      colorDot.style.backgroundColor = normalizeColor(option.color) || "gray";
+      header.appendChild(colorDot);
+    }
+
+    // Title
+    const title = document.createElement("span");
+    title.textContent = option.name || option.title || "Unassigned";
+    header.appendChild(title);
+
+    // Count
+    const countCircle = document.createElement("span");
+    countCircle.style.display = "inline-flex";
+    countCircle.style.alignItems = "center";
+    countCircle.style.justifyContent = "center";
+    countCircle.style.minWidth = "22px";
+    countCircle.style.height = "22px";
+    countCircle.style.borderRadius = "50%";
+    countCircle.style.background = "var(--vscode-input-background)";
+    countCircle.style.border = "1px solid var(--vscode-panel-border)";
+    countCircle.style.fontSize = "12px";
+    countCircle.style.padding = "0 4px";
+    countCircle.textContent = String(items.length);
+    header.appendChild(countCircle);
+
+    // Estimate Sum
+    const estSum = this.sumEstimate(items);
+    if (estSum > 0) {
+      const estEl = document.createElement("div");
+      estEl.style.padding = "2px 8px";
+      estEl.style.borderRadius = "999px";
+      estEl.style.border = "1px solid var(--vscode-panel-border)";
+      estEl.style.background = "var(--vscode-input-background)";
+      estEl.style.fontSize = "11px";
+      estEl.textContent = "Estimate: " + this.formatEstimate(estSum);
+      header.appendChild(estEl);
+    }
+
+    // Iteration Range
+    if (String(swimlaneField.dataType || "").toLowerCase() === "iteration") {
+      const range = this.getIterationRange(option);
+      if (range) {
+        const rangeEl = document.createElement("span");
+        rangeEl.style.color = "var(--vscode-descriptionForeground)";
+        rangeEl.style.fontSize = "12px";
+        rangeEl.style.fontWeight = "400";
+        rangeEl.textContent = range;
+        header.appendChild(rangeEl);
+      }
+    }
+
+    return header;
+  }
+
+  /**
    * Render the full board with all cards
    */
-  public renderBoard(container: HTMLElement, columnField: any): void {
-    const groups = this.groupItemsByColumn(this.allItems, columnField);
-
-    // Create board container - fill height and allow horizontal scroll
-    const board = document.createElement("div");
-    board.className = "board-container";
-    board.style.display = "flex";
-    board.style.gap = "16px";
-    board.style.overflowX = "auto";
-    board.style.overflowY = "hidden";
-    board.style.padding = "8px 0";
-    board.style.alignItems = "stretch"; // Cards fill height
-    board.style.flex = "1 1 auto"; // Fill remaining flex parent height
-    board.style.height = "100%";
-    board.style.boxSizing = "border-box";
-
+  public renderBoard(
+    container: HTMLElement,
+    columnField: any,
+    swimlaneField?: any,
+  ): void {
     // Inject styles for interactions
     const style = document.createElement("style");
     style.textContent = `
+            * { box-sizing: border-box; }
             .board-item-menu-btn { opacity: 0; transition: opacity 0.2s; cursor: pointer; padding: 2px; border-radius: 4px; }
             .board-item-menu-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
             .board-item:hover .board-item-menu-btn { opacity: 1; }
             .board-pill { cursor: pointer; transition: opacity 0.2s; }
             .board-pill:hover { opacity: 0.8; }
+            .board-swimlane { display: flex; flex-direction: column; }
+            .board-swimlane-content { display: flex; gap: 16px; padding: 0 16px 16px 16px; align-items: stretch; }
+            .board-container { display: flex; flex-direction: column; overflow: auto; height: 100%; width: 100%; }
+            .board-column-headers { 
+              display: flex; 
+              gap: 16px; 
+              padding: 16px 16px 0 16px; 
+              position: sticky; 
+              top: 0; 
+              z-index: 30; 
+              background: var(--vscode-editor-background); 
+              align-items: stretch;
+              border-bottom: 1px solid var(--vscode-panel-border);
+            }
+            .board-column-header { 
+              width: 350px; 
+              min-width: 350px; 
+              flex-shrink: 0; 
+              background: var(--vscode-sideBar-background);
+              border: 1px solid var(--vscode-editorWidget-border);
+              display: flex;
+              flex-direction: column;
+            }
+            .board-column-items { 
+              width: 350px; 
+              min-width: 350px; 
+              flex-shrink: 0; 
+              display: flex; 
+              flex-direction: column; 
+              gap: 8px; 
+              background: var(--vscode-editorWidget-background); 
+              border: 1px solid var(--vscode-editorWidget-border); 
+              padding: 8px; 
+            }
+            .board-swimlane-header {
+              border-bottom: 1px solid var(--vscode-panel-border);
+              background: var(--vscode-editor-background);
+              position: sticky;
+              z-index: 20;
+              margin: 0;
+            }
         `;
-    board.appendChild(style);
+    container.appendChild(style);
+
+    const board = document.createElement("div");
+    board.className = "board-container";
+    board.style.background = "var(--vscode-editor-background)";
 
     // Add event delegation for interactivity
     board.addEventListener("click", (e) => {
       const target = e.target as HTMLElement;
+
+      // Toggle swimlane
+      const swimHeader = target.closest(".board-swimlane-header") as HTMLElement;
+      if (swimHeader) {
+        const swimlane = swimHeader.parentElement!;
+        const content = swimlane.querySelector(
+          ".board-swimlane-content",
+        ) as HTMLElement;
+        const toggleIcon = swimHeader.querySelector(".swimlane-toggle-icon")!;
+        const isCollapsed = content.style.display === "none";
+        content.style.display = isCollapsed ? "flex" : "none";
+        toggleIcon.innerHTML = this.getIconSvg(
+          isCollapsed ? "triangle-down" : "triangle-right",
+          16,
+        );
+        return;
+      }
 
       // Check for filterable pills
       const pill = target.closest("[data-filter-field]");
@@ -1265,18 +1667,10 @@ export class BoardCardRenderer {
         e.stopPropagation();
         e.preventDefault();
         const itemId = menuBtn.getAttribute("data-item-id");
-        // TODO: Open menu
         if (this.onAction && itemId) {
-          // Quick hack: pass context menu request to main handler,
-          // or toggle a menu locally.
-          // For now, let's signal 'context-menu' action.
           const item = this.allItems.find(
             (i) => String(i.id) === String(itemId),
           ) || { id: itemId };
-
-          // Native VS Code context menu is best invoked via message?
-          // Or we render a custom HTML menu.
-          // Let's call onAction with 'open-menu'
           const rect = menuBtn.getBoundingClientRect();
           this.onAction("open-menu", item, { x: rect.left, y: rect.bottom });
         }
@@ -1284,13 +1678,123 @@ export class BoardCardRenderer {
       }
     });
 
-    // Render cards for each group (preserving option order)
-    for (const [key, group] of groups) {
-      // Skip empty "No value" groups
-      if (key === "__no_value__" && group.items.length === 0) continue;
+    const columnGroups = this.groupItemsByColumn(this.allItems, columnField);
+    const colOptions = Array.from(columnGroups.values());
 
-      const card = this.renderCard(group.option, group.items, columnField);
-      board.appendChild(card);
+    if (swimlaneField) {
+      // Render TOP row of column headers
+      const headersRow = document.createElement("div");
+      headersRow.className = "board-column-headers js-board-headers";
+
+      // Dynamic sticky top calculation
+      const observer = new ResizeObserver(entries => {
+        const height = entries[0]?.contentRect.height;
+        if (height) {
+          board.style.setProperty("--board-headers-height", `${height + 16}px`); // 16 for top padding only
+        }
+      });
+      observer.observe(headersRow);
+
+      for (const colGroup of colOptions) {
+        if (
+          colGroup.option.id === "__no_value__" &&
+          colGroup.items.length === 0
+        )
+          continue;
+
+        const colHeader = document.createElement("div");
+        colHeader.className = "board-column-header";
+
+        // Reuse card header logic but without the full card
+        const header = this.renderColumnHeaderOnly(colGroup.option, colGroup.items, columnField);
+        colHeader.appendChild(header);
+        headersRow.appendChild(colHeader);
+      }
+      board.appendChild(headersRow);
+
+      // Force initial style for divisors
+      board.style.setProperty("--board-headers-height", "72px");
+
+      // Render Swimlanes
+      const swimlanes = this.groupItemsBySwimlane(this.allItems, swimlaneField);
+
+      for (const [sKey, swimlane] of swimlanes) {
+        if (sKey === "__no_value__" && swimlane.items.length === 0) continue;
+
+        const swimContainer = document.createElement("div");
+        swimContainer.className = "board-swimlane";
+
+        const header = this.renderSwimlaneHeader(
+          swimlane.option,
+          swimlane.items,
+          swimlaneField,
+        );
+        swimContainer.appendChild(header);
+
+        const swimContent = document.createElement("div");
+        swimContent.className = "board-swimlane-content";
+
+        // Group items within this swimlane by column, but ensure we use the SAME columns as the top row
+        const rowColumnItems = this.groupItemsByColumn(swimlane.items, columnField);
+
+        for (const colGroup of colOptions) {
+          if (
+            colGroup.option.id === "__no_value__" &&
+            colGroup.items.length === 0
+          )
+            continue;
+
+          const colKey = String(colGroup.option.id || colGroup.option.name || "");
+          const itemsInCol = rowColumnItems.get(colKey)?.items || [];
+
+          const colItemsContainer = document.createElement("div");
+          colItemsContainer.className = "board-column-items";
+
+          // Container for items that will grow
+          const itemsList = document.createElement("div");
+          itemsList.style.display = "flex";
+          itemsList.style.flexDirection = "column";
+          itemsList.style.gap = "8px";
+          itemsList.style.flex = "1";
+
+          const columnColor = normalizeColor(colGroup.option.color) || "#666666";
+          for (const item of itemsInCol) {
+            itemsList.appendChild(this.renderItem(item, columnField, columnColor));
+          }
+          colItemsContainer.appendChild(itemsList);
+
+          // Add footer (Add item button) to each column cell in the swimlane
+          const footer = this.renderColumnFooterOnly(colGroup.option, columnField);
+          footer.style.marginTop = "8px";
+          footer.style.margin = "0 -8px -8px -8px"; // Offset container padding
+          colItemsContainer.appendChild(footer);
+
+          swimContent.appendChild(colItemsContainer);
+        }
+
+        swimContainer.appendChild(swimContent);
+        board.appendChild(swimContainer);
+      }
+    } else {
+      // Regular board view (single row of columns)
+      const rowContent = document.createElement("div");
+      rowContent.className = "board-swimlane-content";
+      rowContent.style.height = "100%";
+
+      for (const colGroup of colOptions) {
+        if (
+          colGroup.option.id === "__no_value__" &&
+          colGroup.items.length === 0
+        )
+          continue;
+        const card = this.renderCard(
+          colGroup.option,
+          colGroup.items,
+          columnField,
+        );
+        rowContent.appendChild(card);
+      }
+      board.appendChild(rowContent);
     }
 
     container.appendChild(board);
