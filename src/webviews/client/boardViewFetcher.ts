@@ -13,10 +13,10 @@ import { BoardCardRenderer } from "./renderers/BoardCardRenderer";
 // signal that the board fetcher script executed
 try {
   logDebug("global", "boardViewFetcher.loaded");
-} catch (e) {}
+} catch (e) { }
 try {
   console.log && console.log("boardViewFetcher script loaded");
-} catch (e) {}
+} catch (e) { }
 
 // Expose a global fetcher: window.boardViewFetcher(view, container, viewKey)
 function createBoardFetcher() {
@@ -26,7 +26,7 @@ function createBoardFetcher() {
 
     try {
       setLoadingState(container, viewName);
-    } catch (e) {}
+    } catch (e) { }
 
     var first = 50;
 
@@ -63,9 +63,9 @@ function createBoardFetcher() {
           ) {
             try {
               barApi.setEffectiveFilter(effectiveFilter);
-            } catch (e) {}
+            } catch (e) { }
           }
-        } catch (e) {}
+        } catch (e) { }
 
         if (!barApi) {
           var header = document.createElement("div");
@@ -142,6 +142,29 @@ function createBoardFetcher() {
             (f: any) =>
               String(f.dataType || "").toLowerCase() === "single_select",
           );
+        }
+
+        // Detect swimlane field from view details (regular groupByFields on board layouts)
+        let swimlaneField: any = null;
+        try {
+          const details = payload && payload.details;
+          const groupByFields =
+            details &&
+            details.groupByFields &&
+            details.groupByFields.nodes;
+
+          if (groupByFields && groupByFields.length > 0) {
+            const gbField = groupByFields[0];
+            swimlaneField = allFields.find(
+              (f: any) =>
+                String(f.id) === String(gbField.id) ||
+                String(f.name) === String(gbField.name),
+            );
+          }
+        } catch (e) {
+          logDebug(viewKey, "boardViewFetcher.swimlaneFieldDetection.error", {
+            message: String((e as any)?.message || e),
+          });
         }
 
         // Create board content container - flex grow to fill remaining space
@@ -237,8 +260,8 @@ function createBoardFetcher() {
               el.addEventListener(
                 "mouseenter",
                 () =>
-                  (el.style.background =
-                    "var(--vscode-menu-selectionBackground)"),
+                (el.style.background =
+                  "var(--vscode-menu-selectionBackground)"),
               );
               el.addEventListener(
                 "mouseleave",
@@ -260,7 +283,7 @@ function createBoardFetcher() {
               }
             });
 
-            addItem("", "", () => {}, true);
+            addItem("", "", () => { }, true);
 
             addItem("Move to column...", "arrow-both", () => {
               if ((window as any).__APP_MESSAGING__) {
@@ -284,7 +307,7 @@ function createBoardFetcher() {
                       const startDate = new Date(start);
                       const endDate = new Date(
                         startDate.getTime() +
-                          Number(duration) * 24 * 60 * 60 * 1000,
+                        Number(duration) * 24 * 60 * 60 * 1000,
                       );
                       const formatDate = (d: Date) =>
                         d.toLocaleDateString("en-US", {
@@ -411,7 +434,7 @@ function createBoardFetcher() {
               handleFilter,
               handleAction,
             );
-            cardRenderer.renderBoard(content, columnField);
+            cardRenderer.renderBoard(content, columnField, swimlaneField);
           } catch (e) {
             logDebug(viewKey, "boardViewFetcher.cardRenderer.error", {
               message: String((e as any)?.message || e),
@@ -463,7 +486,7 @@ function createBoardFetcher() {
               });
             }
           }
-        } catch (e) {}
+        } catch (e) { }
       } catch (err: any) {
         logDebug(viewKey, "boardViewFetcher.render.error", {
           message: String(err && err.message),
@@ -484,7 +507,7 @@ function createBoardFetcher() {
         var card = document.createElement("div");
         try {
           card.setAttribute("data-gh-item-id", String(it && it.id));
-        } catch (e) {}
+        } catch (e) { }
         card.style.padding = "8px";
         card.style.border = "1px solid var(--vscode-editorWidget-border)";
         card.style.marginBottom = "8px";
@@ -500,8 +523,8 @@ function createBoardFetcher() {
           "</div>" +
           (it && it.id
             ? '<div style="color:var(--vscode-descriptionForeground);font-size:12px">' +
-              escapeHtml(String(it.id)) +
-              "</div>"
+            escapeHtml(String(it.id)) +
+            "</div>"
             : "");
         content.appendChild(card);
       }
@@ -522,7 +545,7 @@ function createBoardFetcher() {
             );
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     function requestFields() {
@@ -537,7 +560,7 @@ function createBoardFetcher() {
             viewKey: viewKey,
           });
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     try {
       (window as any).__APP_MESSAGING__.onMessage(onMessage);
@@ -549,4 +572,4 @@ function createBoardFetcher() {
 }
 try {
   window.boardViewFetcher = createBoardFetcher();
-} catch (e) {}
+} catch (e) { }
