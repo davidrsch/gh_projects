@@ -11,9 +11,10 @@ export async function sendTestCommand<T = any>(
 ): Promise<T> {
     return new Promise((resolve, reject) => {
         const requestId = `test-${Date.now()}-${Math.random()}`;
+        const timeoutMs = typeof params.timeout === 'number' ? params.timeout : 15000;
         const timeout = setTimeout(() => {
             reject(new Error(`Test command timeout: ${command}`));
-        }, 15000);
+        }, timeoutMs);
 
         const messageHandler = panel.webview.onDidReceiveMessage((msg: any) => {
             if (msg.command === 'test:result' && msg.requestId === requestId) {

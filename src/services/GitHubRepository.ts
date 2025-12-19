@@ -817,6 +817,28 @@ export class GitHubRepository {
       logger.error(
         `Failed to update ProjectV2 field: ${error.message || error}`,
       );
+      // If GraphQL reports an unresolvable node id, provide a clearer message
+      const msg = String(error.message || error || "");
+      if (msg.includes('Could not resolve to a node with the global id')) {
+        const userMessage =
+          "Invalid field id provided. The extension expects the GraphQL node id for the field (the global node id), not the field name. " +
+          "Ensure you're passing the field's node id (e.g. from the project's field metadata) and not a human-friendly name.";
+        try {
+          vscode.window.showWarningMessage(userMessage);
+        } catch (e) {
+          // noop in tests or environments without a window
+        }
+        // Structured telemetry/log with context
+        try {
+          const { sendEvent } = await import('./telemetry');
+          sendEvent('invalid_field_id_detected', { projectId, itemId, fieldId });
+        } catch (e) {
+          // best-effort
+          logger.info('Telemetry: invalid_field_id_detected', { projectId, itemId, fieldId });
+        }
+        return { success: false, error: userMessage };
+      }
+
       return {
         success: false,
         error: error.message || "Failed to update ProjectV2 field",
