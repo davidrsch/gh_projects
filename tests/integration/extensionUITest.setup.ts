@@ -5,6 +5,7 @@ import { ScreenshotHelper } from './helpers/screenshotHelper';
 import { HTMLReportGenerator } from './helpers/htmlReportGenerator';
 import * as dotenv from 'dotenv';
 import { runComprehensiveTests } from './specs/comprehensiveUITests';
+import { sendTestCommand } from './utils/testHelpers';
 
 // Load .env for local development only.
 // In CI, we rely on GitHub environment variables instead.
@@ -88,7 +89,35 @@ export async function run() {
 
         console.log('✓ Got webview panel reference');
 
-        // 5. Run Comprehensive UI Tests
+        // 5. Quick guard: detect GitHub API rate limit in webview debug output and abort early (skip run)
+        try {
+            const checks = [
+                { cmd: 'test:getTableInfo', timeout: 8000 },
+                { cmd: 'test:getProjectInfo', timeout: 5000 },
+                { cmd: 'test:getRoadmapInfo', timeout: 5000 }
+            ];
+
+            for (const c of checks) {
+                try {
+                    const res = await sendTestCommand(panel, c.cmd, { timeout: c.timeout });
+                    const debugHtml = res && res.debug && res.debug.innerHTML ? String(res.debug.innerHTML) : '';
+                    const low = debugHtml.toLowerCase();
+                    if (low.includes('rate limit') || low.includes('api rate limit') || low.includes('rate-limited') || low.includes('rate_limit')) {
+                        report.endStep('Activate Extension', 'skip', null, undefined, 'Detected GitHub API rate limit in webview; skipping integration run');
+                        await report.generate(reportPath);
+                        console.warn('Skipping integration tests: GitHub API rate limit detected in webview debug output.');
+                        return;
+                    }
+                } catch (innerErr) {
+                    // Ignore single-check failures — continue to next; we don't want to be noisy here
+                    console.warn(`Rate-limit guard check for ${c.cmd} failed (continuing):`, String(innerErr));
+                }
+            }
+        } catch (e) {
+            console.warn('Rate-limit guard overall check failed (continuing):', String(e));
+        }
+
+        // 6. Run Comprehensive UI Tests
         await runComprehensiveTests(panel, page, report, screenshots);
 
         console.log('\n✅ All UI tests completed!');

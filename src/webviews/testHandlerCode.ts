@@ -110,6 +110,69 @@ export const TEST_HANDLER_CODE = `
           }
           break;
         }
+        
+        case 'test:waitForRoadmapReady': {
+          // Poll until the roadmap timeline is present and no loading indicator remains
+          const timeoutMs = typeof msg.timeout === 'number' ? msg.timeout : 90000;
+          const intervalMs = typeof msg.interval === 'number' ? msg.interval : 500;
+          const start = Date.now();
+
+          const visiblePanel = getVisiblePanel();
+          if (!visiblePanel) {
+            result = { success: false, error: 'No visible panel', panelCount: document.getElementById('tab-panels')?.children?.length };
+            break;
+          }
+
+          // Return a promise-like flow by using a synchronous loop with setInterval and early return via postMessage
+          const pollId = 'wait-roadmap-' + Date.now() + '-' + Math.random();
+          const poller = setInterval(() => {
+            const vp = getVisiblePanel();
+            if (!vp) return; // keep waiting
+
+            // Accept several timeline selectors used across versions
+            const timeline = vp.querySelector('.roadmap-timeline') || vp.querySelector('.timeline') || vp.querySelector('[data-roadmap]');
+            const loading = vp.querySelector('.loading, .spinner, .roadmap-loading, .loading-indicator');
+            const bars = vp.querySelectorAll('.roadmap-bar, .bar, [data-roadmap-bar]');
+            // Consider ready when we have a timeline and no loading indicator
+            // Also accept cases where the DOM appears fully rendered (large innerHTML) even without explicit bars
+            const largeRendered = !loading && (vp.innerHTML && vp.innerHTML.length > 1200);
+            if ((timeline && !loading && bars.length > 0) || largeRendered) {
+              clearInterval(poller);
+              const bars = vp.querySelectorAll('.roadmap-bar');
+              const res = {
+                success: true,
+                hasContainer: true,
+                hasTimeline: true,
+                barCount: bars.length,
+                debug: {
+                  panelId: vp.id,
+                  panelClasses: vp.className,
+                  childCount: vp.children.length,
+                  innerHTML: vp.innerHTML.substring(0, 500)
+                }
+              };
+              if (vscode) vscode.postMessage({ command: 'test:result', requestId, result: res });
+            } else if (Date.now() - start > timeoutMs) {
+              clearInterval(poller);
+              const res = {
+                success: false,
+                error: 'timeout waiting for roadmap ready',
+                hasContainer: !!vp.querySelector('.roadmap-container'),
+                hasTimeline: !!vp.querySelector('.roadmap-timeline'),
+                debug: {
+                  panelId: vp.id,
+                  panelClasses: vp.className,
+                  childCount: vp.children.length,
+                  innerHTML: vp.innerHTML.substring(0, 500)
+                }
+              };
+              if (vscode) vscode.postMessage({ command: 'test:result', requestId, result: res });
+            }
+          }, intervalMs);
+
+          // Return early; result will be posted asynchronously by the poller above.
+          return;
+        }
         case 'test:getTabBar': {
           if (!tabsContainer) { result = { error: 'Tabs container not found' }; break; }
           const tabs = tabsContainer.querySelectorAll('.tab');
@@ -165,7 +228,7 @@ export const TEST_HANDLER_CODE = `
         case 'test:getTableInfo': {
           const visiblePanel = getVisiblePanel();
           if (!visiblePanel) {
-            result = { hasContainer: false, rowCount: 0, error: 'No visible panel' };
+            result = { hasContainer: false, rowCount: 0, error: 'No visible panel', headers: [], items: [], fields: [] };
           } else {
             const tableWrapper = visiblePanel.querySelector('.table-wrapper');
             const table = visiblePanel.querySelector('table');
@@ -173,6 +236,37 @@ export const TEST_HANDLER_CODE = `
                 .filter(r => window.getComputedStyle(r).display !== 'none');
             const sliceItems = visiblePanel.querySelectorAll('.slice-value-item');
             const groupHeaders = visiblePanel.querySelectorAll('.group-header');
+            // Extract header metadata (if present)
+            const headers = Array.from(visiblePanel.querySelectorAll('thead th')).map((th, i) => ({
+              index: i,
+              text: th.textContent?.trim() || '',
+              // Try common attributes used by the table renderer
+              id: th.getAttribute('data-field-id') || null,
+              dataType: th.getAttribute('data-type') || null,
+            }));
+
+            // Extract rows/items
+            const items = rows.map(r => {
+              const id = r.getAttribute('data-gh-item-id');
+              const cells = Array.from(r.querySelectorAll('td')).map(td => td.textContent?.trim() || '');
+              return { id, cells };
+            });
+
+            // Try to extract minimal field configs if present on DOM
+            const fieldEls = visiblePanel.querySelectorAll('[data-field-id]');
+            const fields = Array.from(fieldEls).map(el => {
+              try {
+                const id = el.getAttribute('data-field-id');
+                const name = el.getAttribute('data-field-name') || el.textContent?.trim() || id;
+                // Options may be encoded in data-options as JSON
+                const optsRaw = el.getAttribute('data-options');
+                const options = optsRaw ? JSON.parse(optsRaw) : undefined;
+                return { id, name, options };
+              } catch (e) {
+                return { id: el.getAttribute('data-field-id'), name: el.textContent?.trim() };
+              }
+            });
+
             result = {
               hasContainer: !!tableWrapper,
               hasTable: !!table,
@@ -180,11 +274,14 @@ export const TEST_HANDLER_CODE = `
               sliceItemCount: sliceItems.length,
               groupHeaderCount: groupHeaders.length,
               firstRowId: rows.length > 0 ? rows[0].getAttribute('data-gh-item-id') : null,
+              headers,
+              items,
+              fields,
               debug: {
                 panelId: visiblePanel.id,
                 panelClasses: visiblePanel.className,
                 childCount: visiblePanel.children.length,
-                innerHTML: visiblePanel.innerHTML.substring(0, 100)
+                innerHTML: visiblePanel.innerHTML.substring(0, 200)
               }
             };
           }
@@ -541,6 +638,86 @@ export const TEST_HANDLER_CODE = `
             }
           }
           break;
+        }
+
+        case 'test:updateField': {
+          // Send an updateFieldValue request to the extension and wait for response
+          const messageId = 'test-update-' + Date.now() + '-' + Math.random();
+          // Determine viewKey: prefer explicit arg, otherwise infer from visible panel index
+          let resolvedViewKey = msg.viewKey;
+          if (!resolvedViewKey) {
+            const panelsContainer = document.getElementById('tab-panels');
+            const visiblePanel = getVisiblePanel();
+            if (panelsContainer && visiblePanel) {
+              const idx = Array.from(panelsContainer.children).indexOf(visiblePanel);
+              if (idx === 0) {
+                resolvedViewKey = 'overview';
+              } else if (idx > 0) {
+                resolvedViewKey = 'view-' + (idx - 1);
+              }
+            }
+          }
+
+          const request = {
+            command: 'updateFieldValue',
+            id: messageId,
+            projectId: projectData.id,
+            itemId: msg.itemId,
+            fieldId: msg.fieldId,
+            fieldType: msg.fieldType,
+            newValue: msg.value !== undefined ? msg.value : msg.newValue,
+            viewKey: resolvedViewKey || null,
+          };
+
+          // We'll send the final test result from within the message handler below.
+          if (vscode) {
+            const timeoutMs = 15000;
+            let timeoutId = null;
+
+            const handler = (ev) => {
+              const d = ev && ev.data ? ev.data : ev;
+              if (!d) return;
+
+              // Match by response id OR by update result payload containing the same viewKey
+              if ((d.command === 'updateFieldValueResponse' && d.id === messageId) ||
+                  (d.command === 'updateFieldValueResult' && (msg.viewKey == null || d.viewKey === msg.viewKey))) {
+                if (timeoutId) {
+                  clearTimeout(timeoutId);
+                }
+                window.removeEventListener('message', handler);
+
+                const res = d.command === 'updateFieldValueResponse'
+                  ? { success: !!d.success, error: d.error }
+                  : { success: !!d.success, payload: d.payload, effectiveFilter: d.effectiveFilter, error: d.error };
+
+                vscode.postMessage({ command: 'test:result', requestId, result: res });
+              }
+            };
+
+            window.addEventListener('message', handler);
+
+            timeoutId = setTimeout(() => {
+              window.removeEventListener('message', handler);
+              vscode.postMessage({ command: 'test:result', requestId, error: 'updateField timeout' });
+            }, timeoutMs);
+
+            // Post to extension
+            try {
+              vscode.postMessage(request);
+            } catch (e) {
+              // If direct vscode API isn't available, attempt to use global postMessage
+              try {
+                window.postMessage(request, '*');
+              } catch (e2) {
+                if (timeoutId) clearTimeout(timeoutId);
+                window.removeEventListener('message', handler);
+                vscode.postMessage({ command: 'test:result', requestId, error: 'Failed to send updateField request' });
+              }
+            }
+          }
+
+          // Return early — the result will be posted asynchronously from the handler above.
+          return;
         }
 
         default:

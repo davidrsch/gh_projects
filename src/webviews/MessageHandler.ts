@@ -1373,6 +1373,7 @@ export class MessageHandler {
 
   private async handleUpdateFieldValue(msg: any) {
     try {
+      const startTime = Date.now();
       const reqViewKey = (msg as any).viewKey as string | undefined;
       const messageId = (msg as any).id;
       const projectId = (msg as any).projectId || this.project.id;
@@ -1387,6 +1388,9 @@ export class MessageHandler {
       const fieldType = (msg as any).fieldType;
 
       if (!projectId || !itemId || !fieldId) {
+        logger.info(
+          `updateFieldValue missing fields projectId=${projectId} itemId=${itemId} fieldId=${fieldId} id=${messageId}`,
+        );
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
           id: messageId,
@@ -1396,8 +1400,8 @@ export class MessageHandler {
         return;
       }
 
-      logger.debug(
-        `webview.updateFieldValue projectId=${projectId} itemId=${itemId} fieldId=${fieldId} type=${fieldType}`,
+      logger.info(
+        `webview.updateFieldValue received id=${messageId} projectId=${projectId} itemId=${itemId} fieldId=${fieldId} type=${fieldType} viewKey=${reqViewKey}`,
       );
 
       const { GitHubRepository } = await import("../services/GitHubRepository");
@@ -1408,8 +1412,10 @@ export class MessageHandler {
         newValue,
         fieldType,
       );
-
       if (result.success) {
+        logger.info(
+          `updateFieldValue mutation success id=${messageId} fieldId=${fieldId} itemId=${itemId}`,
+        );
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
           id: messageId,
@@ -1437,10 +1443,24 @@ export class MessageHandler {
             payload: data.snapshot,
             effectiveFilter: data.effectiveFilter,
           });
+
+          const elapsed = Date.now() - startTime;
+          logger.info(
+            `updateFieldValue completed id=${messageId} fieldId=${fieldId} elapsed_ms=${elapsed}`,
+          );
         } catch (e) {
           logger.debug("Failed to refresh after update: " + String(e));
+          const elapsed = Date.now() - startTime;
+          logger.info(
+            `updateFieldValue refresh failed id=${messageId} fieldId=${fieldId} elapsed_ms=${elapsed} error=${String(e)}`,
+          );
         }
       } else {
+        logger.info(
+          `updateFieldValue mutation failed id=${messageId} fieldId=${fieldId} error=${String(
+            result.error,
+          )}`,
+        );
         this.panel.webview.postMessage({
           command: "updateFieldValueResponse",
           id: messageId,
