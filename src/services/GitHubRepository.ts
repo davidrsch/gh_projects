@@ -5,7 +5,6 @@ import {
   ProjectView,
   Item,
   FieldConfig,
-  ProjectMetaNode,
   NormalizedValue,
   ParsedRepoEntry,
   ProjectV2FieldType,

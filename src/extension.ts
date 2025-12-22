@@ -2,8 +2,6 @@ import * as vscode from "vscode";
 import { ProjectsProvider } from "./treeViewProvider";
 import { ProjectEntry } from "./lib/types";
 import { openProjectWebview } from "./webviews/projectDetails";
-import findGitRepos from "./treeView/findRepos";
-import getRemotesForPath from "./treeView/getRemotes";
 import logger from "./lib/logger";
 import messages from "./lib/messages";
 

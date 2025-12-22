@@ -57,22 +57,6 @@ export class AuthenticationManager {
   }
 
   /**
-   * Checks if the user is currently authenticated.
-   */
-  public async isAuthenticated(): Promise<boolean> {
-    const session = await this.getSession(false);
-    return !!session;
-  }
-
-  /**
-   * Returns the access token if authenticated, otherwise undefined.
-   */
-  public async getToken(): Promise<string | undefined> {
-    const session = await this.getSession(false);
-    return session?.accessToken;
-  }
-
-  /**
    * Ensures the user is authenticated, prompting them if necessary.
    * Throws an error if authentication fails or is rejected.
    */

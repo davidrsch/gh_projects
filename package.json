@@ -85,11 +85,6 @@
           "default": false,
           "description": "If true, use direct HTTP GraphQL requests. Requires signing in via VS Code GitHub authentication (no GH_TOKEN or ghToken fallback)."
         },
-        "ghProjects.preferHttp": {
-          "type": "boolean",
-          "default": true,
-          "description": "Prefer HTTP GraphQL using the VS Code GitHub authentication session. The extension uses HTTP GraphQL exclusively; sign-in will be required."
-        },
         "ghProjects.useBundledWebviews": {
           "type": "boolean",
           "default": false,
@@ -99,11 +94,6 @@
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging for ghProjects (writes DEBUG messages to the ghProjects output channel)."
-        },
-        "ghProjects.devMode": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable developer mode (loads non-bundled webviews)."
         }
       }
     },
