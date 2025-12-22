@@ -284,7 +284,6 @@ export function getInlineScript(nonce: string, projectData: any): string {
   // Module bootstrap for legacy webviews when running as the fallback.
   const project = ${JSON.stringify(projectData)};
   window.__PROJECT_DATA__ = project; // Expose globally for tests
-  console.log('project.views', project.views);
 
   document.addEventListener('DOMContentLoaded', () => {
     const tabsContainer = document.getElementById('tabs-container');

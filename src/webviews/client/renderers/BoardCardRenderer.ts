@@ -594,29 +594,17 @@ export class BoardCardRenderer {
    * Extract linked pull requests from item
    */
   private extractLinkedPullRequests(item: any): any[] {
-    console.log(
-      "[BoardCard] extractLinkedPullRequests called with item:",
-      item?.id,
-      "fieldValues:",
-      item?.fieldValues?.length,
-    );
     if (!item) return [];
 
     // Try fieldValues first (most common location)
     if (Array.isArray(item.fieldValues)) {
-      console.log(
-        "[BoardCard] Checking fieldValues, types:",
-        item.fieldValues.map((v: any) => v?.type),
-      );
       const prFv = item.fieldValues.find(
         (v: any) =>
           v?.type === "linked_pull_requests" || v?.type === "pull_request",
       );
       if (prFv) {
-        console.log("[BoardCard] Found PR field value:", prFv);
         // Check for direct array first (matches table view)
         if (Array.isArray(prFv.pullRequests)) {
-          console.log("[BoardCard] Returning direct array:", prFv.pullRequests);
           return prFv.pullRequests;
         }
         // Then check for nodes structure
@@ -624,14 +612,8 @@ export class BoardCardRenderer {
           prFv.pullRequests?.nodes &&
           Array.isArray(prFv.pullRequests.nodes)
         ) {
-          console.log(
-            "[BoardCard] Returning nodes array:",
-            prFv.pullRequests.nodes,
-          );
           return prFv.pullRequests.nodes;
         }
-      } else {
-        console.log("[BoardCard] No PR field found in fieldValues");
       }
     }
 
@@ -645,7 +627,6 @@ export class BoardCardRenderer {
       }
     }
 
-    console.log("[BoardCard] Returning empty array for linkedPRs");
     return [];
   }
 

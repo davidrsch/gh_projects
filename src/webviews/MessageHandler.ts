@@ -26,11 +26,6 @@ export class MessageHandler {
   }
 
   private async handleMessage(msg: any) {
-    // Log all messages for debugging
-    if (msg.command && msg.command.startsWith("test:")) {
-      console.log("[Extension] Received test message:", msg);
-    }
-
     // Special-case: the UI may send a 'ready' handshake when it has initialized.
     try {
       if (msg && typeof msg === "object" && msg.command === "ready") {
@@ -684,11 +679,6 @@ export class MessageHandler {
       const sanitized = String((e as any)?.message || e || "");
       logger.error("webview.addItem:createIssue failed: " + sanitized);
     }
-  }
-
-  private getWorkspaceOrFsPath(uri: vscode.Uri): string {
-    const wsFolder = vscode.workspace.getWorkspaceFolder(uri);
-    return wsFolder ? wsFolder.uri.fsPath : uri.fsPath;
   }
 
   private async handleAddItemAddFromRepo(msg: any) {

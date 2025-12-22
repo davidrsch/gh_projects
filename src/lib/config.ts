@@ -10,10 +10,8 @@ export interface GhProjectsConfig {
   maxConcurrency: number;
   queryTimeoutMs: number;
   useHttpApi: boolean;
-  preferHttp: boolean;
   useBundledWebviews: boolean;
   debug: boolean;
-  devMode: boolean;
 }
 
 /**
@@ -44,10 +42,8 @@ export class VSCodeConfigReader implements ConfigReader {
       maxConcurrency: config.get<number>("maxConcurrency", 4),
       queryTimeoutMs: config.get<number>("queryTimeoutMs", 30000),
       useHttpApi: config.get<boolean>("useHttpApi", false),
-      preferHttp: config.get<boolean>("preferHttp", true),
       useBundledWebviews: config.get<boolean>("useBundledWebviews", false),
       debug: config.get<boolean>("debug", false),
-      devMode: config.get<boolean>("devMode", false),
     };
   }
 }

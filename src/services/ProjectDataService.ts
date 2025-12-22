@@ -3,7 +3,6 @@ import {
   ProjectSnapshot,
   ProjectEntry,
   ProjectView,
-  NormalizedValue,
 } from "../lib/types";
 import logger from "../lib/logger";
 import { ConfigReader, getConfigReader } from "../lib/config";
