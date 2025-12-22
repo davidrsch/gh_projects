@@ -1,20 +1,12 @@
-import { normalizeColor, escapeHtml } from "../utils";
+import { normalizeColor, escapeHtml, addAlpha } from "../utils";
 import { RowRenderer } from "./RowRenderer";
 
 export class GroupRenderer {
-  constructor(
-    private fields: any[],
-    private allItems: any[],
-  ) {}
+  constructor(private fields: any[], private allItems: any[], private groupDivisors?: string[] | null) { }
 
-  /**
-   * Helper to get icon SVG from registry
-   * Note: iconName is a runtime string value, so we use 'as any' to bypass
-   * the IconName type check. This is safe because the function validates the icon name.
-   */
   private getIconSvg(iconName: string, size: number = 14): string {
-    if (window.getIconSvg) {
-      return window.getIconSvg(iconName as any, { size });
+    if ((window as any).getIconSvg) {
+      return (window as any).getIconSvg(iconName as any, { size });
     }
     return "";
   }
@@ -25,544 +17,46 @@ export class GroupRenderer {
     groupingField: any,
     rowRenderer: RowRenderer,
   ) {
-    // Render Group Header
     const trHeader = document.createElement("tr");
+    trHeader.className = "group-header";
     const tdHeader = document.createElement("td");
     tdHeader.colSpan = this.fields.length + 1;
     tdHeader.style.padding = "8px";
-    tdHeader.style.background = "var(--vscode-editor-background)"; // Ensure opaque background
+    tdHeader.style.background = "var(--vscode-editor-background)";
     tdHeader.style.fontWeight = "600";
     tdHeader.style.borderTop = "1px solid var(--vscode-editorGroup-border)";
     tdHeader.style.borderBottom = "1px solid var(--vscode-editorGroup-border)";
     tdHeader.style.position = "sticky";
-    tdHeader.style.top = "32px"; // Matches fixed header height
+    tdHeader.style.top = "32px";
     tdHeader.style.zIndex = "9";
-    tdHeader.style.boxShadow = "0 1px 2px rgba(0,0,0,0.1)"; // Add shadow for better separation
+    tdHeader.style.boxShadow = "0 1px 2px rgba(0,0,0,0.1)";
 
-    // Group Header Content
     const headerContent = document.createElement("div");
     headerContent.style.display = "flex";
     headerContent.style.alignItems = "center";
     headerContent.style.gap = "8px";
 
-    // Helper: find estimate field id (best-effort)
-    const estimateField =
-      this.fields.find(
-        (f) =>
-          f.dataType &&
-          String(f.dataType).toLowerCase() === "number" &&
-          String(f.name || "")
-            .toLowerCase()
-            .includes("estimate"),
-      ) ||
-      this.fields.find(
-        (f) => f.dataType && String(f.dataType).toLowerCase() === "number",
-      );
-    const estimateFieldId = estimateField ? estimateField.id : null;
-
-    const sumEstimate = (itemsArr: any[]) => {
-      if (!estimateFieldId) return 0;
-      let sum = 0;
-      for (const gi of itemsArr) {
-        const it = gi.item || gi;
-        if (!it || !Array.isArray(it.fieldValues)) continue;
-        const fv = it.fieldValues.find(
-          (v: any) =>
-            (v.fieldId && String(v.fieldId) === String(estimateFieldId)) ||
-            (v.fieldName &&
-              String(v.fieldName).toLowerCase().includes("estimate")) ||
-            v.type === "number",
-        );
-        if (fv) {
-          const num = Number(
-            fv.number != null ? fv.number : fv.value != null ? fv.value : NaN,
-          );
-          if (!isNaN(num)) sum += num;
-        }
-      }
-      return sum;
-    };
-
-    const formatEstimate = (n: number) => {
-      if (!isFinite(n)) return "";
-      return String(n);
-    };
-
-    // Toggle Button
-    const toggleBtn = document.createElement("span");
-    // SVG Icons for GitHub-like look from icon registry
+    const built = buildGroupHeaderElement(this.fields, this.allItems, group, groupingField, { groupDivisors: this.groupDivisors });
     const iconExpanded = this.getIconSvg("triangle-down", 16);
     const iconCollapsed = this.getIconSvg("triangle-right", 16);
 
-    toggleBtn.innerHTML = iconExpanded;
-    toggleBtn.style.cursor = "pointer";
-    toggleBtn.style.userSelect = "none";
-    toggleBtn.style.display = "inline-flex";
-    toggleBtn.style.alignItems = "center";
-    toggleBtn.style.justifyContent = "center";
-    toggleBtn.style.width = "16px";
-    toggleBtn.style.height = "16px";
-    toggleBtn.style.fill = "var(--vscode-foreground)";
-    toggleBtn.style.opacity = "0.7";
+    // Apply sticky styles directly to the built element to preserve wrapper structure
+    // This ensures the same DOM structure across table, board, and roadmap views
+    built.style.position = "sticky";
+    built.style.left = "0";
+    built.style.zIndex = "12";
+    built.style.background = tdHeader.style.background;
+    built.style.paddingRight = "8px";
 
-    // Group Name & Color
-    const colorDot = document.createElement("div");
-    colorDot.style.width = "12px";
-    colorDot.style.height = "12px";
-    colorDot.style.borderRadius = "50%";
-    colorDot.style.backgroundColor =
-      normalizeColor(group.option.color) || "gray";
+    // Append the built element directly (preserve wrapper) instead of moving children
+    headerContent.appendChild(built);
 
-    const nameSpan = document.createElement("span");
-    nameSpan.textContent =
-      group.option.name || group.option.title || "Unassigned";
+    const toggleEl = built.querySelector('.group-toggle') as HTMLElement | null;
 
-    // We'll keep the left-hand part of the group header (toggle, avatar/color, name, count)
-    // in a sticky left pane so it remains visible when horizontally scrolling.
-    const leftPane = document.createElement("div");
-    leftPane.style.display = "flex";
-    leftPane.style.alignItems = "center";
-    leftPane.style.gap = "8px";
-    leftPane.style.position = "sticky";
-    leftPane.style.left = "0";
-    leftPane.style.zIndex = "12";
-    leftPane.style.background = tdHeader.style.background;
-    leftPane.style.paddingRight = "8px";
+    // Note: Avatar handling and "Unassigned" rename are now handled in buildGroupHeaderElement()
+    // to ensure consistency across table, board, and roadmap views.
 
-    const rightPane = document.createElement("div");
-    rightPane.style.display = "flex";
-    rightPane.style.alignItems = "center";
-    rightPane.style.gap = "8px";
-    rightPane.style.flex = "1";
 
-    leftPane.appendChild(toggleBtn);
-
-    // For parent_issue, try to extract parent metadata from the first child item
-    let parentMeta: any = null;
-    let resolvedParentItem: any = null;
-    if (String(groupingField.dataType || "").toLowerCase() === "parent_issue") {
-      const first =
-        group.items && group.items[0]
-          ? group.items[0].item || group.items[0]
-          : null;
-      if (first && Array.isArray(first.fieldValues)) {
-        const pfv = first.fieldValues.find(
-          (v: any) =>
-            String(v.fieldId) === String(groupingField.id) ||
-            v.fieldName === groupingField.name ||
-            v.type === "parent_issue",
-        );
-        if (pfv) {
-          parentMeta =
-            pfv.parent ||
-            pfv.parentIssue ||
-            pfv.issue ||
-            pfv.item ||
-            pfv.value ||
-            null;
-        }
-      }
-
-      // Try to resolve the full parent item from the current items snapshot (this.allItems)
-      if (parentMeta && Array.isArray(this.allItems)) {
-        try {
-          const identifiers: string[] = [];
-          if (parentMeta.number) identifiers.push(String(parentMeta.number));
-          if (parentMeta.id) identifiers.push(String(parentMeta.id));
-          if (parentMeta.url) identifiers.push(String(parentMeta.url));
-          if (parentMeta.title) identifiers.push(String(parentMeta.title));
-          // search in this.allItems for a matching content/raw identifiers
-          const found = this.allItems.find((A: any) => {
-            const d =
-              (A && (A.content || (A.raw && A.raw.itemContent))) || null;
-            if (!d) return false;
-            const M: string[] = [];
-            if (d.number) M.push(String(d.number));
-            if (d.id) M.push(String(d.id));
-            if (d.url) M.push(String(d.url));
-            if (d.title) M.push(String(d.title));
-            if (d.name) M.push(String(d.name));
-            if (d.raw && d.raw.number) M.push(String(d.raw.number));
-            if (d.raw && d.raw.id) M.push(String(d.raw.id));
-            if (d.raw && d.raw.url) M.push(String(d.raw.url));
-            for (let o of identifiers) {
-              for (let m of M) {
-                if (o && m && String(o) === String(m)) return true;
-              }
-            }
-            return false;
-          });
-          if (found) resolvedParentItem = found;
-        } catch (e) {}
-      }
-    }
-
-    // Avatar / color dot / repo icon depending on field type
-    if (
-      (group.option && group.option.avatarUrl) ||
-      (group.option && group.option.login) ||
-      (group.option &&
-        group.option.name &&
-        String(groupingField.dataType || "").toLowerCase() === "assignees")
-    ) {
-      // Try to render avatar for assignees
-      const avatarEl = document.createElement("span");
-      const avatarUrl =
-        (group.option &&
-          (group.option.avatarUrl ||
-            group.option.avatar ||
-            group.option.imageUrl)) ||
-        (() => {
-          // try to find in items
-          for (const gi of group.items) {
-            const it = gi.item || gi;
-            if (!it || !Array.isArray(it.fieldValues)) continue;
-            const fv = it.fieldValues.find(
-              (v: any) =>
-                v.type === "assignees" ||
-                String(v.fieldId) === String(groupingField.id),
-            );
-            if (fv && fv.assignees && Array.isArray(fv.assignees)) {
-              const match = fv.assignees.find(
-                (a: any) =>
-                  String(a.login || a.name) ===
-                  String(group.option.name || group.option.id),
-              );
-              if (match && (match.avatarUrl || match.avatar))
-                return match.avatarUrl || match.avatar;
-            }
-          }
-          return null;
-        })();
-      if (avatarUrl) {
-        avatarEl.innerHTML =
-          '<span title="' +
-          escapeHtml(
-            (group.option && (group.option.login || group.option.name)) ||
-              "Assignee",
-          ) +
-          '" style="display:inline-block;width:20px;height:20px;border-radius:50%;overflow:hidden;background-size:cover;background-position:center;background-image:url(' +
-          escapeHtml(avatarUrl) +
-          ');border:2px solid var(--vscode-editor-background)"></span>';
-        leftPane.appendChild(avatarEl);
-      } else {
-        leftPane.appendChild(colorDot);
-      }
-    } else if (
-      String(groupingField.dataType || "").toLowerCase() === "repository"
-    ) {
-      // repository icon
-      const repoIcon = document.createElement("span");
-      repoIcon.innerHTML =
-        '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;color:var(--vscode-icon-foreground)"><path fill="currentColor" d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11A1.5 1.5 0 0 1 12.5 15h-9A1.5 1.5 0 0 1 2 13.5v-11zM3.5 2A.5.5 0 0 0 3 2.5V4h10V2.5a.5.5 0 0 0-.5-.5h-9z"/></svg>';
-      leftPane.appendChild(repoIcon);
-    } else {
-      leftPane.appendChild(colorDot);
-    }
-
-    // Name
-    // For parent_issue, prefer the resolved parent item's title if available, else use parentMeta
-    if (resolvedParentItem) {
-      // Try to extract title and status color from resolved parent
-      const content =
-        resolvedParentItem.content ||
-        (resolvedParentItem.raw && resolvedParentItem.raw.itemContent) ||
-        null;
-      if (content) {
-        // title
-        try {
-          if (content.title) nameSpan.textContent = String(content.title);
-          else if (content.name) nameSpan.textContent = String(content.name);
-          else if (content.number)
-            nameSpan.textContent = String(content.number);
-        } catch (e) {}
-
-        // Try to get status color from parent's fieldValues (single_select status)
-        if (Array.isArray(resolvedParentItem.fieldValues)) {
-          const statusFV = resolvedParentItem.fieldValues.find(
-            (v: any) =>
-              v && v.type === "single_select" && v.option && v.option.name,
-          );
-          if (statusFV && statusFV.option) {
-            // If option has color, use it; otherwise try map by name
-            try {
-              const c =
-                statusFV.option.color ||
-                statusFV.option.id ||
-                statusFV.option.name ||
-                null;
-              if (c)
-                colorDot.style.backgroundColor =
-                  normalizeColor(c) || colorDot.style.backgroundColor;
-            } catch (e) {}
-          }
-        }
-      }
-    } else if (parentMeta) {
-      nameSpan.textContent =
-        parentMeta.title ||
-        parentMeta.name ||
-        parentMeta.number ||
-        parentMeta.id ||
-        nameSpan.textContent;
-      if (parentMeta.color) {
-        try {
-          colorDot.style.backgroundColor =
-            normalizeColor(parentMeta.color) || colorDot.style.backgroundColor;
-        } catch (e) {}
-      }
-    }
-    leftPane.appendChild(nameSpan);
-
-    // Count circle (placed before estimate pill)
-    const countCircle = document.createElement("span");
-    countCircle.style.display = "inline-flex";
-    countCircle.style.alignItems = "center";
-    countCircle.style.justifyContent = "center";
-    countCircle.style.width = "22px";
-    countCircle.style.height = "22px";
-    countCircle.style.borderRadius = "50%";
-    countCircle.style.background = "var(--vscode-input-background)";
-    countCircle.style.border = "1px solid var(--vscode-panel-border)";
-    countCircle.style.color = "var(--vscode-foreground)";
-    countCircle.style.fontSize = "12px";
-    countCircle.style.fontWeight = "600";
-    countCircle.style.minWidth = "22px";
-    countCircle.style.boxSizing = "border-box";
-    countCircle.textContent = String(group.items.length || 0);
-    leftPane.appendChild(countCircle);
-
-    // Estimate pill and optional extra info
-    const estSum = sumEstimate(group.items || []);
-    if (estSum && estSum > 0) {
-      const estEl = document.createElement("div");
-      estEl.style.display = "inline-block";
-      estEl.style.padding = "2px 8px";
-      estEl.style.borderRadius = "999px";
-      estEl.style.border = "1px solid var(--vscode-panel-border)";
-      estEl.style.background = "var(--vscode-input-background)";
-      estEl.style.color = "var(--vscode-foreground)";
-      estEl.style.fontSize = "12px";
-      estEl.style.lineHeight = "18px";
-      estEl.style.marginLeft = "8px";
-      estEl.textContent = "Estimate: " + formatEstimate(estSum);
-      // Put estimate pill into the left sticky pane so it remains visible when horizontally scrolling
-      leftPane.appendChild(estEl);
-
-      // If parent_issue, show completed/amount + progress bar (only for real parents)
-      if (
-        String(groupingField.dataType || "").toLowerCase() === "parent_issue" &&
-        !(
-          group.option &&
-          (group.option.name === "Unassigned" ||
-            group.option.title === "Unassigned")
-        )
-      ) {
-        const completedNames = ["done", "closed", "completed", "finished"];
-
-        // Helper: robust done detection for a single item
-        const isDoneByHeuristics = (it: any) => {
-          try {
-            const content =
-              it && (it.content || (it.raw && it.raw.itemContent));
-            if (content) {
-              const state = (
-                content.state ||
-                (content.merged ? "MERGED" : undefined) ||
-                ""
-              )
-                .toString()
-                .toUpperCase();
-              if (state === "CLOSED" || state === "MERGED") return true;
-            }
-
-            if (Array.isArray(it.fieldValues)) {
-              // single_select status matching
-              const ss = it.fieldValues.find(
-                (v: any) =>
-                  v &&
-                  v.type === "single_select" &&
-                  v.option &&
-                  v.option.name &&
-                  completedNames.includes(String(v.option.name).toLowerCase()),
-              );
-              if (ss) return true;
-
-              // numeric percent-like or explicit done flag
-              const percentFV = it.fieldValues.find(
-                (v: any) =>
-                  v &&
-                  (String(v.fieldName || "")
-                    .toLowerCase()
-                    .includes("progress") ||
-                    String(v.fieldName || "")
-                      .toLowerCase()
-                      .includes("percent") ||
-                    (v.type === "number" &&
-                      String(v.fieldName || "")
-                        .toLowerCase()
-                        .includes("progress"))),
-              );
-              if (percentFV && percentFV.number != null) {
-                const pct = Number(percentFV.number || 0);
-                if (pct >= 100) return true;
-              }
-            }
-
-            if (
-              content &&
-              content.labels &&
-              Array.isArray(content.labels.nodes)
-            ) {
-              const labs = content.labels.nodes.map((l: any) =>
-                String(l.name || "").toLowerCase(),
-              );
-              for (const cn of completedNames)
-                if (labs.includes(cn)) return true;
-            }
-          } catch (e) {}
-          return false;
-        };
-
-        // Prefer parent-provided aggregate if available
-        let done = 0;
-        let total = 0;
-        if (
-          resolvedParentItem &&
-          Array.isArray(resolvedParentItem.fieldValues)
-        ) {
-          const agg = resolvedParentItem.fieldValues.find(
-            (v: any) =>
-              v &&
-              (v.type === "sub_issues_progress" ||
-                (v.total != null && v.done != null)),
-          );
-          if (agg && agg.total != null) {
-            total = Number(agg.total || 0);
-            done = Number(agg.done || 0);
-          }
-        }
-
-        // If no parent aggregate found, compute from children
-        if (!total) {
-          for (const gi of group.items) {
-            const it = gi.item || gi;
-            if (!it) continue;
-            total++;
-            if (isDoneByHeuristics(it)) done++;
-          }
-        }
-
-        // show completed/total BEFORE progress bar
-        const doneText = document.createElement("div");
-        doneText.style.color = "var(--vscode-descriptionForeground)";
-        doneText.style.fontSize = "12px";
-        doneText.style.marginLeft = "8px";
-        doneText.style.fontVariantNumeric = "tabular-nums";
-        doneText.textContent = `${done}/${total}`;
-        // Keep completed/total near the left sticky area so it stays visible
-        leftPane.appendChild(doneText);
-
-        // show progress bar
-        const progWrapper = document.createElement("div");
-        progWrapper.style.display = "inline-flex";
-        progWrapper.style.alignItems = "center";
-        progWrapper.style.gap = "8px";
-        progWrapper.style.marginLeft = "8px";
-        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-        const bar = document.createElement("div");
-        bar.style.display = "inline-block";
-        bar.style.width = "120px";
-        bar.style.height = "12px";
-        bar.style.background = "transparent";
-        bar.style.border = "1px solid var(--vscode-focusBorder)";
-        bar.style.borderRadius = "6px";
-        bar.style.overflow = "hidden";
-        const fill = document.createElement("div");
-        fill.style.height = "100%";
-        fill.style.width = String(pct) + "%";
-        fill.style.background = "var(--vscode-focusBorder)";
-        bar.appendChild(fill);
-        progWrapper.appendChild(bar);
-        // Progress bar is useful summary info — keep it in the sticky left pane
-        leftPane.appendChild(progWrapper);
-      }
-    }
-
-    // Single-select: show option description if available
-    if (
-      String(groupingField.dataType || "").toLowerCase() === "single_select"
-    ) {
-      try {
-        const opt = (groupingField.options || []).find(
-          (o: any) =>
-            String(o.name) === String(group.option && group.option.name),
-        );
-        if (opt && opt.description) {
-          const descEl = document.createElement("div");
-          descEl.style.color = "var(--vscode-descriptionForeground)";
-          descEl.style.fontSize = "12px";
-          descEl.style.marginLeft = "8px";
-          descEl.textContent = String(opt.description).slice(0, 120);
-          // Keep description fixed in the left sticky pane so it remains visible
-          leftPane.appendChild(descEl);
-        }
-      } catch (e) {}
-    }
-
-    // Iteration: append iteration range (start - end) if startDate/duration available, else title
-    if (String(groupingField.dataType || "").toLowerCase() === "iteration") {
-      try {
-        const opt = group.option || {};
-        let iterText: string | null = null;
-        const start = opt.startDate || (opt.start && opt.startDate) || null;
-        const duration = opt.duration || opt.length || null;
-        if (start && duration) {
-          try {
-            const s = new Date(start);
-            const days = Number(duration) || 0;
-            const e = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
-            const sStr = s.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            });
-            const eStr = e.toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            });
-            iterText = `${sStr} — ${eStr}`;
-          } catch (e) {
-            iterText = null;
-          }
-        }
-        if (!iterText) {
-          iterText =
-            opt.title || opt.name ? String(opt.title || opt.name) : null;
-        }
-        if (iterText) {
-          const iterEl = document.createElement("div");
-          iterEl.style.color = "var(--vscode-descriptionForeground)";
-          iterEl.style.fontSize = "12px";
-          iterEl.style.marginLeft = "8px";
-          iterEl.textContent = String(iterText).slice(0, 120);
-          // Keep iteration info fixed in the left sticky pane
-          leftPane.appendChild(iterEl);
-        }
-      } catch (e) {}
-    }
-
-    // If this group corresponds to 'Unassigned', rename to 'No <fieldname>'
-    if (
-      group.option &&
-      (group.option.name === "Unassigned" ||
-        group.option.title === "Unassigned")
-    ) {
-      nameSpan.textContent = "No " + (groupingField.name || "value");
-    }
-
-    // Compose header: leftPane (sticky) + rightPane (scrolling content)
-    headerContent.appendChild(leftPane);
-    headerContent.appendChild(rightPane);
 
     tdHeader.appendChild(headerContent);
     trHeader.appendChild(tdHeader);
@@ -570,21 +64,364 @@ export class GroupRenderer {
 
     // Render Items
     const groupRows: HTMLTableRowElement[] = [];
+    // Use a sanitized class name for group toggling (avoid spaces/special chars)
+    const rawId = group && group.option && group.option.id ? String(group.option.id) : String(Math.random()).replace("0.", "_");
+    const safeId = rawId.replace(/\s+/g, "-").replace(/[^A-Za-z0-9_\-]/g, "_");
     group.items.forEach((groupItem: any) => {
       const tr = rowRenderer.createRow(groupItem.item, groupItem.index);
-      tr.classList.add("group-row-" + group.option.id); // Add class for group toggling
+      try {
+        tr.classList.add("group-row-" + safeId); // Add class for group toggling
+      } catch (e) { }
       tbody.appendChild(tr);
       groupRows.push(tr);
     });
 
     // Toggle Logic
     let isCollapsed = false;
-    toggleBtn.addEventListener("click", () => {
-      isCollapsed = !isCollapsed;
-      toggleBtn.innerHTML = isCollapsed ? iconCollapsed : iconExpanded;
+    const setCollapsed = (collapsed: boolean) => {
+      isCollapsed = collapsed;
+      if (toggleEl) toggleEl.innerHTML = isCollapsed ? iconCollapsed : iconExpanded;
       groupRows.forEach((row) => {
         row.style.display = isCollapsed ? "none" : "table-row";
       });
+      try {
+        if (isCollapsed) trHeader.classList.add("collapsed");
+        else trHeader.classList.remove("collapsed");
+      } catch (e) { }
+    };
+
+    if (toggleEl) {
+      toggleEl.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        setCollapsed(!isCollapsed);
+      });
+    }
+
+    // Allow clicking the whole header to toggle collapse/expand for easier interaction and tests
+    tdHeader.addEventListener("click", (ev) => {
+      // Ignore clicks on controls inside header (e.g., links, buttons)
+      const target = ev.target as HTMLElement;
+      if (target && (target.tagName === "BUTTON" || target.closest("button") || target.closest("a"))) return;
+      setCollapsed(!isCollapsed);
     });
   }
+
+  // Consumers should use the shared `buildGroupHeaderElement` directly when needed.
+}
+
+function createEl(tag = "div") { return document.createElement(tag); }
+
+function renderColorDot(option: any): HTMLElement {
+  const colorDot = createEl("div");
+  colorDot.className = "group-color-dot";
+  colorDot.style.width = "12px";
+  colorDot.style.height = "12px";
+  colorDot.style.borderRadius = "50%";
+  colorDot.style.backgroundColor = normalizeColor(option?.color) || "gray";
+  colorDot.style.marginRight = "8px";
+  return colorDot;
+}
+
+function renderNameSpan(option: any, groupingField?: any): HTMLElement {
+  const nameSpan = createEl("span");
+  nameSpan.className = "group-name";
+  nameSpan.style.fontWeight = "600";
+  nameSpan.style.marginRight = "8px";
+  const name = option && (option.name || option.title || option.label) ? String(option.name || option.title || option.label) : "Unassigned";
+  nameSpan.textContent = name;
+  return nameSpan;
+}
+
+function renderCountPill(count: number, option: any): HTMLElement {
+  const countPill = createEl("span");
+  const color = normalizeColor(option?.color) || "#848d97";
+  countPill.className = "gh-count-pill";
+  countPill.style.background = addAlpha(color, 0.12) || "transparent";
+  countPill.style.color = color;
+  countPill.style.border = "1px solid rgba(0,0,0,0.04)";
+  countPill.style.borderRadius = "10px";
+  countPill.style.padding = "2px 8px";
+  countPill.style.fontSize = "11px";
+  countPill.style.fontWeight = "600";
+  countPill.textContent = String(count || 0);
+  return countPill;
+}
+
+function renderEstimateElement(fields: any[], itemsArr: any[]): HTMLElement | null {
+  if (!Array.isArray(fields)) return null;
+  const estimateField =
+    fields.find((f: any) => (f.dataType || f.type || "").toString().toLowerCase() === "number" && String(f.name || "").toLowerCase().includes("estimate"),)
+    || fields.find((f: any) => (f.dataType || f.type || "").toString().toLowerCase() === "number");
+  if (!estimateField) return null;
+  const estimateFieldId = estimateField.id;
+  let sum = 0;
+  for (const gi of itemsArr || []) {
+    const it = gi && (gi.item || gi);
+    if (!it || !Array.isArray(it.fieldValues)) continue;
+    const fv = it.fieldValues.find((v: any) => (v.fieldId && String(v.fieldId) === String(estimateFieldId)) || (v.fieldName && String(v.fieldName).toLowerCase().includes("estimate")) || v.type === "number",
+    );
+    if (fv) {
+      const num = Number(fv.number != null ? fv.number : fv.value != null ? fv.value : NaN);
+      if (!isNaN(num)) sum += num;
+    }
+  }
+  if (sum > 0) {
+    const el = createEl("div");
+    el.style.display = "inline-block";
+    el.style.padding = "2px 8px";
+    el.style.borderRadius = "999px";
+    el.style.border = "1px solid var(--vscode-panel-border)";
+    el.style.background = "var(--vscode-input-background)";
+    el.style.color = "var(--vscode-foreground)";
+    el.style.fontSize = "12px";
+    el.style.lineHeight = "18px";
+    el.style.marginLeft = "8px";
+    el.textContent = "Estimate: " + String(sum);
+    return el;
+  }
+  return null;
+}
+
+function renderNumericFieldSum(field: any, itemsArr: any[]): HTMLElement | null {
+  if (!field) return null;
+  const fieldId = field.id || field.name;
+  let sum = 0;
+  for (const gi of itemsArr || []) {
+    const it = gi && (gi.item || gi);
+    if (!it || !Array.isArray(it.fieldValues)) continue;
+    const fv = it.fieldValues.find((v: any) => (v.fieldId && String(v.fieldId) === String(fieldId)) || (v.fieldName && String(v.fieldName) === String(field.name)) || v.type === "number");
+    if (fv) {
+      const num = Number(fv.number != null ? fv.number : fv.value != null ? fv.value : NaN);
+      if (!isNaN(num)) sum += num;
+    }
+  }
+  if (sum !== 0) {
+    const el = createEl("div");
+    el.style.display = "inline-block";
+    el.style.padding = "2px 8px";
+    el.style.borderRadius = "999px";
+    el.style.border = "1px solid var(--vscode-panel-border)";
+    el.style.background = "var(--vscode-input-background)";
+    el.style.color = "var(--vscode-foreground)";
+    el.style.fontSize = "12px";
+    el.style.lineHeight = "18px";
+    el.style.marginLeft = "8px";
+    el.textContent = String(field.name || fieldId) + ": " + String(sum);
+    return el;
+  }
+  return null;
+}
+
+function getEffectiveGroupDivisorsForFields(fields: any[]): string[] | null {
+  try {
+    const vs = (window as any).__viewStates || {};
+    for (const k of Object.keys(vs)) {
+      try {
+        const st = vs[k];
+        if (!st || !st.fields) continue;
+        const stIds = (st.fields || []).map((f: any) => String(f.id));
+        const fIds = (fields || []).map((f: any) => String(f.id));
+        const common = fIds.filter((id: string) => stIds.indexOf(id) >= 0).length;
+        if (common > 0) {
+          // found a likely matching view state
+          return st.groupDivisors === undefined ? null : st.groupDivisors;
+        }
+      } catch (e) { }
+    }
+  } catch (e) { }
+  return null;
+}
+
+function extractParentFromItem(it: any, groupingField: any): any {
+  if (!it) return null;
+  const candidates: any[] = [];
+  if (Array.isArray(it.fieldValues)) candidates.push(it.fieldValues);
+  if (it.content && Array.isArray(it.content.fieldValues)) candidates.push(it.content.fieldValues);
+  if (it.raw && it.raw.itemContent && Array.isArray(it.raw.itemContent.fieldValues)) candidates.push(it.raw.itemContent.fieldValues);
+  for (const cvs of candidates) {
+    const pfv = cvs.find((v: any) => String(v.fieldId) === String(groupingField?.id) || String(v.fieldName) === String(groupingField?.name) || String(v.type) === "parent_issue");
+    if (pfv) return pfv.parent || pfv.parentIssue || pfv.issue || pfv.item || pfv.value || null;
+  }
+  return it.parent || it.parentIssue || it.issue || it.item || it.value || null;
+}
+
+function renderParentProgress(group: any, groupingField: any, allItems: any[]): HTMLElement | null {
+  if (!groupingField || String((groupingField.dataType || groupingField.type) || "").toLowerCase() !== "parent_issue") return null;
+  try {
+    let parentMeta: any = null;
+    if (group && group.option) parentMeta = group.option.parent || group.option.parentIssue || group.option.issue || parentMeta;
+    if (!parentMeta && group.items && group.items.length > 0) {
+      const firstRaw = group.items[0];
+      const first = firstRaw && firstRaw.item ? firstRaw.item : firstRaw;
+      parentMeta = extractParentFromItem(first, groupingField) || parentMeta;
+    }
+    if (!parentMeta) return null;
+    const identifiers: string[] = [];
+    const pushIf = (v: any) => { if (v !== undefined && v !== null && v !== "") identifiers.push(String(v)); };
+    pushIf(parentMeta && parentMeta.number); pushIf(parentMeta && parentMeta.id); pushIf(parentMeta && parentMeta.url); pushIf(parentMeta && parentMeta.title);
+    if (group && group.option) { pushIf(group.option.id); pushIf(group.option.name); pushIf(group.option.title); }
+    const found = (allItems || []).find((A: any) => {
+      const d = (A && (A.content || (A.raw && A.raw.itemContent))) || A || null; if (!d) return false;
+      const M: string[] = []; const tryPush = (x: any) => { if (x !== undefined && x !== null && x !== "") M.push(String(x)); };
+      tryPush(d.number); tryPush(d.id); tryPush(d.url); tryPush(d.title); tryPush(d.name);
+      if (d.raw) { tryPush(d.raw.number); tryPush(d.raw.id); tryPush(d.raw.url); }
+      if (d.itemContent && typeof d.itemContent === 'object') { tryPush(d.itemContent.number); tryPush(d.itemContent.id); tryPush(d.itemContent.url); tryPush(d.itemContent.title); tryPush(d.itemContent.name); }
+      for (const o of identifiers) { for (const m of M) { if (o && m && String(o) === String(m)) return true; } }
+      return false;
+    });
+    // Progress bar calculation - don't require finding the parent in allItems,
+    // we can calculate progress directly from group items
+    let done = 0, total = 0; const itemsList = group.items || [];
+    const isDoneByHeuristics = (it: any) => {
+      try {
+        const content = it && (it.content || (it.raw && it.raw.itemContent));
+        if (content) {
+          const state = (content.state || (content.merged ? "MERGED" : undefined) || "").toString().toUpperCase(); if (state === "CLOSED" || state === "MERGED") return true;
+        }
+        if (Array.isArray(it.fieldValues)) {
+          const ss = it.fieldValues.find((v: any) => v && v.type === "single_select" && v.option && v.option.name && ["done", "closed", "completed", "finished"].includes(String(v.option.name).toLowerCase())); if (ss) return true;
+          const percentFV = it.fieldValues.find((v: any) => v && (String(v.fieldName || "").toLowerCase().includes("progress") || String(v.fieldName || "").toLowerCase().includes("percent")));
+          if (percentFV && percentFV.number != null) { const pct = Number(percentFV.number || 0); if (pct >= 100) return true; }
+        }
+      } catch (e) { }
+      return false;
+    };
+    for (const gi of itemsList) { const it = gi.item || gi; if (!it) continue; total++; if (isDoneByHeuristics(it)) done++; }
+    if (total > 0) { const pct = Math.round((done / total) * 100); const progWrapper = createEl("div"); progWrapper.className = "group-progress"; progWrapper.style.display = "inline-flex"; progWrapper.style.alignItems = "center"; progWrapper.style.gap = "8px"; progWrapper.style.marginLeft = "8px"; const bar = createEl("div"); bar.style.display = "inline-block"; bar.style.width = "120px"; bar.style.height = "12px"; bar.style.background = "transparent"; bar.style.border = "1px solid var(--vscode-focusBorder)"; bar.style.borderRadius = "6px"; bar.style.overflow = "hidden"; const fill = createEl("div"); fill.style.height = "100%"; fill.style.width = String(pct) + "%"; fill.style.background = "var(--vscode-focusBorder)"; bar.appendChild(fill); progWrapper.appendChild(bar); return progWrapper; }
+  } catch (e) { }
+  return null;
+}
+
+function renderIterationElement(group: any, groupingField: any): HTMLElement | null {
+  if (!groupingField) return null;
+  try {
+    const dtype = String((groupingField.dataType || groupingField.type) || "").toLowerCase(); if (dtype !== "iteration") return null;
+    const opt = group.option || {}; let iterText: string | null = null; const start = opt.startDate || (opt.start && opt.startDate) || null; const duration = opt.duration || opt.length || null;
+    if (start && duration) { try { const s = new Date(start); const days = Number(duration) || 0; const e = new Date(s.getTime() + days * 24 * 60 * 60 * 1000); const sStr = s.toLocaleDateString("en-US", { month: "short", day: "numeric" }); const eStr = e.toLocaleDateString("en-US", { month: "short", day: "numeric" }); iterText = `${sStr} — ${eStr}`; } catch (e) { iterText = null; } }
+    if (!iterText) iterText = opt.title || opt.name ? String(opt.title || opt.name) : null;
+    if (iterText) { const iterEl = createEl("div"); iterEl.style.color = "var(--vscode-descriptionForeground)"; iterEl.style.fontSize = "12px"; iterEl.style.marginLeft = "8px"; iterEl.textContent = String(iterText).slice(0, 120); return iterEl; }
+  } catch (e) { }
+  return null;
+}
+
+function getIconSvg(iconName: string, size: number = 14): string {
+  if ((window as any).getIconSvg) return (window as any).getIconSvg(iconName as any, { size });
+  return "";
+}
+
+export function buildGroupHeaderElement(fields: any[], allItems: any[], group: any, groupingField: any, options?: { hideToggle?: boolean; viewKey?: string; groupDivisors?: string[] | null }): HTMLElement {
+  // Normalize grouping field: callers may pass a minimal field or an option-like object.
+  const groupingFieldDef = (groupingField && (groupingField.dataType || groupingField.type))
+    ? groupingField
+    : (Array.isArray(fields) ? fields.find((f: any) => String(f.id) === String(groupingField?.id) || String(f.name) === String(groupingField?.name)) : groupingField) || groupingField;
+  const header = document.createElement("div");
+  // Provide both the legacy `group-header` class and the newer `group-header-div`
+  // so table/board/roadmap styles/selectors match the same element.
+  header.className = "group-header group-header-div";
+  header.style.display = "flex";
+  header.style.alignItems = "center";
+  header.style.padding = "8px";
+  header.style.background = "var(--vscode-sideBar-background)";
+
+  // Toggle placeholder (only render if hideToggle is not set)
+  if (!options?.hideToggle) {
+    const toggleSpan = document.createElement("span");
+    toggleSpan.className = "group-toggle";
+    toggleSpan.style.cursor = "pointer";
+    toggleSpan.style.marginRight = "8px";
+    // Provide a visible default icon so board/roadmap show the toggle correctly
+    try { toggleSpan.innerHTML = getIconSvg('triangle-down', 16); } catch (e) { }
+    header.appendChild(toggleSpan);
+  }
+
+  // Color / Name / Count (use shared renderers)
+  const colorDot = renderColorDot(group.option || {});
+  // also add board-specific class for backward compatibility
+  colorDot.classList.add('board-card-color-dot');
+  header.appendChild(colorDot);
+  const nameSpan = renderNameSpan(group.option || {}, groupingFieldDef);
+  // add board title class for compatibility
+  nameSpan.classList.add('board-card-title');
+  header.appendChild(nameSpan);
+  // Determine group divisors configuration: explicit array = render selected pills; undefined/null = render nothing
+  let effectiveDivisors: string[] | null | undefined = undefined;
+  try {
+    if (options && Object.prototype.hasOwnProperty.call(options, 'groupDivisors')) {
+      effectiveDivisors = options!.groupDivisors;
+    } else if (options && options.viewKey) {
+      try {
+        const vs = (window as any).__viewStates || {};
+        effectiveDivisors = vs[options.viewKey] ? vs[options.viewKey].groupDivisors : undefined;
+      } catch (e) { effectiveDivisors = undefined; }
+    }
+  } catch (e) { effectiveDivisors = undefined; }
+
+  if (Array.isArray(effectiveDivisors)) {
+    // Only render Count if explicitly selected (__count__)
+    if (effectiveDivisors.find((x: any) => String(x) === '__count__')) {
+      const countPill = renderCountPill((group.items && group.items.length) || 0, group.option || {});
+      countPill.classList.add('board-card-count');
+      header.appendChild(countPill);
+    }
+    // For each selected numeric field, render a summed pill
+    try {
+      const numericFields = (fields || []).filter((f: any) => String((f.dataType || f.type || '').toLowerCase()) === 'number' || String(f.name || '').toLowerCase().includes('estimate'));
+      for (const sel of effectiveDivisors) {
+        if (String(sel) === '__count__') continue;
+        const f = numericFields.find((nf: any) => String(nf.id) === String(sel) || String(nf.name) === String(sel));
+        if (f) {
+          const el = renderNumericFieldSum(f, group.items || []);
+          if (el) {
+            el.classList.add('board-card-estimate');
+            header.appendChild(el);
+          }
+        }
+      }
+    } catch (e) { }
+  }
+
+  // Avatar handling: if option has avatar data or groupingField is assignees,
+  // try to replace the color dot with an avatar image (works for table/board/roadmap)
+  try {
+    const opt = group && group.option ? group.option : {};
+    const shouldShowAvatar = opt && (opt.avatarUrl || opt.avatar || opt.imageUrl || opt.login)
+      || (opt && opt.name && String((groupingFieldDef && (groupingFieldDef.dataType || groupingFieldDef.type) || "").toLowerCase()) === "assignees");
+    if (shouldShowAvatar) {
+      let avatarUrl = opt.avatarUrl || opt.avatar || opt.imageUrl || null;
+      if (!avatarUrl && Array.isArray(group.items)) {
+        for (const gi of group.items || []) {
+          const it = gi && (gi.item || gi);
+          if (!it || !Array.isArray(it.fieldValues)) continue;
+          const fv = it.fieldValues.find((v: any) => v && (v.type === "assignees" || String(v.fieldId) === String(groupingFieldDef && groupingFieldDef.id)));
+          if (fv && fv.assignees && Array.isArray(fv.assignees)) {
+            const match = fv.assignees.find((a: any) => String(a.login || a.name) === String(opt.name || opt.id));
+            if (match && (match.avatarUrl || match.avatar)) { avatarUrl = match.avatarUrl || match.avatar; break; }
+          }
+        }
+      }
+      if (avatarUrl && colorDot && colorDot.parentNode) {
+        const avatarEl = document.createElement("span");
+        avatarEl.innerHTML = '<span title="' + escapeHtml((opt && (opt.login || opt.name)) || "Assignee") + '" style="display:inline-block;width:20px;height:20px;border-radius:50%;overflow:hidden;background-size:cover;background-position:center;background-image:url(' + escapeHtml(avatarUrl) + ');border:2px solid var(--vscode-editor-background)"></span>';
+        colorDot.parentNode.replaceChild(avatarEl, colorDot);
+      }
+    }
+  } catch (e) { }
+
+  // If this group corresponds to 'Unassigned', rename to 'No <fieldname>' for all views
+  try {
+    if (group && group.option && (group.option.name === "Unassigned" || group.option.title === "Unassigned")) {
+      if (nameSpan) nameSpan.textContent = "No " + (groupingFieldDef && (groupingFieldDef.name || groupingFieldDef.title) ? (groupingFieldDef.name || groupingFieldDef.title) : "value");
+    }
+  } catch (e) { }
+
+  try {
+    const parentEl = renderParentProgress(group, groupingFieldDef, allItems);
+    if (parentEl) header.appendChild(parentEl);
+  } catch (e) { }
+
+  try {
+    const iterEl = renderIterationElement(group, groupingFieldDef);
+    if (iterEl) header.appendChild(iterEl);
+  } catch (e) { }
+  return header;
 }

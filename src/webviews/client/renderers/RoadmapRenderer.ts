@@ -1,5 +1,7 @@
+import MenuManager from '../components/menuManager';
 import { escapeHtml, normalizeColor, addAlpha } from "../utils";
 import { GroupDataService } from "../services/GroupDataService";
+import { buildGroupHeaderElement } from "./GroupRenderer";
 import { getIconSvg, getIconNameForDataType } from "../icons/iconRegistry";
 import { renderCell } from "../renderers/cellRenderer";
 import { setLoadingState, setErrorState } from "../utils/domUtils";
@@ -25,7 +27,8 @@ export class RoadmapRenderer {
         private allFields: any[],
         private visibleFieldIds: string[],
         private onFilter: (filter: string) => void,
-        private onAction: (action: string, item: any, args: any) => void
+        private onAction: (action: string, item: any, args: any) => void,
+        private groupDivisors?: string[] | null,
     ) {
         this.updateZoomSettings();
     }
@@ -34,6 +37,42 @@ export class RoadmapRenderer {
         this.items = items;
         this.allFields = fields;
         this.visibleFieldIds = visibleIds;
+    }
+
+    // Public accessors for menu integration
+    public getActiveMarkers(): string[] {
+        return [...this.activeMarkers];
+    }
+
+    public setActiveMarkers(markers: string[]) {
+        this.activeMarkers = [...markers];
+        if (this.container && this.lastSnapshot) {
+            this.renderRoadmap(this.container, this.lastSnapshot);
+        }
+    }
+
+    public toggleMarker(markerId: string, active: boolean) {
+        if (active) {
+            if (!this.activeMarkers.includes(markerId)) {
+                this.activeMarkers.push(markerId);
+            }
+        } else {
+            this.activeMarkers = this.activeMarkers.filter(m => m !== markerId);
+        }
+        if (this.container && this.lastSnapshot) {
+            this.renderRoadmap(this.container, this.lastSnapshot);
+        }
+    }
+
+    public getActiveSortFieldId(): string | null {
+        return this.activeSortFieldId;
+    }
+
+    public setActiveSortFieldId(fieldId: string | null) {
+        this.activeSortFieldId = fieldId;
+        if (this.container && this.lastSnapshot) {
+            this.renderRoadmap(this.container, this.lastSnapshot);
+        }
     }
 
     private updateZoomSettings() {
@@ -400,7 +439,7 @@ export class RoadmapRenderer {
         return header;
     }
 
-    private showMarkersMenu(e: MouseEvent) {
+    public showMarkersMenu(e: MouseEvent): { el: HTMLElement | null; refresh: () => void } | null {
         const options: { id: string; label: string; icon?: string }[] = [{ id: "milestones", label: "Milestones", icon: "milestone" }];
         this.allFields.forEach(f => {
             const type = (f.dataType || f.type || "").toLowerCase();
@@ -408,23 +447,26 @@ export class RoadmapRenderer {
                 options.push({ id: f.id, label: f.name, icon: getIconNameForDataType(type) });
             }
         });
-        this.showDropdown(e.currentTarget as HTMLElement, options, this.activeMarkers, (id) => {
+        const created = this.showDropdown(e.currentTarget as HTMLElement, options, this.activeMarkers, (id) => {
             if (this.activeMarkers.includes(id)) this.activeMarkers = this.activeMarkers.filter(m => m !== id);
             else this.activeMarkers.push(id);
             this.renderRoadmap(this.container!, this.lastSnapshot);
+            try { window.dispatchEvent(new CustomEvent('roadmap:markersChanged')); } catch (e) { }
         }, true);
+        return created || null;
     }
 
-    private showSortMenu(e: MouseEvent) {
+    private showSortMenu(e: MouseEvent): { el: HTMLElement | null; refresh: () => void } | null {
         const options: { id: string | null; label: string; icon?: string }[] = [{ id: null, label: "No sorting" }];
         this.allFields.forEach(f => {
             const icon = getIconNameForDataType(f.dataType || f.type);
             options.push({ id: f.id, label: f.name, icon });
         });
-        this.showDropdown(e.currentTarget as HTMLElement, options, [this.activeSortFieldId], (id) => {
+        const created = this.showDropdown(e.currentTarget as HTMLElement, options, [this.activeSortFieldId], (id) => {
             this.activeSortFieldId = id;
             this.renderRoadmap(this.container!, this.lastSnapshot);
         });
+        return created || null;
     }
 
     private showDateFieldsMenu(e: MouseEvent) {
@@ -463,7 +505,34 @@ export class RoadmapRenderer {
                     </div>
                     <span>${label}</span>
                 `;
-                item.onclick = () => { onSelect(f.id); if (document.body.contains(menu)) document.body.removeChild(menu); this.renderRoadmap(this.container!, this.lastSnapshot); };
+                item.onclick = () => {
+                    onSelect(f.id);
+                    // update renderer state and keep the menu open so the user can change both Start/End without reopening
+                    this.renderRoadmap(this.container!, this.lastSnapshot);
+                    try {
+                        window.dispatchEvent(new CustomEvent('roadmap:dateFieldsChanged'));
+                    } catch (e) { }
+                            // Re-render the menu sections so checkmarks and labels update live
+                    try {
+                        if (menu) {
+                            menu.innerHTML = '';
+                            renderSection('Start date', this.startDateFieldId, (id: string) => this.startDateFieldId = id);
+                            renderSection('End date', this.endDateFieldId, (id: string) => this.endDateFieldId = id, true);
+
+                            // reposition menu in case size changed
+                            const rect = anchorRect;
+                            const menuRect = menu.getBoundingClientRect();
+                            const vw = window.innerWidth || document.documentElement.clientWidth;
+                            let left = rect.right + 4;
+                            if (left + menuRect.width > vw) {
+                                left = rect.left - menuRect.width - 4;
+                                if (left < 4) left = Math.max(4, Math.min(vw - menuRect.width - 4, rect.right - menuRect.width));
+                            }
+                            menu.style.left = `${Math.round(left)}px`;
+                            menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+                        }
+                    } catch (e) { }
+                };
                 menu.appendChild(item);
             });
 
@@ -477,9 +546,44 @@ export class RoadmapRenderer {
         renderSection("Start date", this.startDateFieldId, (id) => this.startDateFieldId = id);
         renderSection("End date", this.endDateFieldId, (id) => this.endDateFieldId = id, true);
 
-        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        menu.style.top = (rect.bottom + 4) + "px";
-        menu.style.right = (window.innerWidth - rect.right) + "px";
+        const anchor = (e.currentTarget as HTMLElement);
+        // If the anchor has been removed from the DOM (parent menus sometimes recreate controls),
+        // fall back to the pointer coordinates so the menu doesn't appear at 0,0.
+        const getAnchorRectOrFallback = (): { top: number; bottom: number; left: number; right: number } => {
+            try {
+                if (anchor && typeof (anchor as any).getBoundingClientRect === 'function') {
+                    return (anchor as any).getBoundingClientRect();
+                }
+            } catch (e) { }
+            return { top: (e as MouseEvent).clientY || 4, bottom: (e as MouseEvent).clientY || 4, left: (e as MouseEvent).clientX || 4, right: (e as MouseEvent).clientX || 4 };
+        };
+
+        menu.dataset.menuType = 'roadmap-dropdown';
+        // append first so measurements (width/height) are accurate
+        document.body.appendChild(menu);
+        let anchorRect = getAnchorRectOrFallback();
+        // If anchor rect seems invalid (very small), try fallback ancestors or clientRects
+        try {
+            if (anchorRect && Math.abs((anchorRect.right || 0) - (anchorRect.left || 0)) < 2) {
+                const clientRects = (anchor && (anchor.getClientRects && anchor.getClientRects())) || null;
+                if (clientRects && clientRects.length > 0) anchorRect = clientRects[0] as DOMRect;
+                else if (anchor && (anchor.closest || anchor.parentElement)) {
+                    const anc = anchor.closest && anchor.closest('.roadmap-controls') ? anchor.closest('.roadmap-controls') as HTMLElement : anchor.parentElement;
+                    if (anc) anchorRect = anc.getBoundingClientRect();
+                }
+            }
+        } catch (e) { }
+        // position below the anchor by default, then prefer to open to the right of the parent menu
+        menu.style.top = (anchorRect.bottom + 4) + "px";
+        const menuRect = menu.getBoundingClientRect();
+        const vw = window.innerWidth || document.documentElement.clientWidth;
+        let left = anchorRect.right + 4;
+        if (left + menuRect.width > vw) {
+            // try opening to the left of the parent menu
+            left = anchorRect.left - menuRect.width - 4;
+            if (left < 4) left = Math.max(4, Math.min(vw - menuRect.width - 4, anchorRect.right - menuRect.width));
+        }
+        menu.style.left = `${Math.round(left)}px`;
 
         const closer = (ev: MouseEvent) => {
             if (!menu.contains(ev.target as Node)) {
@@ -488,23 +592,125 @@ export class RoadmapRenderer {
             }
         };
         setTimeout(() => window.addEventListener("mousedown", closer), 0);
-        document.body.appendChild(menu);
+        try {
+            MenuManager.register(menu, () => {
+                try {
+                                    const rect = anchorRect;
+                                    const menuRect = menu.getBoundingClientRect();
+                                    const vw = window.innerWidth || document.documentElement.clientWidth;
+                                    let left = rect.right + 4;
+                                    if (left + menuRect.width > vw) {
+                                        left = rect.left - menuRect.width - 4;
+                                        if (left < 4) left = Math.max(4, Math.min(vw - menuRect.width - 4, rect.right - menuRect.width));
+                                    }
+                                    menu.style.left = `${Math.round(left)}px`;
+                                    menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+                        } catch (e) { }
+            });
+        } catch (e) { }
+            return { el: menu, refresh: () => {
+                try {
+                    const rect = anchorRect;
+                    const menuRect = menu.getBoundingClientRect();
+                    const vw = window.innerWidth || document.documentElement.clientWidth;
+                    let left = rect.right + 4;
+                    if (left + menuRect.width > vw) {
+                        left = rect.left - menuRect.width - 4;
+                        if (left < 4) left = Math.max(4, Math.min(vw - menuRect.width - 4, rect.right - menuRect.width));
+                    }
+                    menu.style.left = `${Math.round(left)}px`;
+                    menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+                } catch (e) { }
+            } };
     }
 
-    private showZoomMenu(e: MouseEvent) {
+    private showZoomMenu(e: MouseEvent): { el: HTMLElement | null; refresh: () => void } | null {
         const options: { id: ZoomLevel; label: string }[] = [
             { id: "month", label: "Month" },
             { id: "quarter", label: "Quarter" },
             { id: "year", label: "Year" }
         ];
-        this.showDropdown(e.currentTarget as HTMLElement, options, [this.zoomLevel], (id) => {
-            this.zoomLevel = id as ZoomLevel;
-            this.updateZoomSettings();
-            this.renderRoadmap(this.container!, this.lastSnapshot);
+
+        const menu = document.createElement("div");
+        menu.className = "roadmap-dropdown-menu";
+        menu.style.cssText = `position: fixed; z-index: 1000; background: var(--vscode-menu-background); border: 1px solid var(--vscode-menu-border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 160px; padding: 4px 0; font-size: 13px;`;
+
+        options.forEach(opt => {
+            const item = document.createElement("div");
+            item.style.padding = "6px 12px 6px 32px"; item.style.cursor = "pointer"; item.style.position = "relative"; item.style.display = "flex"; item.style.alignItems = "center";
+            item.onmouseenter = () => item.style.background = "var(--vscode-menu-selectionBackground)";
+            item.onmouseleave = () => item.style.background = "transparent";
+
+            const isSelected = this.zoomLevel === opt.id;
+            item.innerHTML = `
+                <div class="roadmap-dropdown-check" style="position:absolute; left:10px; display:${isSelected ? "block" : "none"}">
+                    ${getIconSvg("check", { size: 14, fill: "var(--vscode-menu-foreground)" })}
+                </div>
+                <span style="flex:1">${opt.label}</span>
+            `;
+
+            item.onclick = () => {
+                this.zoomLevel = opt.id;
+                this.updateZoomSettings();
+                this.renderRoadmap(this.container!, this.lastSnapshot);
+                try { window.dispatchEvent(new CustomEvent('roadmap:zoomChanged')); } catch (e) { }
+                if (document.body.contains(menu)) document.body.removeChild(menu);
+            };
+            menu.appendChild(item);
         });
+
+        const anchor = (e.currentTarget as HTMLElement);
+        const rect = (anchor && document.body.contains(anchor)) ? anchor.getBoundingClientRect() : { top: (e as MouseEvent).clientY || 4, bottom: (e as MouseEvent).clientY || 4, left: (e as MouseEvent).clientX || 4, right: (e as MouseEvent).clientX || 4 };
+        menu.dataset.menuType = 'roadmap-dropdown';
+        menu.style.top = (rect.bottom + 4) + "px";
+        document.body.appendChild(menu);
+        try { MenuManager.register(menu, () => {
+            try {
+                const r = (anchor && document.body.contains(anchor)) ? anchor.getBoundingClientRect() : rect;
+                const menuRect = menu.getBoundingClientRect();
+                const vw = window.innerWidth || document.documentElement.clientWidth;
+                let left = r.right + 4;
+                if (left + menuRect.width > vw) {
+                    left = r.left - menuRect.width - 4;
+                    if (left < 4) left = Math.max(4, Math.min(vw - menuRect.width - 4, r.right - menuRect.width));
+                }
+                menu.style.left = `${Math.round(left)}px`;
+                menu.style.top = `${Math.round(r.bottom + 4)}px`;
+            } catch (e) { }
+        }); } catch (e) { }
+        const menuRect = menu.getBoundingClientRect();
+        const vw = window.innerWidth || document.documentElement.clientWidth;
+        let left = rect.right + 4;
+        if (left + menuRect.width > vw) {
+            left = rect.left - menuRect.width - 4;
+            if (left < 4) left = Math.max(4, Math.min(vw - menuRect.width - 4, rect.right - menuRect.width));
+        }
+        menu.style.left = `${Math.round(left)}px`;
+
+        const closer = (ev: MouseEvent) => {
+            if (!menu.contains(ev.target as Node)) {
+                if (document.body.contains(menu)) document.body.removeChild(menu);
+                window.removeEventListener("mousedown", closer);
+            }
+        };
+        setTimeout(() => window.addEventListener("mousedown", closer), 0);
+        return { el: menu, refresh: () => {
+            try {
+                const r = (anchor && document.body.contains(anchor)) ? anchor.getBoundingClientRect() : rect;
+                const menuRect = menu.getBoundingClientRect();
+                const vw2 = window.innerWidth || document.documentElement.clientWidth;
+                let left = r.right + 4;
+                if (left + menuRect.width > vw2) {
+                    left = r.left - menuRect.width - 4;
+                    if (left < 4) left = Math.max(4, Math.min(vw2 - menuRect.width - 4, r.right - menuRect.width));
+                }
+                menu.style.left = `${Math.round(left)}px`;
+                menu.style.top = `${Math.round(r.bottom + 4)}px`;
+            } catch (e) { }
+        } };
     }
 
-    private showDropdown(anchor: HTMLElement, options: { id: any; label: string; icon?: string }[], activeIds: any[], onSelect: (id: any) => void, multi = false) {
+    private showDropdown(anchor: HTMLElement, options: { id: any; label: string; icon?: string }[], activeIds: any[], onSelect: (id: any) => void, multi = false): { el: HTMLElement; refresh: () => void } {
         const menu = document.createElement("div");
         menu.className = "roadmap-dropdown-menu";
         menu.style.cssText = `position: fixed; z-index: 1000; background: var(--vscode-menu-background); border: 1px solid var(--vscode-menu-border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px; padding: 4px 0; font-size: 13px; max-height: 400px; overflow-y: auto;`;
@@ -539,7 +745,17 @@ export class RoadmapRenderer {
 
         const rect = anchor.getBoundingClientRect();
         menu.style.top = (rect.bottom + 4) + "px";
-        menu.style.right = (window.innerWidth - rect.right) + "px";
+
+        // append first so getBoundingClientRect() returns a real width
+        document.body.appendChild(menu);
+        const menuRect = menu.getBoundingClientRect();
+        const vw = window.innerWidth || document.documentElement.clientWidth;
+        let left = rect.right + 4;
+        if (left + menuRect.width > vw) {
+            left = rect.left - menuRect.width - 4;
+            if (left < 4) left = Math.max(4, Math.min(vw - menuRect.width - 4, rect.right - menuRect.width));
+        }
+        menu.style.left = `${Math.round(left)}px`;
 
         const closer = (ev: MouseEvent) => {
             if (!menu.contains(ev.target as Node)) {
@@ -548,7 +764,34 @@ export class RoadmapRenderer {
             }
         };
         setTimeout(() => window.addEventListener("mousedown", closer), 0);
-        document.body.appendChild(menu);
+        try { MenuManager.register(menu, () => {
+            try {
+                const rect = anchor.getBoundingClientRect();
+                const menuRect = menu.getBoundingClientRect();
+                const vw = window.innerWidth || document.documentElement.clientWidth;
+                let left = rect.right + 4;
+                if (left + menuRect.width > vw) {
+                    left = rect.left - menuRect.width - 4;
+                    if (left < 4) left = Math.max(4, Math.min(vw - menuRect.width - 4, rect.right - menuRect.width));
+                }
+                menu.style.left = `${Math.round(left)}px`;
+                menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+            } catch (e) { }
+        }); } catch (e) { }
+        return { el: menu, refresh: () => {
+            try {
+                const rect = anchor.getBoundingClientRect();
+                const menuRect = menu.getBoundingClientRect();
+                const vw = window.innerWidth || document.documentElement.clientWidth;
+                let left = rect.right + 4;
+                if (left + menuRect.width > vw) {
+                    left = rect.left - menuRect.width - 4;
+                    if (left < 4) left = Math.max(4, Math.min(vw - menuRect.width - 4, rect.right - menuRect.width));
+                }
+                menu.style.left = `${Math.round(left)}px`;
+                menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+            } catch (e) { }
+        } };
     }
 
     private getTimelineStart(): Date {
@@ -647,31 +890,53 @@ export class RoadmapRenderer {
             const groupId = String(group.option.id || "unassigned");
             const isCollapsed = this.collapsedGroups.has(groupId);
 
-            const listGroupHeader = document.createElement("div");
-            listGroupHeader.className = "roadmap-list-group-header";
-            listGroupHeader.style.height = "32px"; listGroupHeader.style.display = "flex"; listGroupHeader.style.alignItems = "center"; listGroupHeader.style.padding = "0 8px"; listGroupHeader.style.background = "var(--vscode-sideBar-background)"; listGroupHeader.style.borderBottom = "1px solid var(--vscode-panel-border)"; listGroupHeader.style.zIndex = "10"; listGroupHeader.style.position = "sticky"; listGroupHeader.style.top = "0";
-
-            const toggleIconName = isCollapsed ? "triangle-right" : "triangle-down";
-            const toggleIcon = getIconSvg(toggleIconName, { size: 16, fill: "var(--vscode-descriptionForeground)" });
-            const color = normalizeColor(group.option.color) || "#848d97";
-            const groupIcon = `<div style="width:12px; height:12px; border-radius:50%; background:${color}; margin: 0 8px; border: 1px solid ${addAlpha(color, 0.4)}"></div>`;
-
             if (groupingField) {
-                listGroupHeader.innerHTML = `
-                    <div class="roadmap-group-toggle" style="cursor:pointer; width:24px; height:24px; display:flex; align-items:center; justify-content:center;">${toggleIcon}</div>
-                    ${groupIcon}
-                    <span style="font-weight:600; font-size:13px; margin-right:8px;">${group.option.name || "Unassigned"}</span>
-                    <span class="gh-count-pill" style="background:${addAlpha(color, 0.15)}; color:${color}; border: 1px solid ${addAlpha(color, 0.3)}; border-radius:10px; padding:2px 8px; font-size:11px; font-weight:600;">${group.items.length}</span>
-                `;
-                listGroupHeader.querySelector(".roadmap-group-toggle")!.addEventListener("click", () => {
+                // Use buildGroupHeaderElement directly without wrapping in another container
+                // This fixes the duplicate header issue
+                const listGroupHeader = buildGroupHeaderElement(this.allFields, this.items, group, groupingField, { groupDivisors: this.groupDivisors });
+                listGroupHeader.classList.add("roadmap-list-group-header");
+                // Apply roadmap-specific styles to the element
+                listGroupHeader.style.position = "sticky";
+                listGroupHeader.style.top = "0";
+                listGroupHeader.style.zIndex = "10";
+                listGroupHeader.style.borderBottom = "1px solid var(--vscode-panel-border)";
+                listGroupHeader.style.height = "32px";
+                listGroupHeader.style.padding = "0 8px";
+
+                // Wire toggle for collapse/expand
+                const toggle = listGroupHeader.querySelector('.group-toggle') as HTMLElement | null;
+                if (toggle) {
+                    // Update toggle icon based on collapsed state
+                    if (isCollapsed) {
+                        toggle.innerHTML = getIconSvg("triangle-right", { size: 16, fill: "var(--vscode-descriptionForeground)" });
+                    }
+                    toggle.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (isCollapsed) this.collapsedGroups.delete(groupId); else this.collapsedGroups.add(groupId);
+                        this.renderRoadmap(this.container!, this.lastSnapshot);
+                    });
+                }
+
+                // Allow clicking the entire header to toggle
+                listGroupHeader.style.cursor = "pointer";
+                listGroupHeader.addEventListener('click', () => {
                     if (isCollapsed) this.collapsedGroups.delete(groupId); else this.collapsedGroups.add(groupId);
                     this.renderRoadmap(this.container!, this.lastSnapshot);
                 });
+
                 listView.appendChild(listGroupHeader);
 
+                // Create an empty grid header (timeline area) - height matched to list header
                 const gridGroupHeader = document.createElement("div");
                 gridGroupHeader.className = "roadmap-grid-group-header";
-                gridGroupHeader.style.height = "32px"; gridGroupHeader.style.borderBottom = "1px solid var(--vscode-panel-border)"; gridGroupHeader.style.background = "var(--vscode-sideBar-background)";
+                gridGroupHeader.style.height = "32px";
+                gridGroupHeader.style.borderBottom = "1px solid var(--vscode-panel-border)";
+                gridGroupHeader.style.background = "var(--vscode-sideBar-background)";
+                // Wire click on grid header to toggle as well
+                gridGroupHeader.addEventListener('click', () => {
+                    if (isCollapsed) this.collapsedGroups.delete(groupId); else this.collapsedGroups.add(groupId);
+                    this.renderRoadmap(this.container!, this.lastSnapshot);
+                });
                 gridContent.appendChild(gridGroupHeader);
             }
 
@@ -724,22 +989,46 @@ export class RoadmapRenderer {
                         bar.title = `${item.title || "Item"} (${iStartStr} - ${iEndStr})`;
 
                         const stickyContent = document.createElement("div");
-                        stickyContent.style.position = "sticky"; stickyContent.style.left = "0"; stickyContent.style.padding = "0 8px"; stickyContent.style.display = "flex"; stickyContent.style.alignItems = "center"; stickyContent.style.gap = "6px"; stickyContent.style.whiteSpace = "nowrap"; stickyContent.style.width = "100%";
+                        // Use a flexible container so content can grow or shrink with the bar
+                        stickyContent.style.position = "relative";
+                        stickyContent.style.padding = "0 8px";
+                        stickyContent.style.display = "flex";
+                        stickyContent.style.alignItems = "center";
+                        stickyContent.style.gap = "6px";
+                        stickyContent.style.whiteSpace = "nowrap";
+                        stickyContent.style.flex = "1 1 auto";
+                        stickyContent.style.minWidth = "0";
 
                         // For the bar, we only show avatars if available, otherwise just title
                         // This matches "avatar should appear ONLY on the line element" (interpreted as no text for assignees on the bar)
                         const avatarOnlyRenderer = (fv: any, field: any) => {
-                            if (!fv || (field?.dataType || field?.type)?.toLowerCase() !== "assignees") return renderCell(fv, field, item, this.items);
-                            const assignees = fv.assignees || [];
-                            if (assignees.length === 0) return "";
-                            // Extract just the avatar part from AssigneesRenderer logic or roughly reimplement
-                            return `<div style="display:flex; align-items:center;">${renderCell(fv, field, item, this.items).split('</span></span>')[0]}</span></span></div>`;
+                            try {
+                                if (!fv || (field?.dataType || field?.type)?.toLowerCase() !== "assignees") return renderCell(fv, field, item, this.items);
+                                const assignees = fv.assignees || [];
+                                if (assignees.length === 0) return "";
+                                // Safely parse rendered HTML and extract avatar node (img/svg) if present
+                                const html = renderCell(fv, field, item, this.items);
+                                const tmp = document.createElement('div');
+                                tmp.innerHTML = html;
+                                const avatarEl = tmp.querySelector('img') || tmp.querySelector('svg') || tmp.querySelector('.avatar') || tmp.firstElementChild;
+                                if (avatarEl) return `<div style="display:flex; align-items:center;">${(avatarEl as HTMLElement).outerHTML}</div>`;
+                            } catch (e) { }
+                            return '';
                         };
 
-                        stickyContent.innerHTML = `<div style="display:flex; align-items:center; gap:6px; overflow:hidden;">${renderCell(titleFv, titleField, item, this.items)}</div>${assigneesFv ? `<div style="margin-left:auto; display:flex;">${avatarOnlyRenderer(assigneesFv, assigneesField)}</div>` : ""}`;
+                        stickyContent.innerHTML = `<div style="flex:1; min-width:0; display:flex; align-items:center; gap:6px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;">${renderCell(titleFv, titleField, item, this.items)}</div>${assigneesFv ? `<div style="margin-left:auto; display:flex;">${avatarOnlyRenderer(assigneesFv, assigneesField)}</div>` : ""}`;
+
+                        // Render content inside the date-span `bar` (original behavior)
+                        // so the DOM structure and visuals remain unchanged.
+                        stickyContent.style.position = 'relative';
+                        stickyContent.style.left = '0';
+                        stickyContent.style.width = '100%';
+                        stickyContent.style.boxSizing = 'border-box';
                         bar.appendChild(stickyContent);
+
                         if (item.url) bar.onclick = () => this.onAction("openUrl", item, {});
                         gridRow.appendChild(bar);
+                        // Use minWidth on the bar to represent the date-span without forcing an inline width mutation
                     }
                 });
 
