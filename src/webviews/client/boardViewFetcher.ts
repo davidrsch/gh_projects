@@ -8,9 +8,14 @@ import {
   applyFilterVisibility,
 } from "./viewFetcherUtils";
 import { BoardCardRenderer } from "./renderers/BoardCardRenderer";
+import { SlicePanel } from "./components/SlicePanel";
 import { parseSortByFields, sortItems } from "./utils/tableSorting";
 import type { SortConfig } from "./utils/tableSorting";
+import type { Item, NormalizedValue, FieldConfig } from "../../lib/types";
 /// <reference path="./global.d.ts" />
+
+// Initialize active tab menus only when view fetchers are loaded
+import "./components/initActiveTabMenus";
 
 // signal that the board fetcher script executed
 try {
@@ -32,12 +37,52 @@ function createBoardFetcher() {
 
     var first = 50;
 
+    // Persistent state for local overrides
+    let unsavedSort: SortConfig | null | undefined = undefined;
+
+    // undefined = no override (use payload)
+    // null = override to No Grouping
+    // string = override to Specific Grouping
+    let unsavedGrouping: string | null | undefined = undefined;
+    // group divisors (count / numeric fields) override
+    let unsavedGroupDivisors: string[] | null | undefined = undefined;
+
+    // Track unsaved slice changes
+    let unsavedSlice: { fieldId: string; value: any } | null = null;
+    // Active slice panel instance (if shown)
+    let activeSlicePanel: any = null;
+
+    // Column override (for board view column field)
+    // undefined = no override, null = no column (invalid but safe), string = column field name
+    let unsavedColumn: string | null | undefined = undefined;
+
+    let unsavedHiddenFields: Set<string> | null = null;
+    let lastPayload: any = null;
+    let lastEffectiveFilter: string | undefined = undefined;
+
     function render(payload: any, effectiveFilter?: string) {
       try {
-        var items = (payload && payload.items) || [];
-        var fields = (payload && payload.fields) || [];
-        var allFields = (payload && payload.allFields) || fields;
+        lastPayload = payload;
+        // Update effective filter if provided, otherwise preserve previous
+        if (effectiveFilter !== undefined) lastEffectiveFilter = effectiveFilter;
+        else effectiveFilter = lastEffectiveFilter;
+
+          var items = (payload && payload.items) || [];
+          var fields = (payload && payload.fields) || [];
+          var allFields = (payload && payload.allFields) || fields;
+          // effectiveGroupDivisors is computed below inside the view-state block; declare here so it's
+          // available later when creating renderers outside that block.
+          let effectiveGroupDivisors: string[] | null | undefined = undefined;
+        const existingSlicePanel = container.querySelector('.slice-panel');
         container.innerHTML = "";
+        if (existingSlicePanel) {
+          try { container.appendChild(existingSlicePanel); } catch (e) { }
+        }
+
+        // Apply local hidden fields override
+        if (unsavedHiddenFields !== null) {
+          fields = allFields.filter((f: any) => !unsavedHiddenFields!.has(String(f.id)));
+        }
 
         // Set container layout like table view - flex column with height 100%
         container.style.margin = "0";
@@ -47,9 +92,6 @@ function createBoardFetcher() {
         container.style.flexDirection = "column";
         container.style.overflow = "hidden";
 
-        // Track unsaved sort changes (local-only view state)
-        let unsavedSort: SortConfig | null | undefined = undefined;
-
         let barApi = initFilterBar(container, viewKey, {
           suffix: viewKey,
           step: first,
@@ -58,6 +100,7 @@ function createBoardFetcher() {
             requestFields();
           },
           onSave: (newFilter: any) => {
+            let dirty = false;
             // Save sort if changed (persist local override only)
             if (unsavedSort !== undefined) {
               try {
@@ -73,12 +116,93 @@ function createBoardFetcher() {
                 }
               } catch (e) { }
               unsavedSort = undefined;
+              dirty = true;
+            }
+
+            // Save Hidden Fields
+            if (unsavedHiddenFields !== null) {
+              const hiddenArr = Array.from(unsavedHiddenFields);
+              if (
+                (window as any).__APP_MESSAGING__ &&
+                typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+              ) {
+                (window as any).__APP_MESSAGING__.postMessage({
+                  command: "setViewHiddenFields",
+                  viewKey: viewKey,
+                  hiddenFields: hiddenArr,
+                });
+              }
+              // Persist to localStorage
+              try {
+                const key = viewKey
+                  ? `ghProjects.table.${viewKey}.hiddenFields`
+                  : null;
+                if (key) localStorage.setItem(key, JSON.stringify(hiddenArr));
+              } catch (e) { }
+              unsavedHiddenFields = null;
+              dirty = true;
+            }
+
+            // Save Grouping
+            if (unsavedGrouping !== undefined) {
+              if (
+                (window as any).__APP_MESSAGING__ &&
+                typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+              ) {
+                (window as any).__APP_MESSAGING__.postMessage({
+                  command: "setViewGrouping",
+                  viewKey: viewKey,
+                  grouping: unsavedGrouping,
+                });
+              }
+              unsavedGrouping = undefined;
+              dirty = true;
+            }
+
+            // Save group divisors if changed
+            if (unsavedGroupDivisors !== undefined) {
+              try {
+                if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+                  (window as any).__APP_MESSAGING__.postMessage({ command: 'setViewGroupDivisors', viewKey: viewKey, groupDivisors: unsavedGroupDivisors });
+                }
+              } catch (e) { }
+              try { const key = viewKey ? `ghProjects.table.${viewKey}.groupDivisors` : null; if (key) { if (unsavedGroupDivisors === null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(unsavedGroupDivisors)); } } catch (e) { }
+              unsavedGroupDivisors = undefined;
+              dirty = true;
+            }
+
+            // Save slice if changed
+            if (unsavedSlice !== null) {
+              try {
+                if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+                  (window as any).__APP_MESSAGING__.postMessage({ command: 'setViewSlice', viewKey: viewKey, slice: unsavedSlice });
+                }
+              } catch (e) { }
+              try { const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null; if (key) localStorage.setItem(key, JSON.stringify(unsavedSlice)); } catch (e) { }
+              unsavedSlice = null;
+              dirty = true;
+            }
+
+            if (dirty) {
+              // Request fields to refresh UI from server state
+              requestFields();
             }
           },
           onDiscard: () => {
-            if (unsavedSort !== undefined) {
+            if (unsavedSort !== undefined || unsavedHiddenFields !== null || unsavedGrouping !== undefined || unsavedSlice !== null) {
               unsavedSort = undefined;
-              requestFields();
+              unsavedHiddenFields = null;
+              unsavedGrouping = undefined;
+              unsavedSlice = null;
+
+              // Close any active slice panel
+              try { if (activeSlicePanel && typeof activeSlicePanel.close === 'function') activeSlicePanel.close(); activeSlicePanel = null; } catch (e) { }
+
+              // Re-render
+              if (lastPayload) render(lastPayload, lastEffectiveFilter);
+              else requestFields();
             }
           },
         });
@@ -94,6 +218,215 @@ function createBoardFetcher() {
               barApi.setEffectiveFilter(effectiveFilter);
             } catch (e) { }
           }
+        } catch (e) { }
+
+        // Expose view state for ActiveTabMenu / FieldsMenu
+        try {
+          // Calculate effective sort config (unsaved override -> stored -> server)
+          let effectiveSortConfig: SortConfig | null = null;
+          if (unsavedSort !== undefined) {
+            effectiveSortConfig = unsavedSort || null;
+          } else if (viewKey) {
+            try {
+              const stored = localStorage.getItem(`ghProjects.table.${viewKey}.sortConfig`);
+              if (stored) effectiveSortConfig = JSON.parse(stored);
+            } catch (e) { }
+          }
+          if (!effectiveSortConfig) {
+            effectiveSortConfig = parseSortByFields(payload && payload.details && payload.details.sortByFields);
+          }
+
+          let currentSortName: string | null = null;
+          if (effectiveSortConfig && effectiveSortConfig.fieldId) {
+            const sortField = allFields.find((f: any) => String(f.id) === String(effectiveSortConfig!.fieldId));
+            currentSortName = sortField ? sortField.name : null;
+          }
+
+          // determine effective group divisors (unsaved override -> localStorage -> payload.details)
+          try {
+            if (unsavedGroupDivisors !== undefined) {
+              effectiveGroupDivisors = unsavedGroupDivisors === null ? null : (unsavedGroupDivisors || null);
+            } else if (viewKey) {
+              try { const stored = localStorage.getItem(`ghProjects.table.${viewKey}.groupDivisors`); if (stored) effectiveGroupDivisors = JSON.parse(stored); } catch (e) { }
+            }
+            try {
+              const maybe = (payload as any).details && (payload as any).details.groupDivisors && Array.isArray((payload as any).details.groupDivisors.nodes) ? (payload as any).details.groupDivisors.nodes.map((n: any) => String(n.id || n.name)) : null;
+              if (effectiveGroupDivisors === null && maybe) effectiveGroupDivisors = maybe;
+            } catch (e) { }
+          } catch (e) { }
+
+          (window as any).__viewStates = (window as any).__viewStates || {};
+          (window as any).__viewStates[viewKey] = {
+            fields: allFields,
+            items: items || [],
+            visibleFieldIds: new Set(fields.map((f: any) => String(f.id))),
+            currentSort: currentSortName,
+            groupDivisors: effectiveGroupDivisors,
+            onToggleVisibility: (fieldId: string, visible: boolean) => {
+              try {
+                // Initialize unsavedHiddenFields if null
+                if (unsavedHiddenFields === null) {
+                  unsavedHiddenFields = new Set<string>();
+                  // Populate with currently hidden fields (allFields - fields)
+                  const visibleSet = new Set(fields.map((f: any) => String(f.id)));
+                  allFields.forEach((f: any) => {
+                    if (!visibleSet.has(String(f.id))) unsavedHiddenFields!.add(String(f.id));
+                  });
+                }
+
+                const id = String(fieldId);
+                if (visible) unsavedHiddenFields.delete(id);
+                else unsavedHiddenFields.add(id);
+
+                // Re-render locally
+                if (lastPayload) render(lastPayload, lastEffectiveFilter);
+              } catch (e) { }
+            },
+            onSetGroupBy: (fieldName: string | null) => {
+              try {
+                unsavedGrouping = fieldName;
+                // Re-render locally
+                if (lastPayload) render(lastPayload, lastEffectiveFilter);
+              } catch (e) { }
+            },
+            onSetGroupDivisors: (selected: string[] | null) => {
+              try {
+                unsavedGroupDivisors = selected === null ? null : (selected || []);
+                if (lastPayload) render(lastPayload, lastEffectiveFilter);
+              } catch (e) { }
+            },
+            onSetColumnBy: (fieldName: string | null) => {
+              try {
+                unsavedColumn = fieldName;
+                // Re-render locally
+                if (lastPayload) render(lastPayload, lastEffectiveFilter);
+              } catch (e) { }
+            },
+            onSetSort: (fieldId: string | null) => {
+              try {
+                if (fieldId === null) {
+                  unsavedSort = null;
+                } else {
+                  unsavedSort = { fieldId, direction: 'ASC' };
+                }
+                // Re-render locally
+                if (lastPayload) render(lastPayload, lastEffectiveFilter);
+              } catch (e) { }
+            },
+            // Allow external callers to show a slice panel in the board view
+            onSetSlice: (fieldId: string | null) => {
+              try {
+                unsavedSlice = fieldId ? { fieldId, value: null } : null;
+                if (lastPayload) render(lastPayload, lastEffectiveFilter);
+              } catch (e) { }
+            },
+            showSlicePanel: (anchor?: HTMLElement, anchorRect?: DOMRect) => {
+              try {
+                // Close existing panel
+                try { if (activeSlicePanel && typeof activeSlicePanel.close === 'function') activeSlicePanel.close(); activeSlicePanel = null; } catch (e) { }
+                // Clean up any leftover slice panels
+                try { const existing = container.querySelector('.slice-panel'); if (existing) existing.remove(); } catch (e) { }
+                const sliceableTypes = new Set(['assignees','single_select','parent_issue','iteration','number','date','milestone','repository','labels','text','single_line_text']);
+                let field: any = null;
+                try {
+                  const sid = unsavedSlice ? String(unsavedSlice.fieldId) : null;
+                  if (sid) field = allFields.find((f: any) => String(f.id) === sid);
+                } catch (e) { }
+                if (!field) field = (allFields || []).find((f: any) => sliceableTypes.has(String((f.dataType || '').toLowerCase())));
+                if (!field) return;
+                try {
+                  activeSlicePanel = new SlicePanel(container, field, items || [], allFields || []);
+                  activeSlicePanel.render();
+                  // Ensure panel appears before main content. If the detected main element is
+                  // a direct child of `container` insert before it; otherwise fall back to
+                  // inserting as the first child of `container` so it becomes the left column.
+                  try {
+                    const main = container.querySelector('.board-container') || container.querySelector('.board-wrapper') || container.querySelector('.board-content') || container.firstElementChild || container;
+                    const el = container.querySelector('.slice-panel');
+                    if (el) {
+                      try {
+                        if (main && main.parentElement && main.parentElement.contains(main)) {
+                          main.parentElement.insertBefore(el, main as Element);
+                          // Set parent to flex row for side-by-side layout
+                          main.parentElement.style.flexDirection = "row";
+                        } else {
+                          // main is the container or not attached where expected - insert as first child
+                          container.insertBefore(el, container.firstChild);
+                        }
+                      } catch (ie) {
+                        try { container.insertBefore(el, container.firstChild); } catch (e) { }
+                      }
+                    }
+                  } catch (e) { }
+                  // If caller provided an anchorRect (from the ActiveTabMenu) open the
+                  // field dropdown anchored to that rect so the menu lines up visually.
+                  try { if (anchorRect && activeSlicePanel && typeof activeSlicePanel.openFieldDropdown === 'function') activeSlicePanel.openFieldDropdown(anchorRect); } catch (e) { }
+                  activeSlicePanel.onValueSelect((value: any) => {
+                    try {
+                      unsavedSlice = { fieldId: field.id, value };
+                      // enable Save/Discard if barApi exists
+                      try {
+                        if (barApi && barApi.saveBtn && barApi.discardBtn) {
+                          barApi.saveBtn.disabled = false; barApi.saveBtn.style.opacity = '1'; barApi.saveBtn.style.cursor = 'pointer';
+                          barApi.discardBtn.disabled = false; barApi.discardBtn.style.opacity = '1'; barApi.discardBtn.style.cursor = 'pointer';
+                        }
+                      } catch (e) { }
+                      // re-render to reflect slice state
+                      if (lastPayload) render(lastPayload, lastEffectiveFilter);
+                    } catch (e) { }
+                  });
+                  activeSlicePanel.onFieldChange((newField: any) => {
+                    try {
+                      // reopen panel for new field
+                      activeSlicePanel && activeSlicePanel.close && activeSlicePanel.close();
+                      activeSlicePanel = null;
+                      unsavedSlice = null;
+                      if (newField) {
+                        unsavedSlice = { fieldId: newField.id, value: null };
+                        // show panel again
+                        (window as any).__viewStates[viewKey] && (window as any).__viewStates[viewKey].showSlicePanel && (window as any).__viewStates[viewKey].showSlicePanel();
+                      }
+                    } catch (e) { }
+                  });
+
+                } catch (e) { }
+                // Return created element for parent to register as external submenu
+                try {
+                  const el = (activeSlicePanel as any) && (activeSlicePanel as any).panelElement ? (activeSlicePanel as any).panelElement as HTMLElement : null;
+                  if (el) return { el, refresh: () => { try { /* no-op */ } catch (e) {} } };
+                } catch (e) { }
+                return null;
+              } catch (e) { }
+            },
+            get currentSlice() {
+              try {
+                const sid = unsavedSlice ? String(unsavedSlice.fieldId) : null;
+                if (sid) {
+                  const f = (allFields || []).find((ff: any) => String(ff.id) === sid);
+                  return f ? f.name : sid;
+                }
+                if (viewKey) {
+                  try {
+                    const stored = localStorage.getItem(`ghProjects.table.${viewKey}.slice`);
+                    if (stored) {
+                      const parsed = JSON.parse(stored);
+                      if (parsed && parsed.fieldId) {
+                        const f = (allFields || []).find((ff: any) => String(ff.id) === String(parsed.fieldId));
+                        return f ? f.name : String(parsed.fieldId);
+                      }
+                    }
+                  } catch (e) { }
+                }
+              } catch (e) { }
+              return null;
+            },
+          };
+        } catch (e) { }
+
+        // After detecting column/swimlane fields later in render(), we may update current grouping name
+        try {
+          (window as any).__viewStates = (window as any).__viewStates || {};
+          (window as any).__viewStates[viewKey] = (window as any).__viewStates[viewKey] || {};
         } catch (e) { }
 
         if (!barApi) {
@@ -122,38 +455,42 @@ function createBoardFetcher() {
 
         // Detect column field from view details (verticalGroupByFields)
         let columnField: any = null;
-        try {
-          const details = payload && payload.details;
-          const verticalGroupByFields =
-            details &&
-            details.verticalGroupByFields &&
-            details.verticalGroupByFields.nodes;
 
-          if (verticalGroupByFields && verticalGroupByFields.length > 0) {
-            // Find the field in allFields that matches the verticalGroupByField
-            const vgbField = verticalGroupByFields[0];
-            columnField = allFields.find(
-              (f: any) =>
-                String(f.id) === String(vgbField.id) ||
-                String(f.name) === String(vgbField.name),
-            );
+        // Check for local column override first
+        if (unsavedColumn !== undefined) {
+          if (unsavedColumn !== null) {
+            columnField = allFields.find((f: any) => f.name === unsavedColumn);
+          }
+        } else {
+          try {
+            const details = payload && payload.details;
+            const verticalGroupByFields =
+              details &&
+              details.verticalGroupByFields &&
+              details.verticalGroupByFields.nodes;
 
-            // Validate it's a valid column field type (single_select or iteration)
-            if (columnField) {
-              const dataType = String(columnField.dataType || "").toLowerCase();
-              if (dataType !== "single_select" && dataType !== "iteration") {
-                logDebug(viewKey, "boardViewFetcher.invalidColumnFieldType", {
-                  dataType,
-                  fieldName: columnField.name,
-                });
-                columnField = null;
+            if (verticalGroupByFields && verticalGroupByFields.length > 0) {
+              // Find the field in allFields that matches the verticalGroupByField
+              const vgbField = verticalGroupByFields[0];
+              columnField = allFields.find(
+                (f: any) =>
+                  String(f.id) === String(vgbField.id) ||
+                  String(f.name) === String(vgbField.name),
+              );
+
+              // Validate it's a valid column field type (single_select or iteration)
+              if (columnField) {
+                const dataType = String(columnField.dataType || "").toLowerCase();
+                if (dataType !== "single_select" && dataType !== "iteration") {
+                  logDebug(viewKey, "boardViewFetcher.invalidColumnFieldType", {
+                    dataType,
+                    fieldName: columnField.name,
+                  });
+                  columnField = null;
+                }
               }
             }
-          }
-        } catch (e) {
-          logDebug(viewKey, "boardViewFetcher.columnFieldDetection.error", {
-            message: String((e as any)?.message || e),
-          });
+              } catch (e) { }
         }
 
         // Fallback: try to find Status field (common single_select field for boards)
@@ -173,28 +510,70 @@ function createBoardFetcher() {
           );
         }
 
+        // Update currentColumn in __viewStates
+        try {
+          if ((window as any).__viewStates && (window as any).__viewStates[viewKey]) {
+            (window as any).__viewStates[viewKey].currentColumn = (columnField && columnField.name) || null;
+          }
+        } catch (e) { }
+
         // Detect swimlane field from view details (regular groupByFields on board layouts)
         let swimlaneField: any = null;
-        try {
-          const details = payload && payload.details;
-          const groupByFields =
-            details &&
-            details.groupByFields &&
-            details.groupByFields.nodes;
 
-          if (groupByFields && groupByFields.length > 0) {
-            const gbField = groupByFields[0];
-            swimlaneField = allFields.find(
-              (f: any) =>
-                String(f.id) === String(gbField.id) ||
-                String(f.name) === String(gbField.name),
-            );
+        if (unsavedGrouping !== undefined) {
+          // Use local override
+          if (unsavedGrouping === null) {
+            swimlaneField = null;
+          } else {
+            swimlaneField = allFields.find((f: any) => f.name === unsavedGrouping);
           }
-        } catch (e) {
-          logDebug(viewKey, "boardViewFetcher.swimlaneFieldDetection.error", {
-            message: String((e as any)?.message || e),
-          });
+        } else {
+          try {
+            const details = payload && payload.details;
+            const groupByFields =
+              details &&
+              details.groupByFields &&
+              details.groupByFields.nodes;
+
+            if (groupByFields && groupByFields.length > 0) {
+              const gbField = groupByFields[0];
+              swimlaneField = allFields.find(
+                (f: any) =>
+                  String(f.id) === String(gbField.id) ||
+                  String(f.name) === String(gbField.name),
+              );
+            }
+          } catch (e) {
+            logDebug(viewKey, "boardViewFetcher.swimlaneFieldDetection.error", {
+              message: String((e as any)?.message || e),
+            });
+          }
         }
+
+        // Ensure buttons are enabled if we have unsaved changes
+        if (barApi && (unsavedSort !== undefined || unsavedHiddenFields !== null || unsavedGrouping !== undefined)) {
+          try {
+            if (barApi.saveBtn) {
+              barApi.saveBtn.disabled = false;
+              barApi.saveBtn.style.opacity = "1";
+              barApi.saveBtn.style.cursor = "pointer";
+            }
+            if (barApi.discardBtn) {
+              barApi.discardBtn.disabled = false;
+              barApi.discardBtn.style.opacity = "1";
+              barApi.discardBtn.style.cursor = "pointer";
+            }
+          } catch (e) { }
+        }
+
+        // Update __viewStates current grouping after detection
+        try {
+          // Only use swimlaneField for 'Group By' menu status in Board View
+          const currentGrouping = (swimlaneField && swimlaneField.name) || null;
+          if ((window as any).__viewStates && (window as any).__viewStates[viewKey]) {
+            (window as any).__viewStates[viewKey].current = currentGrouping;
+          }
+        } catch (e) { }
 
         // Create board content container - flex grow to fill remaining space
         var content = document.createElement("div");
@@ -215,7 +594,7 @@ function createBoardFetcher() {
           }
         };
 
-        // Determine sorting
+        // Determine sorting - consider unsaved override (already applied to effectiveSortConfig above)
         let sortConfig = parseSortByFields(payload && payload.details && payload.details.sortByFields);
         if (viewKey) {
           try {
@@ -223,11 +602,77 @@ function createBoardFetcher() {
             if (stored) sortConfig = JSON.parse(stored);
           } catch (e) { }
         }
+        // If we have unsavedSort (user changed via menu) prefer that
+        if (unsavedSort !== undefined) {
+          sortConfig = unsavedSort || null;
+        }
 
         // Apply sorting to items
         let displayItems = items;
         if (sortConfig) {
           displayItems = sortItems(items, allFields, sortConfig);
+        }
+
+        // Apply slice filtering
+        if (unsavedSlice) {
+          displayItems = displayItems.filter((item: Item) => {
+            const fv = item.fieldValues.find((f: any) => String(f.fieldId) === String(unsavedSlice!.fieldId));
+        // Handle different field types
+        const field = allFields.find((f: FieldConfig) => f.id === unsavedSlice!.fieldId);
+        const dataType = field ? (field.dataType || field.type || '').toLowerCase() : '';
+
+        // Extract value from NormalizedValue
+        let val = null;
+        if (!fv) {
+          // No field value found
+          val = null;
+        } else {
+          if ((fv as any).text !== undefined) val = (fv as any).text;
+          else if ((fv as any).title !== undefined) val = (fv as any).title;
+          else if ((fv as any).number !== undefined) val = (fv as any).number;
+          else if ((fv as any).date !== undefined) val = (fv as any).date;
+          else if ((fv as any).option) val = (fv as any).option.name;
+          else if ((fv as any).iteration) val = (fv as any).iteration.title;
+          else if ((fv as any).assignees) val = (fv as any).assignees;
+          else if ((fv as any).labels) val = (fv as any).labels;
+          else if (dataType === 'parent_issue') {
+            const p = (fv as any).parent || (fv as any).parentIssue || (fv as any).issue || (fv as any).item || (fv as any).value || null;
+            if (p) val = p.title || p.name || p.number || p.id || p.url || null;
+          }
+          else if (dataType === 'milestone') {
+            val = (fv as any).milestone?.title || (fv as any).milestone?.name || (fv as any).value || null;
+          }
+          else if (dataType === 'repository') {
+            val = (fv as any).repository?.nameWithOwner || (fv as any).repository?.full_name || (fv as any).repository?.name || (fv as any).value || null;
+          }
+          else val = (fv as any).value; // fallback
+        }
+
+        if (unsavedSlice!.value === null) {
+          // For null slice value, show items that have no value for this field
+          if (dataType === 'assignees' || dataType === 'labels') {
+            return !val || (Array.isArray(val) && val.length === 0);
+          } else {
+            return val === null || val === undefined;
+          }
+        }
+            if (dataType === 'assignees' || dataType === 'labels') {
+              if (!Array.isArray(val)) return false;
+              if (dataType === 'assignees') {
+                // For assignees, val is array of objects, slice value is object
+                return val.some((assignee: any) => 
+                  assignee && (assignee.login === unsavedSlice!.value?.login || assignee.id === unsavedSlice!.value?.id)
+                );
+              } else if (dataType === 'labels') {
+                // For labels, val is array of objects, slice value is string (name)
+                return val.some((label: any) => 
+                  label && (label.name === unsavedSlice!.value || label.id === unsavedSlice!.value)
+                );
+              }
+            } else {
+              return val === unsavedSlice!.value;
+            }
+          });
         }
 
         const handleAction = (action: string, item: any, args: any) => {
@@ -477,6 +922,7 @@ function createBoardFetcher() {
               visibleFieldIds,
               handleFilter,
               handleAction,
+              effectiveGroupDivisors,
             );
             cardRenderer.renderBoard(content, columnField, swimlaneField);
           } catch (e) {
@@ -495,6 +941,19 @@ function createBoardFetcher() {
         }
 
         container.appendChild(content);
+
+        // Reposition slice panel if present
+        try {
+          const sliceEl = container.querySelector('.slice-panel') as HTMLElement;
+          if (sliceEl) {
+            const main = content.querySelector('.board-container') || content.querySelector('.board-wrapper') || content.querySelector('.board-content') || content.firstElementChild;
+            if (main && main.parentElement === content) {
+              content.insertBefore(sliceEl, main);
+              content.style.display = "flex";
+              content.style.flexDirection = "row";
+            }
+          }
+        } catch (e) { }
 
         try {
           if (barApi && typeof barApi.setCount === "function")
@@ -544,15 +1003,15 @@ function createBoardFetcher() {
             }
           }
         } catch (e) { }
-      } catch (err: any) {
+      } catch (err) {
         logDebug(viewKey, "boardViewFetcher.render.error", {
-          message: String(err && err.message),
-          stack: err && err.stack,
+          message: String(err && (err as any).message),
+          stack: err && (err as any).stack,
         });
         setErrorState(
           container,
           viewName,
-          "Error rendering board view: " + String(err && err.message),
+          "Error rendering board view: " + String(err && (err as any).message),
         );
       }
     }

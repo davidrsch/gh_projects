@@ -9,6 +9,7 @@ export interface FieldItem {
   name: string;
   iconClass?: string;
   dataType?: string;
+  locked?: boolean;
 }
 
 export interface FieldsMenuOptions {
@@ -22,15 +23,24 @@ export class FieldsMenu {
   private options: FieldsMenuOptions;
   private menuElement: HTMLElement | null = null;
   private backdropElement: HTMLElement | null = null;
+  private anchorElementRef: HTMLElement | null = null;
+  private anchorRectRef: DOMRect | undefined = undefined;
 
   constructor(options: FieldsMenuOptions) {
     this.options = options;
   }
 
-  public show(anchorElement: HTMLElement) {
+  public show(anchorElement: HTMLElement, anchorRect?: DOMRect) {
     this.hide();
+    this.anchorElementRef = anchorElement;
+    this.anchorRectRef = anchorRect;
 
     // Backdrop to detect outside clicks
+    // Remove existing field/group submenus so only one is visible
+    try {
+      document.querySelectorAll('[data-menu-type="fields-menu"], [data-menu-type="group-by-menu"]').forEach((n) => n.remove());
+    } catch (e) { }
+
     this.backdropElement = document.createElement("div");
     this.backdropElement.style.position = "fixed";
     this.backdropElement.style.top = "0";
@@ -39,11 +49,13 @@ export class FieldsMenu {
     this.backdropElement.style.bottom = "0";
     this.backdropElement.style.zIndex = "998";
     this.backdropElement.addEventListener("click", () => this.hide());
+    this.backdropElement.dataset.menuType = 'fields-menu';
     document.body.appendChild(this.backdropElement);
 
     // Create menu offscreen first so we can measure size and pick best placement
     this.menuElement = document.createElement("div");
     this.menuElement.className = "fields-menu";
+    this.menuElement.dataset.menuType = 'fields-menu';
     this.menuElement.style.position = "absolute";
     this.menuElement.style.visibility = "hidden";
     this.menuElement.style.left = "0px";
@@ -65,7 +77,9 @@ export class FieldsMenu {
     document.body.appendChild(this.menuElement);
     this.buildMenu();
 
-    const rect = anchorElement.getBoundingClientRect();
+    let rect = anchorRect as DOMRect | undefined;
+    if (!rect) rect = anchorElement.getBoundingClientRect();
+    try { console.debug('FieldsMenu.show anchorRect', { top: rect.top, left: rect.left, right: rect.right, height: rect.height }); } catch (e) { }
     const menuRect = this.menuElement.getBoundingClientRect();
     const margin = 8;
     const vw = window.innerWidth || document.documentElement.clientWidth;
@@ -86,18 +100,62 @@ export class FieldsMenu {
       }
     }
 
-    // Horizontal placement: align left by default, but adjust if overflowing
+    // Horizontal placement: align left by default, but if called from a parent ActiveTabMenu
+    // open to the right of the parent menu so it behaves like a submenu.
     let left = rect.left;
-    if (rect.left + menuRect.width + margin > vw) {
-      // try align to right edge of anchor
-      left = Math.max(margin, rect.right - menuRect.width);
+    try {
+      // Anchor placement relative to the clicked row
+      const anchorRect = rect;
+      // Prefer opening to the right of the anchor row; fall back to left
+      left = Math.round(anchorRect.right + 4);
+      if (left + menuRect.width > vw) {
+        left = Math.round(anchorRect.left - menuRect.width - 4);
+        if (left < margin) left = Math.max(margin, vw - menuRect.width - margin);
+      }
+    } catch (e) {
+      left = rect.left;
     }
     // Clamp left
     left = Math.max(margin, Math.min(left, vw - menuRect.width - margin));
 
-    this.menuElement.style.top = `${Math.round(top)}px`;
+    // If the menu is taller than the viewport, clamp top and let menu scroll (maxHeight already set)
+    // Center vertically on the anchor row where possible
+    let finalTop = Math.round(rect.top + (rect.height - menuRect.height) / 2);
+    finalTop = Math.max(margin, Math.min(finalTop, Math.max(margin, vh - menuRect.height - margin)));
+    this.menuElement.style.top = `${Math.round(finalTop)}px`;
     this.menuElement.style.left = `${Math.round(left)}px`;
     this.menuElement.style.visibility = "visible";
+    try { console.debug('FieldsMenu positioned', { top: Math.round(finalTop), left: Math.round(left) }); } catch (e) { }
+    return { el: this.menuElement, refresh: this.refresh.bind(this) };
+  }
+
+  public refresh() {
+    if (!this.menuElement) return;
+    // rebuild content
+    this.menuElement.innerHTML = '';
+    this.buildMenu();
+    // reposition if we still have anchor info
+    try {
+      let rect = this.anchorRectRef as DOMRect | undefined;
+      if (!rect && this.anchorElementRef) rect = this.anchorElementRef.getBoundingClientRect();
+      if (!rect) return;
+      const menuRect = this.menuElement.getBoundingClientRect();
+      const margin = 8;
+      const vw = window.innerWidth || document.documentElement.clientWidth;
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+
+      let left = Math.round(rect.right + 4);
+      if (left + menuRect.width > vw) {
+        left = Math.round(rect.left - menuRect.width - 4);
+        if (left < margin) left = Math.max(margin, vw - menuRect.width - margin);
+      }
+      left = Math.max(margin, Math.min(left, vw - menuRect.width - margin));
+
+      let finalTop = Math.round(rect.top + (rect.height - menuRect.height) / 2);
+      finalTop = Math.max(margin, Math.min(finalTop, Math.max(margin, vh - menuRect.height - margin)));
+      this.menuElement.style.top = `${Math.round(finalTop)}px`;
+      this.menuElement.style.left = `${Math.round(left)}px`;
+    } catch (e) { }
   }
 
   public hide() {
@@ -205,8 +263,11 @@ export class FieldsMenu {
     row.style.display = "flex";
     row.style.alignItems = "center";
     row.style.padding = "6px 12px";
-    row.style.cursor = "pointer";
+    row.style.cursor = field.locked ? "default" : "pointer";
     row.style.color = "var(--vscode-menu-foreground)";
+    if (field.locked) {
+      row.style.opacity = "0.6";
+    }
 
     if (visible) {
       const c = document.createElement("span");
@@ -238,21 +299,23 @@ export class FieldsMenu {
     label.style.textOverflow = "ellipsis";
     row.appendChild(label);
 
-    row.addEventListener("mouseenter", () => {
-      row.style.background = "var(--vscode-menu-selectionBackground)";
-      row.style.color = "var(--vscode-menu-selectionForeground)";
-    });
-    row.addEventListener("mouseleave", () => {
-      row.style.background = "transparent";
-      row.style.color = "var(--vscode-menu-foreground)";
-    });
-    row.addEventListener("click", () => {
-      const newVisible = !visible;
-      this.options.onToggleVisibility?.(field.id, newVisible);
-      if (newVisible) this.options.visibleFieldIds.add(field.id);
-      else this.options.visibleFieldIds.delete(field.id);
-      this.menuElement && ((this.menuElement.innerHTML = ""), this.buildMenu());
-    });
+    if (!field.locked) {
+      row.addEventListener("mouseenter", () => {
+        row.style.background = "var(--vscode-menu-selectionBackground)";
+        row.style.color = "var(--vscode-menu-selectionForeground)";
+      });
+      row.addEventListener("mouseleave", () => {
+        row.style.background = "transparent";
+        row.style.color = "var(--vscode-menu-foreground)";
+      });
+      row.addEventListener("click", () => {
+        const newVisible = !visible;
+        this.options.onToggleVisibility?.(field.id, newVisible);
+        if (newVisible) this.options.visibleFieldIds.add(field.id);
+        else this.options.visibleFieldIds.delete(field.id);
+        this.menuElement && ((this.menuElement.innerHTML = ""), this.buildMenu());
+      });
+    }
 
     this.menuElement.appendChild(row);
   }

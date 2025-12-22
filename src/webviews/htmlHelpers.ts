@@ -334,12 +334,9 @@ export function getInlineScript(nonce: string, projectData: any): string {
       // For view tabs we mark the element with the layout so the client-side
       // initializer can attach the ActiveTabMenu component. The client bundle
       // provides the interactive behavior to avoid embedding heavy logic here.
-      if (tab.key) {
-        let layout = 'overview';
-        if (tab.key && String(tab.key).startsWith('view-')) {
-          layout = tab.layout || 'table';
-        }
-        if (layout === 'table' || layout === 'board' || layout === 'roadmap' || layout === 'overview') {
+      if (tab.key && String(tab.key).startsWith('view-')) {
+        const layout = tab.layout || 'table';
+        if (layout === 'table' || layout === 'board' || layout === 'roadmap') {
           tabEl.setAttribute('data-layout', layout);
         }
       }

@@ -171,7 +171,7 @@ describe("BoardCardRenderer", () => {
         });
 
         it("should render card with correct header structure", () => {
-            const renderer = new BoardCardRenderer(mockFields, mockItems);
+            const renderer = new BoardCardRenderer(mockFields, mockItems, undefined, undefined, undefined, ['__count__']);
             const statusField = mockFields[0];
             const todoOption = statusField.options![0];
             const todoItems = mockItems.filter(
@@ -189,7 +189,7 @@ describe("BoardCardRenderer", () => {
         });
 
         it("should render estimate pill when items have estimates", () => {
-            const renderer = new BoardCardRenderer(mockFields, mockItems);
+            const renderer = new BoardCardRenderer(mockFields, mockItems, undefined, undefined, undefined, ['field-estimate']);
             const statusField = mockFields[0];
             const todoOption = statusField.options![0];
             const todoItems = [mockItems[0]]; // Has estimate of 3
@@ -198,7 +198,7 @@ describe("BoardCardRenderer", () => {
 
             const estimatePill = card.querySelector(".board-card-estimate");
             expect(estimatePill).toBeTruthy();
-            expect(estimatePill?.textContent).toBe("3");
+            expect(estimatePill?.textContent).toBe("Estimate: 3");
         });
 
         it("should render description for single_select option", () => {

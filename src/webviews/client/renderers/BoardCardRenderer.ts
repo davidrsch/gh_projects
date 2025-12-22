@@ -4,6 +4,8 @@ import {
   addAlpha,
   getContrastColor,
 } from "../utils";
+import { buildGroupHeaderElement } from "./GroupRenderer";
+import { GroupDataService } from "../services/GroupDataService";
 
 /**
  * BoardCardRenderer - Renders board view cards grouped by column field
@@ -16,6 +18,7 @@ export class BoardCardRenderer {
     private visibleFieldIds?: string[],
     private onFilter?: (filter: string) => void,
     private onAction?: (action: string, item: any, args?: any) => void,
+    private groupDivisors?: string[] | null,
   ) {
     // Bind methods
     this.handlePillClick = this.handlePillClick.bind(this);
@@ -295,71 +298,31 @@ export class BoardCardRenderer {
     header.style.background = "var(--vscode-sideBar-background)";
     header.style.flexShrink = "0";
 
-    // Header Row 1: Color dot + Title + Count + Estimate
-    const headerRow = document.createElement("div");
-    headerRow.className = "board-card-header-row";
-    headerRow.style.display = "flex";
-    headerRow.style.alignItems = "center";
-    headerRow.style.gap = "8px";
-
-    // Color dot
-    const colorDot = document.createElement("span");
-    colorDot.className = "board-card-color-dot";
-    colorDot.style.width = "12px";
-    colorDot.style.height = "12px";
-    colorDot.style.borderRadius = "50%";
-    colorDot.style.flexShrink = "0";
-    const normalizedColor = normalizeColor(option.color) || "#666666";
-    colorDot.style.backgroundColor = normalizedColor;
-    headerRow.appendChild(colorDot);
-
-    // Title
-    const title = document.createElement("span");
-    title.className = "board-card-title";
-    title.style.fontWeight = "600";
-    title.style.flex = "1";
-    title.style.overflow = "hidden";
-    title.style.textOverflow = "ellipsis";
-    title.style.whiteSpace = "nowrap";
-    title.textContent = option.name || option.title || "Unnamed";
-    headerRow.appendChild(title);
-
-    // Count badge
-    const count = document.createElement("span");
-    count.className = "board-card-count";
-    count.style.fontSize = "12px";
-    count.style.color = "var(--vscode-descriptionForeground)";
-    count.style.fontVariantNumeric = "tabular-nums";
-    count.textContent = String(items.length);
-    headerRow.appendChild(count);
-
-    // Estimate pill
-    const estSum = this.sumEstimate(items);
-    if (estSum > 0) {
-      const estimatePill = document.createElement("span");
-      estimatePill.className = "board-card-estimate";
-      estimatePill.style.display = "inline-block";
-      estimatePill.style.padding = "2px 8px";
-      estimatePill.style.borderRadius = "999px";
-      estimatePill.style.background = "var(--vscode-input-background)";
-      estimatePill.style.border = "1px solid var(--vscode-panel-border)";
-      estimatePill.style.fontSize = "12px";
-      estimatePill.style.lineHeight = "18px";
-      estimatePill.textContent = this.formatEstimate(estSum);
-      headerRow.appendChild(estimatePill);
+    // Use shared header builder to ensure consistency with table/roadmap
+    const headerRow = buildGroupHeaderElement(this.fields, this.allItems, { option, items }, columnField, { hideToggle: true, groupDivisors: this.groupDivisors });
+    // Adjust classes to match board styles
+    headerRow.classList.add("board-card-header-row");
+    // Mirror some class names expected by board tests and styles
+    const colorDot = headerRow.querySelector('.group-color-dot');
+    if (colorDot) colorDot.classList.add('board-card-color-dot');
+    const nameSpan = headerRow.querySelector('.group-name');
+    if (nameSpan) nameSpan.classList.add('board-card-title');
+    const countPill = headerRow.querySelector('.gh-count-pill');
+    if (countPill) countPill.classList.add('board-card-count');
+    // Add estimate class if builder created an estimate element with text 'Estimate:'
+    const children = Array.from(headerRow.children) as HTMLElement[];
+    for (const ch of children) {
+      try {
+        if (ch.textContent && ch.textContent.trim().startsWith('Estimate:')) {
+          ch.classList.add('board-card-estimate');
+        }
+      } catch (_) { }
     }
-
+    // Note: We no longer strip "Estimate:" prefix to maintain consistency with table/roadmap views
     header.appendChild(headerRow);
 
-    // Header Row 2: Description or Iteration Range
-    let description: string | null = null;
+    // Header Row 2: for single_select show option description (builder handles iteration)
     if (dataType === "single_select" && option.description) {
-      description = String(option.description).slice(0, 120);
-    } else if (dataType === "iteration") {
-      description = this.getIterationRange(option);
-    }
-
-    if (description) {
       const descRow = document.createElement("div");
       descRow.className = "board-card-description";
       descRow.style.fontSize = "12px";
@@ -368,8 +331,15 @@ export class BoardCardRenderer {
       descRow.style.overflow = "hidden";
       descRow.style.textOverflow = "ellipsis";
       descRow.style.whiteSpace = "nowrap";
-      descRow.textContent = description;
+      descRow.textContent = String(option.description).slice(0, 120);
       header.appendChild(descRow);
+    }
+    // If iteration, builder may have appended an iteration element — ensure it has board description class
+    if (dataType === "iteration") {
+      const maybeIter = headerRow.lastElementChild as HTMLElement | null;
+      if (maybeIter && maybeIter.textContent && maybeIter.textContent.indexOf('—') !== -1) {
+        maybeIter.classList.add('board-card-description');
+      }
     }
 
     return header;
@@ -1204,6 +1174,29 @@ export class BoardCardRenderer {
   private renderSubIssuesProgress(item: any): HTMLElement | null {
     if (!item || !Array.isArray(item.fieldValues)) return null;
 
+    // Check visibility: Progress should be visible if "Parent Issue" OR "Sub-issues" is visible
+    const isVisible = this.fields && this.fields.some((f: any) => {
+      const type = String(f.dataType || f.type || "").toLowerCase();
+      const name = String(f.name || "").toLowerCase();
+      const isTarget = type === "parent_issue" ||
+        type === "sub_issues_progress" ||
+        name === "parent issue" ||
+        name === "sub-issues" ||
+        name === "sub-issue" ||
+        name === "tracks" ||
+        name === "tracked by";
+
+      if (!isTarget) return false;
+
+      // Ensure field is strictly visible
+      if (this.visibleFieldIds) {
+        return this.visibleFieldIds.includes(String(f.id));
+      }
+      return true;
+    });
+
+    if (!isVisible) return null; // Hide if neither is visible
+
     const progressFv = item.fieldValues.find(
       (v: any) => v?.type === "sub_issues_progress",
     );
@@ -1253,223 +1246,26 @@ export class BoardCardRenderer {
     items: any[],
     swimlaneField: any,
   ): Map<string, { option: any; items: any[] }> {
-    const groups = new Map<string, { option: any; items: any[] }>();
-    const dataType = String(swimlaneField.dataType || "").toLowerCase();
+    // Delegate grouping to GroupDataService to ensure parity with table/roadmap.
+    const groupedArr = GroupDataService.groupItems(items, swimlaneField || {});
+    const map = new Map<string, { option: any; items: any[] }>();
 
-    // Get all options from the field configuration
-    let options: any[] = [];
-    if (dataType === "single_select" && Array.isArray(swimlaneField.options)) {
-      options = swimlaneField.options;
-    } else if (
-      dataType === "iteration" &&
-      swimlaneField.configuration?.iterations
-    ) {
-      options = swimlaneField.configuration.iterations.map((it: any) => ({
-        id: it.id,
-        name: it.title,
-        title: it.title,
-        color: it.color || null,
-        startDate: it.startDate,
-        duration: it.duration,
-      }));
-    } else if (dataType === "assignees") {
-      // Extract unique assignees from items
-      const assigneeMap = new Map<string, any>();
-      for (const item of items) {
-        const assignees = this.extractAssignees(item);
-        for (const a of assignees) {
-          if (!assigneeMap.has(a.login)) {
-            assigneeMap.set(a.login, a);
-          }
-        }
-      }
-      options = Array.from(assigneeMap.values()).map((a) => ({
-        id: a.login,
-        name: a.login,
-        avatarUrl: a.avatarUrl,
-        type: "assignee",
-      }));
-    } else if (dataType === "repository") {
-      const repoMap = new Map<string, any>();
-      for (const item of items) {
-        const repo =
-          item.content?.repository ||
-          item.raw?.itemContent?.repository ||
-          item.repository;
-        if (repo && (repo.nameWithOwner || repo.name)) {
-          const name = repo.nameWithOwner || repo.name;
-          if (!repoMap.has(name)) {
-            repoMap.set(name, repo);
-          }
-        }
-      }
-      options = Array.from(repoMap.values()).map((r) => ({
-        id: r.nameWithOwner || r.name,
-        name: r.nameWithOwner || r.name,
-        type: "repository",
-      }));
-    } else if (dataType === "milestone") {
-      const milestoneMap = new Map<string, any>();
-      for (const item of items) {
-        const fv = item.fieldValues?.find((v: any) => v.type === "milestone");
-        if (fv?.milestone) {
-          if (!milestoneMap.has(fv.milestone.id || fv.milestone.title)) {
-            milestoneMap.set(
-              fv.milestone.id || fv.milestone.title,
-              fv.milestone,
-            );
-          }
-        }
-      }
-      options = Array.from(milestoneMap.values()).map((m) => ({
-        id: m.id || m.title,
-        name: m.title,
-        type: "milestone",
-      }));
-    } else if (dataType === "labels") {
-      const labelMap = new Map<string, any>();
-      for (const item of items) {
-        const fv = item.fieldValues?.find((v: any) => v.type === "labels");
-        if (fv?.labels?.nodes) {
-          for (const l of fv.labels.nodes) {
-            if (!labelMap.has(l.id || l.name)) {
-              labelMap.set(l.id || l.name, l);
-            }
-          }
-        }
-      }
-      options = Array.from(labelMap.values()).map((l) => ({
-        id: l.id || l.name,
-        name: l.name,
-        color: l.color,
-        type: "label",
-      }));
+    for (const g of groupedArr) {
+      const opt = g.option || {};
+      const key = String(opt.id || opt.name || opt.title || Math.random());
+      // GroupDataService returns items as { item, index } pairs for some paths — normalize to raw items
+      const itemsList = Array.isArray(g.items)
+        ? g.items.map((it: any) => (it && it.item ? it.item : it))
+        : [];
+      map.set(key, { option: opt, items: itemsList });
     }
 
-    // Initialize groups for each option in order
-    for (const opt of options) {
-      const key = String(opt.id || opt.name || "");
-      if (key) {
-        groups.set(key, { option: opt, items: [] });
-      }
-    }
-
-    // Add "No value" group
-    groups.set("__no_value__", {
-      option: {
-        id: "__no_value__",
-        name: `No ${swimlaneField.name}`,
-        color: null,
-      },
-      items: [],
-    });
-
-    // Assign items to groups
-    for (const item of items) {
-      let groupKey = "__no_value__";
-
-      if (dataType === "assignees") {
-        const assignees = this.extractAssignees(item);
-        if (assignees.length > 0) {
-          // GitHub usually puts items in multiple swimlanes if multiple assignees?
-          // For simplicity, let's pick the first one or duplicate if we want to follow GH exactly.
-          // GH usually shows the item in EACH swimlane.
-          for (const a of assignees) {
-            const key = a.login;
-            if (groups.has(key)) {
-              groups.get(key)!.items.push(item);
-            }
-          }
-          continue; // Skip the default push below
-        }
-      } else if (dataType === "labels") {
-        const fv = item.fieldValues?.find((v: any) => v.type === "labels");
-        if (fv?.labels?.nodes && fv.labels.nodes.length > 0) {
-          for (const l of fv.labels.nodes) {
-            const key = String(l.id || l.name);
-            if (groups.has(key)) {
-              groups.get(key)!.items.push(item);
-            }
-          }
-          continue;
-        }
-      } else if (dataType === "repository") {
-        const repo =
-          item.content?.repository ||
-          item.raw?.itemContent?.repository ||
-          item.repository;
-        if (repo) {
-          groupKey = repo.nameWithOwner || repo.name || "__no_value__";
-        }
-      } else if (dataType === "parent_issue") {
-        const fv = item.fieldValues?.find((v: any) => v.type === "parent_issue" || String(v.fieldName).toLowerCase() === "parent");
-        const p = fv?.parent || fv?.parentIssue || fv?.issue || fv?.item || fv?.value;
-        if (p) {
-          groupKey = String(p.number || p.id || p.title || "__no_value__");
-        }
-      } else if (Array.isArray(item.fieldValues)) {
-        const fv = item.fieldValues.find(
-          (v: any) =>
-            String(v.fieldId) === String(swimlaneField.id) ||
-            String(v.fieldName).toLowerCase() === String(swimlaneField.name).toLowerCase()
-        );
-
-        if (fv) {
-          if (dataType === "single_select") {
-            const optId = fv.optionId || (fv.option && fv.option.id);
-            const optName = fv.name || (fv.option && fv.option.name);
-            if (optId && groups.has(String(optId))) {
-              groupKey = String(optId);
-            } else if (optName) {
-              for (const [key, group] of groups) {
-                if (String(group.option.name).toLowerCase() === String(optName).toLowerCase()) {
-                  groupKey = key;
-                  break;
-                }
-              }
-            }
-          } else if (dataType === "iteration") {
-            const itId = fv.iterationId || (fv.iteration && fv.iteration.id) || fv.id;
-            const itTitle = fv.title || (fv.iteration && fv.iteration.title);
-            if (itId && groups.has(String(itId))) {
-              groupKey = String(itId);
-            } else if (itTitle) {
-              for (const [key, group] of groups) {
-                if (String(group.option.title).toLowerCase() === String(itTitle).toLowerCase() ||
-                  String(group.option.name).toLowerCase() === String(itTitle).toLowerCase()) {
-                  groupKey = key;
-                  break;
-                }
-              }
-            }
-          } else {
-            // Text, Number, Date fallbacks
-            const val = fv.text ?? fv.number ?? fv.date ?? fv.title ?? fv.value;
-            if (val !== undefined && val !== null && val !== "") {
-              groupKey = String(val);
-            }
-          }
-        }
-      }
-
-      const normalizedKey = groups.has(groupKey) ? groupKey : "__no_value__";
-
-      // If we don't have a pre-initialized group for this key (e.g. dynamic types like text/number), create it
-      if (groupKey !== "__no_value__" && !groups.has(groupKey)) {
-        groups.set(groupKey, {
-          option: { id: groupKey, name: groupKey, title: groupKey },
-          items: []
-        });
-      }
-
-      groups.get(groups.has(groupKey) ? groupKey : "__no_value__")!.items.push(item);
-    }
-
-    return groups;
+    return map;
   }
 
   /**
    * Render a swimlane header (similar to GroupRenderer)
+   * Now uses buildGroupHeaderElement for consistency with table/roadmap views
    */
   private renderSwimlaneHeader(
     option: any,
@@ -1496,82 +1292,26 @@ export class BoardCardRenderer {
     leftPane.style.width = "max-content";
     leftPane.style.background = "inherit";
 
-    // Toggle Icon
-    const toggleIcon = document.createElement("span");
-    toggleIcon.className = "swimlane-toggle-icon";
-    toggleIcon.innerHTML = this.getIconSvg("triangle-down", 16);
-    toggleIcon.style.opacity = "0.7";
-    leftPane.appendChild(toggleIcon);
+    // Use shared buildGroupHeaderElement for consistent rendering with table/roadmap
+    // This ensures avatars for assignees, parent progress, iteration ranges, etc. all work
+    const builtHeader = buildGroupHeaderElement(this.fields, this.allItems, { option, items }, swimlaneField, { groupDivisors: this.groupDivisors });
+    builtHeader.classList.add("swimlane-header-content");
 
-    // Color dot or Avatar
-    if (option.avatarUrl) {
-      const avatar = document.createElement("img");
-      avatar.src = option.avatarUrl;
-      avatar.style.width = "20px";
-      avatar.style.height = "20px";
-      avatar.style.borderRadius = "50%";
-      leftPane.appendChild(avatar);
-    } else if (option.type === "repository") {
-      const repoIcon = document.createElement("span");
-      repoIcon.innerHTML = this.getIconSvg("repo", 16);
-      leftPane.appendChild(repoIcon);
-    } else {
-      const colorDot = document.createElement("div");
-      colorDot.style.width = "12px";
-      colorDot.style.height = "12px";
-      colorDot.style.borderRadius = "50%";
-      colorDot.style.backgroundColor = normalizeColor(option.color) || "gray";
-      leftPane.appendChild(colorDot);
+    // Override the toggle icon class for swimlane-specific styling
+    const toggleEl = builtHeader.querySelector('.group-toggle') as HTMLElement | null;
+    if (toggleEl) {
+      toggleEl.classList.add("swimlane-toggle-icon");
+      toggleEl.style.opacity = "0.7";
     }
 
-    // Title
-    const title = document.createElement("span");
-    title.style.fontWeight = "600";
-    title.style.fontSize = "13px";
-    title.textContent = option.name || option.title || "Unassigned";
-    leftPane.appendChild(title);
+    // Apply swimlane-specific styling to integrate with the sticky left pane
+    builtHeader.style.display = "flex";
+    builtHeader.style.alignItems = "center";
+    builtHeader.style.gap = "8px";
+    builtHeader.style.padding = "0";
+    builtHeader.style.background = "transparent";
 
-    // Count
-    const countCircle = document.createElement("span");
-    countCircle.style.display = "inline-flex";
-    countCircle.style.alignItems = "center";
-    countCircle.style.justifyContent = "center";
-    countCircle.style.minWidth = "22px";
-    countCircle.style.height = "22px";
-    countCircle.style.borderRadius = "50%";
-    countCircle.style.background = "var(--vscode-input-background)";
-    countCircle.style.border = "1px solid var(--vscode-panel-border)";
-    countCircle.style.fontSize = "12px";
-    countCircle.style.padding = "0 4px";
-    countCircle.textContent = String(items.length);
-    leftPane.appendChild(countCircle);
-
-    // Estimate Sum
-    const estSum = this.sumEstimate(items);
-    if (estSum > 0) {
-      const estEl = document.createElement("div");
-      estEl.style.padding = "2px 8px";
-      estEl.style.borderRadius = "999px";
-      estEl.style.border = "1px solid var(--vscode-panel-border)";
-      estEl.style.background = "var(--vscode-input-background)";
-      estEl.style.fontSize = "11px";
-      estEl.textContent = "Estimate: " + this.formatEstimate(estSum);
-      leftPane.appendChild(estEl);
-    }
-
-    // Iteration Range
-    if (String(swimlaneField.dataType || "").toLowerCase() === "iteration") {
-      const range = this.getIterationRange(option);
-      if (range) {
-        const rangeEl = document.createElement("span");
-        rangeEl.style.color = "var(--vscode-descriptionForeground)";
-        rangeEl.style.fontSize = "12px";
-        rangeEl.style.fontWeight = "400";
-        rangeEl.textContent = range;
-        leftPane.appendChild(rangeEl);
-      }
-    }
-
+    leftPane.appendChild(builtHeader);
     header.appendChild(leftPane);
 
     return header;
