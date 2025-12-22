@@ -11,6 +11,9 @@ import type { SortConfig } from "./utils/tableSorting";
 
 /// <reference path="./global.d.ts" />
 
+// Initialize active tab menus only when view fetchers are loaded
+import "./components/initActiveTabMenus";
+
 const UPDATE_TIMEOUT_MS = 10000;
 
 window.tableViewFetcher = function (
@@ -22,7 +25,9 @@ window.tableViewFetcher = function (
     view && (view.name || view.id) ? view.name || view.id : "Table View";
   try {
     setLoadingState(container, viewName);
-  } catch (e) {}
+  } catch (e) { }
+
+
 
   // Extract projectId from global project data
   const projectId =
@@ -31,7 +36,29 @@ window.tableViewFetcher = function (
 
   let itemsLimit = 30;
 
+  // Track unsaved view-level changes (grouping) and wires Save/Discard hooks
+  // undefined = no override, null = no grouping, string = grouping
+  let unsavedGrouping: string | null | undefined = undefined;
+  // Track unsaved group divisors (which fields to show sums/count on group headers)
+  // undefined = no override, null = cleared (none), array = selected ids (strings, '__count__' allowed)
+  let unsavedGroupDivisors: string[] | null | undefined = undefined;
+  // Track unsaved hidden fields changes (shown/hidden via the plus-column menu)
+  let unsavedHiddenFields: Set<string> | null = null;
+  // Track unsaved slice changes
+  let unsavedSlice: { fieldId: string; value: any } | null = null;
+  // Track unsaved sort changes (local-only view state). We use
+  // `undefined` = no pending change, non-null = new sort, null = clear sort.
+  let unsavedSort: SortConfig | null | undefined = undefined;
+
+  let lastPayload: any = null;
+  let lastEffectiveFilter: string | undefined = undefined;
+
   function render(payload: any, effectiveFilter?: string) {
+    lastPayload = payload;
+    // Update effective filter if provided, otherwise preserve previous
+    if (effectiveFilter !== undefined) lastEffectiveFilter = effectiveFilter;
+    else effectiveFilter = lastEffectiveFilter;
+
     const snapshot = payload || {};
     const fields = snapshot.fields || [];
     const allItems = snapshot.items || [];
@@ -64,15 +91,6 @@ window.tableViewFetcher = function (
     headerContainer.appendChild(filterWrapper);
 
     // Init Filter Bar
-    // Track unsaved view-level changes (grouping) and wire Save/Discard hooks
-    let unsavedGrouping: string | null = null;
-    // Track unsaved hidden fields changes (shown/hidden via the plus-column menu)
-    let unsavedHiddenFields: Set<string> | null = null;
-    // Track unsaved slice changes
-    let unsavedSlice: { fieldId: string; value: any } | null = null;
-    // Track unsaved sort changes (local-only view state). We use
-    // `undefined` = no pending change, non-null = new sort, null = clear sort.
-    let unsavedSort: SortConfig | null | undefined = undefined;
     let barApi = initFilterBar(filterWrapper, viewKey, {
       suffix: viewKey ? String(viewKey).split(":").pop() : "",
       step: itemsLimit,
@@ -81,21 +99,23 @@ window.tableViewFetcher = function (
         requestFields();
       },
       onSave: (newFilter: any) => {
+        let dirty = false;
         try {
           // Save grouping if changed
-          if (unsavedGrouping !== null) {
+          if (unsavedGrouping !== undefined) {
             if (
               (window as any).__APP_MESSAGING__ &&
               typeof (window as any).__APP_MESSAGING__.postMessage ===
-                "function"
+              "function"
             ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "setViewGrouping",
                 viewKey: viewKey,
-                grouping: unsavedGrouping,
+                grouping: unsavedGrouping || null,
               });
             }
-            unsavedGrouping = null;
+            unsavedGrouping = undefined;
+            dirty = true;
           }
 
           // Save hidden fields if changed
@@ -104,7 +124,7 @@ window.tableViewFetcher = function (
             if (
               (window as any).__APP_MESSAGING__ &&
               typeof (window as any).__APP_MESSAGING__.postMessage ===
-                "function"
+              "function"
             ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "setViewHiddenFields",
@@ -118,8 +138,9 @@ window.tableViewFetcher = function (
                 ? `ghProjects.table.${viewKey}.hiddenFields`
                 : null;
               if (key) localStorage.setItem(key, JSON.stringify(hiddenArr));
-            } catch (e) {}
+            } catch (e) { }
             unsavedHiddenFields = null;
+            dirty = true;
           }
 
           // Save slice if changed
@@ -127,7 +148,7 @@ window.tableViewFetcher = function (
             if (
               (window as any).__APP_MESSAGING__ &&
               typeof (window as any).__APP_MESSAGING__.postMessage ===
-                "function"
+              "function"
             ) {
               (window as any).__APP_MESSAGING__.postMessage({
                 command: "setViewSlice",
@@ -139,8 +160,9 @@ window.tableViewFetcher = function (
             try {
               const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null;
               if (key) localStorage.setItem(key, JSON.stringify(unsavedSlice));
-            } catch (e) {}
+            } catch (e) { }
             unsavedSlice = null;
+            dirty = true;
           }
 
           // Save sort if changed (persist local override only)
@@ -158,75 +180,114 @@ window.tableViewFetcher = function (
                   localStorage.setItem(key, JSON.stringify(unsavedSort));
                 }
               }
-            } catch (e) {}
+            } catch (e) { }
             unsavedSort = undefined;
+            // Sorting is local, so dirty flag might trigger re-fetch but sorting is client-side unless server-sorted
           }
-        } catch (e) {}
+          // Save group divisors if changed
+          if (unsavedGroupDivisors !== undefined) {
+            try {
+              if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+                (window as any).__APP_MESSAGING__.postMessage({
+                  command: 'setViewGroupDivisors',
+                  viewKey: viewKey,
+                  groupDivisors: unsavedGroupDivisors,
+                });
+              }
+            } catch (e) { }
+            // persist to localStorage so UI persists across reloads
+            try {
+              const key = viewKey ? `ghProjects.table.${viewKey}.groupDivisors` : null;
+              if (key) {
+                if (unsavedGroupDivisors === null) localStorage.removeItem(key);
+                else localStorage.setItem(key, JSON.stringify(unsavedGroupDivisors));
+              }
+            } catch (e) { }
+            unsavedGroupDivisors = undefined;
+            dirty = true;
+          }
+        } catch (e) { }
+
+        if (dirty) {
+          requestFields();
+        }
       },
       onDiscard: () => {
         try {
-          // Discard grouping changes
-          if (unsavedGrouping !== null) {
-            if (
-              (window as any).__APP_MESSAGING__ &&
-              typeof (window as any).__APP_MESSAGING__.postMessage ===
-                "function"
-            ) {
-              (window as any).__APP_MESSAGING__.postMessage({
-                command: "discardViewGrouping",
-                viewKey: viewKey,
-              });
-            }
-            unsavedGrouping = null;
+          let dirty = false;
+          if (unsavedGrouping !== undefined || unsavedHiddenFields !== null || unsavedSlice !== null || unsavedSort !== undefined || unsavedGroupDivisors !== undefined) {
+            dirty = true;
           }
 
-          // Discard hidden fields changes: request fresh snapshot from extension
-          if (unsavedHiddenFields !== null) {
-            if (
-              (window as any).__APP_MESSAGING__ &&
-              typeof (window as any).__APP_MESSAGING__.postMessage ===
+          if (dirty) {
+            // Discard grouping changes
+            if (unsavedGrouping !== undefined) {
+              if (
+                (window as any).__APP_MESSAGING__ &&
+                typeof (window as any).__APP_MESSAGING__.postMessage ===
                 "function"
-            ) {
-              (window as any).__APP_MESSAGING__.postMessage({
-                command: "discardViewHiddenFields",
-                viewKey: viewKey,
-              });
+              ) {
+                (window as any).__APP_MESSAGING__.postMessage({
+                  command: "discardViewGrouping",
+                  viewKey: viewKey,
+                });
+              }
+              unsavedGrouping = undefined;
             }
-            unsavedHiddenFields = null;
+
+            // Discard hidden fields changes
+            if (unsavedHiddenFields !== null) {
+              if (
+                (window as any).__APP_MESSAGING__ &&
+                typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+              ) {
+                (window as any).__APP_MESSAGING__.postMessage({
+                  command: "discardViewHiddenFields",
+                  viewKey: viewKey,
+                });
+              }
+              unsavedHiddenFields = null;
+            }
+
+            // Discard slice changes
+            if (unsavedSlice !== null) {
+              if (
+                (window as any).__APP_MESSAGING__ &&
+                typeof (window as any).__APP_MESSAGING__.postMessage ===
+                "function"
+              ) {
+                (window as any).__APP_MESSAGING__.postMessage({
+                  command: "discardViewSlice",
+                  viewKey: viewKey,
+                });
+              }
+              unsavedSlice = null;
+              // Clear localStorage
+              try {
+                const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null;
+                if (key) localStorage.removeItem(key);
+              } catch (e) { }
+            }
+            // Discard group divisors changes
+            if (unsavedGroupDivisors !== undefined) {
+              if ((window as any).__APP_MESSAGING__ && typeof (window as any).__APP_MESSAGING__.postMessage === 'function') {
+                (window as any).__APP_MESSAGING__.postMessage({ command: 'discardViewGroupDivisors', viewKey: viewKey });
+              }
+              try { const key = viewKey ? `ghProjects.table.${viewKey}.groupDivisors` : null; if (key) localStorage.removeItem(key); } catch (e) {}
+              unsavedGroupDivisors = undefined;
+            }
+
+            // Discard sort changes
+            if (unsavedSort !== undefined) {
+              unsavedSort = undefined;
+              // Revert sort to server state (will happen on refresh)
+            }
+
             // Re-request fields to refresh UI from server state
             requestFields();
           }
-
-          // Discard slice changes: clear slice and refresh UI
-          if (unsavedSlice !== null) {
-            if (
-              (window as any).__APP_MESSAGING__ &&
-              typeof (window as any).__APP_MESSAGING__.postMessage ===
-                "function"
-            ) {
-              (window as any).__APP_MESSAGING__.postMessage({
-                command: "discardViewSlice",
-                viewKey: viewKey,
-              });
-            }
-            unsavedSlice = null;
-            // Clear localStorage
-            try {
-              const key = viewKey ? `ghProjects.table.${viewKey}.slice` : null;
-              if (key) localStorage.removeItem(key);
-            } catch (e) {}
-            // Re-request fields to refresh UI from server state
-            requestFields();
-          }
-
-          // Discard sort changes: forget pending change and
-          // refresh UI from persisted server/local override state.
-          if (unsavedSort !== undefined) {
-            unsavedSort = undefined;
-            // Re-request fields to refresh UI from server/default + stored sort
-            requestFields();
-          }
-        } catch (e) {}
+        } catch (e) { }
       },
     });
 
@@ -241,9 +302,9 @@ window.tableViewFetcher = function (
       ) {
         try {
           barApi.setEffectiveFilter(effectiveFilter);
-        } catch (e) {}
+        } catch (e) { }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // Fallback Header if Filter Bar fails or returns null
     if (!barApi) {
@@ -281,9 +342,143 @@ window.tableViewFetcher = function (
       if (typeof barApi.registerItems === "function") {
         barApi.registerItems(allItems, { fields });
       }
+
+      // Force Enable Buttons if state is dirty (since we just re-rendered with dirty state)
+      if (unsavedGrouping !== undefined || unsavedHiddenFields !== null || unsavedSlice !== null || unsavedSort !== undefined) {
+        try {
+          if (barApi.saveBtn) { barApi.saveBtn.disabled = false; barApi.saveBtn.style.opacity = "1"; barApi.saveBtn.style.cursor = "pointer"; }
+          if (barApi.discardBtn) { barApi.discardBtn.disabled = false; barApi.discardBtn.style.opacity = "1"; barApi.discardBtn.style.cursor = "pointer"; }
+        } catch (e) { }
+      }
     }
 
     container.appendChild(headerContainer);
+
+    // Expose view state for ActiveTabMenu / FieldsMenu
+    try {
+      // Calculate current sort field name
+      let currentSortName: string | null = null;
+      const allFieldsForState =
+        (snapshot as any).allFields && Array.isArray((snapshot as any).allFields)
+          ? (snapshot as any).allFields
+          : snapshot.fields || [];
+
+      // Get effective sort config (consider both localStorage and unsavedSort)
+      let effectiveSortConfig: SortConfig | null = null;
+      if (unsavedSort !== undefined) {
+        effectiveSortConfig = unsavedSort || null;
+      } else if (viewKey) {
+        try {
+          const stored = localStorage.getItem(`ghProjects.table.${viewKey}.sortConfig`);
+          if (stored) effectiveSortConfig = JSON.parse(stored);
+        } catch (e) { }
+      }
+      if (!effectiveSortConfig) {
+        effectiveSortConfig = parseSortByFields(snapshot.details?.sortByFields);
+      }
+
+      if (effectiveSortConfig && effectiveSortConfig.fieldId) {
+        const sortField = allFieldsForState.find((f: any) => String(f.id) === String(effectiveSortConfig!.fieldId));
+        currentSortName = sortField ? sortField.name : null;
+      }
+
+      // Calculate current grouping name
+      let currentGroupingName: string | null = getGroupingFieldName(snapshot);
+      if (unsavedGrouping !== undefined) {
+        currentGroupingName = unsavedGrouping;
+      }
+
+      // Calculate visible field IDs
+      const viewFieldNodes =
+        snapshot.details?.fields?.nodes && Array.isArray(snapshot.details.fields.nodes)
+          ? snapshot.details.fields.nodes
+          : null;
+      let visibleFieldIds: Set<string>;
+      if (unsavedHiddenFields !== null) {
+        visibleFieldIds = new Set<string>();
+        allFieldsForState.forEach((f: any) => {
+          if (!unsavedHiddenFields!.has(String(f.id))) {
+            visibleFieldIds.add(String(f.id));
+          }
+        });
+      } else if (viewFieldNodes) {
+        visibleFieldIds = new Set(viewFieldNodes.map((n: any) => String(n.id)));
+      } else {
+        visibleFieldIds = new Set(fields.map((f: any) => String(f.id)));
+      }
+
+      // Determine effective group divisors (unsaved override -> localStorage -> snapshot.details)
+      let effectiveGroupDivisors: string[] | null = null;
+      try {
+        if (unsavedGroupDivisors !== undefined) {
+          effectiveGroupDivisors = unsavedGroupDivisors === null ? null : (unsavedGroupDivisors || null);
+        } else if (viewKey) {
+          try {
+            const stored = localStorage.getItem(`ghProjects.table.${viewKey}.groupDivisors`);
+            if (stored) effectiveGroupDivisors = JSON.parse(stored);
+          } catch (e) { }
+        }
+        // fallback to snapshot.details.groupDivisors if present
+        try {
+          const maybe = (snapshot as any).details && (snapshot as any).details.groupDivisors && Array.isArray((snapshot as any).details.groupDivisors.nodes) ? (snapshot as any).details.groupDivisors.nodes.map((n: any) => String(n.id || n.name)) : null;
+          if (effectiveGroupDivisors === null && maybe) effectiveGroupDivisors = maybe;
+        } catch (e) { }
+      } catch (e) { }
+
+      (window as any).__viewStates = (window as any).__viewStates || {};
+      (window as any).__viewStates[viewKey] = {
+        fields: allFieldsForState,
+        items: allItems || [],
+        visibleFieldIds: visibleFieldIds,
+        current: currentGroupingName,
+        currentSort: currentSortName,
+        groupDivisors: effectiveGroupDivisors,
+        onToggleVisibility: (fieldId: string, visible: boolean) => {
+          try {
+            // Initialize unsavedHiddenFields if null
+            if (unsavedHiddenFields === null) {
+              unsavedHiddenFields = new Set<string>();
+              // Populate with currently hidden fields
+              const visibleSet = visibleFieldIds;
+              allFieldsForState.forEach((f: any) => {
+                if (!visibleSet.has(String(f.id))) unsavedHiddenFields!.add(String(f.id));
+              });
+            }
+
+            const id = String(fieldId);
+            if (visible) unsavedHiddenFields.delete(id);
+            else unsavedHiddenFields.add(id);
+
+            // Re-render locally
+            if (lastPayload) render(lastPayload, lastEffectiveFilter);
+          } catch (e) { }
+        },
+        onSetGroupBy: (fieldName: string | null) => {
+          try {
+            unsavedGrouping = fieldName;
+            // Re-render locally
+            if (lastPayload) render(lastPayload, lastEffectiveFilter);
+          } catch (e) { }
+        },
+        onSetGroupDivisors: (selected: string[] | null) => {
+          try {
+            unsavedGroupDivisors = selected === null ? null : (selected || []);
+            if (lastPayload) render(lastPayload, lastEffectiveFilter);
+          } catch (e) { }
+        },
+        onSetSort: (fieldId: string | null) => {
+          try {
+            if (fieldId === null) {
+              unsavedSort = null;
+            } else {
+              unsavedSort = { fieldId, direction: 'ASC' };
+            }
+            // Re-render locally
+            if (lastPayload) render(lastPayload, lastEffectiveFilter);
+          } catch (e) { }
+        },
+      };
+    } catch (e) { }
 
     // Table Container
     const tableContainer = document.createElement("div");
@@ -293,7 +488,11 @@ window.tableViewFetcher = function (
     container.appendChild(tableContainer);
 
     // Determine Grouping
-    const groupingFieldName = getGroupingFieldName(snapshot);
+    let groupingFieldName = getGroupingFieldName(snapshot);
+    // Override with unsaved grouping if present
+    if (unsavedGrouping !== undefined) {
+      groupingFieldName = unsavedGrouping;
+    }
 
     // Parse sort config from GitHub
     let sortConfig = parseSortByFields(snapshot.details?.sortByFields);
@@ -305,7 +504,11 @@ window.tableViewFetcher = function (
           `ghProjects.table.${viewKey}.sortConfig`,
         );
         if (stored) sortConfig = JSON.parse(stored);
-      } catch (e) {}
+      } catch (e) { }
+    }
+    // Override with memory unsavedSort
+    if (unsavedSort !== undefined) {
+      sortConfig = unsavedSort || null;
     }
 
     // Apply sorting
@@ -326,8 +529,8 @@ window.tableViewFetcher = function (
     // it picks up view-default hidden fields.
     const viewFieldNodes =
       (snapshot as any).details &&
-      (snapshot as any).details.fields &&
-      Array.isArray((snapshot as any).details.fields.nodes)
+        (snapshot as any).details.fields &&
+        Array.isArray((snapshot as any).details.fields.nodes)
         ? (snapshot as any).details.fields.nodes
         : null;
 
@@ -339,28 +542,17 @@ window.tableViewFetcher = function (
         .filter((id: string) => !visibleIds.has(id));
     }
 
+    // Override with unsaved hidden fields
+    if (unsavedHiddenFields !== null) {
+      viewHiddenFieldIds = Array.from(unsavedHiddenFields);
+    }
+
     // Send debug info to extension output (via postMessage) so we can see what the webview computed
     try {
-      const dbg = {
-        allFieldIds: (allFields || []).map((f: any) => String(f.id)),
-        viewFieldIds: viewFieldNodes
-          ? viewFieldNodes.map((n: any) => String(n.id))
-          : null,
-        viewHiddenFieldIds,
-      };
-      if (
-        (window as any).__APP_MESSAGING__ &&
-        typeof (window as any).__APP_MESSAGING__.postMessage === "function"
-      ) {
-        (window as any).__APP_MESSAGING__.postMessage({
-          command: "debugLog",
-          level: "debug",
-          message: "tableViewFetcher field debug",
-          data: dbg,
-          viewKey,
-        });
+      if ((window as any).__APP_MESSAGING__) {
+        // ...
       }
-    } catch (e) {}
+    } catch (e) { }
 
     const table = new ProjectTable(tableContainer, allFields, displayItems, {
       groupingFieldName: groupingFieldName || undefined,
@@ -430,9 +622,9 @@ window.tableViewFetcher = function (
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) {}
+            } catch (e) { }
           }
-        } catch (e) {}
+        } catch (e) { }
       },
       onSortChange: (config: SortConfig | null) => {
         try {
@@ -446,9 +638,9 @@ window.tableViewFetcher = function (
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) {}
+            } catch (e) { }
           }
-        } catch (e) {}
+        } catch (e) { }
       },
       onGroupChange: (fieldName: string) => {
         // Defer persistence of grouping until user explicitly Saves from the filter bar
@@ -463,9 +655,9 @@ window.tableViewFetcher = function (
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) {}
+            } catch (e) { }
           }
-        } catch (e) {}
+        } catch (e) { }
       },
       onSliceChange: (field: any) => {
         // Track slice as unsaved change (requires Save/Discard)
@@ -481,27 +673,137 @@ window.tableViewFetcher = function (
               barApi.saveBtn.style.cursor = "pointer";
               barApi.discardBtn.style.opacity = "1";
               barApi.discardBtn.style.cursor = "pointer";
-            } catch (e) {}
+            } catch (e) { }
           }
-
-          // Log for debugging
-          if (
-            (window as any).__APP_MESSAGING__ &&
-            typeof (window as any).__APP_MESSAGING__.postMessage === "function"
-          ) {
-            (window as any).__APP_MESSAGING__.postMessage({
-              command: "debugLog",
-              level: "debug",
-              message: field
-                ? `Slice activated on field: ${field.name}`
-                : "Slice cleared",
-              viewKey: viewKey,
-            });
-          }
-        } catch (e) {}
+        } catch (e) { }
       },
     });
     table.render();
+
+    // Expose view state for ActiveTabMenu / FieldsMenu / GroupByMenu
+    try {
+      (window as any).__viewStates = (window as any).__viewStates || {};
+      (window as any).__viewStates[viewKey] = {
+        fields: allFields,
+        items: displayItems || [],
+        // Use getter to ensure fresh state from table instance
+        get visibleFieldIds() { return new Set(table.getVisibleFieldIds()); },
+        get current() { const f = table.getGroupingField(); return f ? f.name : null; },
+        // Expose current sort name for menus
+        get currentSort() {
+          try {
+            const sc = (table as any).options && (table as any).options.sortConfig;
+            if (!sc || !sc.fieldId) return null;
+            const sf = allFields.find((f: any) => String(f.id) === String(sc.fieldId));
+            return sf ? sf.name : sc.fieldId;
+          } catch (e) { return null; }
+        },
+        onToggleVisibility: (fieldId: string, visible: boolean) => {
+          try {
+            table.toggleFieldVisibility(fieldId, visible);
+          } catch (e) { }
+        },
+        onSetGroupBy: (fieldName: string | null) => {
+          try {
+            table.setGroupingField(fieldName);
+          } catch (e) { }
+        },
+        onSetSort: (fieldId: string | null) => {
+          try {
+            if (fieldId === null) {
+              // clear sort
+              (table as any).options.sortConfig = undefined;
+              if ((table as any).options && typeof (table as any).options.onSortChange === 'function') {
+                (table as any).options.onSortChange(null as any);
+              }
+            } else {
+              const cfg = { fieldId: String(fieldId), direction: 'ASC' } as any;
+              (table as any).options.sortConfig = cfg;
+              if ((table as any).options && typeof (table as any).options.onSortChange === 'function') {
+                (table as any).options.onSortChange(cfg);
+              }
+            }
+            if (typeof (table as any).render === 'function') (table as any).render();
+          } catch (e) { }
+        },
+        // Expose group divisors and callback so menus can read/update selection
+        groupDivisors: (() => {
+          try {
+            if (unsavedGroupDivisors !== undefined) return unsavedGroupDivisors === null ? null : unsavedGroupDivisors;
+            if (viewKey) {
+              try {
+                const stored = localStorage.getItem(`ghProjects.table.${viewKey}.groupDivisors`);
+                if (stored) return JSON.parse(stored);
+              } catch (e) { }
+            }
+            try {
+              const maybe = (snapshot as any).details && (snapshot as any).details.groupDivisors && Array.isArray((snapshot as any).details.groupDivisors.nodes) ? (snapshot as any).details.groupDivisors.nodes.map((n: any) => String(n.id || n.name)) : null;
+              if (maybe) return maybe;
+            } catch (e) { }
+          } catch (e) { }
+          return null;
+        })(),
+        onSetGroupDivisors: (selected: string[] | null) => {
+          try {
+            unsavedGroupDivisors = selected === null ? null : (selected || []);
+            if (lastPayload) render(lastPayload, lastEffectiveFilter);
+          } catch (e) { }
+        },
+        // Allow showing the slice panel from external menus
+        showSlicePanel: (anchor?: HTMLElement, anchorRect?: DOMRect) => {
+          try {
+            // Clean up any leftover slice panels
+            try { const existing = container.querySelector('.slice-panel'); if (existing) existing.remove(); } catch (e) { }
+            const sliceableTypes = new Set(['assignees','single_select','parent_issue','iteration','number','date','milestone','repository','labels','text','single_line_text']);
+            let field: any = null;
+              try {
+                const sid = unsavedSlice ? String(unsavedSlice.fieldId) : null;
+                if (sid) {
+                  field = allFields.find((f: any) => String(f.id) === sid);
+                }
+              } catch (e) { }
+            if (!field) {
+              field = (allFields || []).find((f: any) => sliceableTypes.has(String((f.dataType || '').toLowerCase())));
+            }
+            if (field) {
+              try { (table as any).handleSlice && (table as any).handleSlice(field); } catch (e) { try { (table as any).render && (table as any).render(); } catch (e) { } }
+              // If caller provided an anchorRect (from the ActiveTabMenu) attempt to open
+              // the slice panel's field dropdown anchored to that rect for visual alignment.
+              try { const panel = (table as any).activeSlicePanel; if (anchorRect && panel && typeof panel.openFieldDropdown === 'function') panel.openFieldDropdown(anchorRect); } catch (e) { }
+              // Return created element for parent to register as external submenu
+              try {
+                const panel = (table as any).activeSlicePanel;
+                const el = panel && (panel as any).panelElement ? (panel as any).panelElement as HTMLElement : null;
+                if (el) return { el, refresh: () => { try { /* no-op */ } catch (e) {} } };
+              } catch (e) { }
+            }
+            return null;
+          } catch (e) { }
+        },
+        get currentSlice() {
+          try {
+              const sid = unsavedSlice ? String(unsavedSlice.fieldId) : null;
+              if (sid) {
+                const f = (allFields || []).find((ff: any) => String(ff.id) === sid);
+                return f ? f.name : sid;
+              }
+            if (viewKey) {
+              try {
+                const stored = localStorage.getItem(`ghProjects.table.${viewKey}.slice`);
+                if (stored) {
+                  const parsed = JSON.parse(stored);
+                  if (parsed && parsed.fieldId) {
+                    const f = (allFields || []).find((ff: any) => String(ff.id) === String(parsed.fieldId));
+                    return f ? f.name : String(parsed.fieldId);
+                  }
+                }
+              } catch (e) { }
+            }
+          } catch (e) { }
+          return null;
+        },
+      };
+    } catch (e) { }
 
     // Connect Filter to Table Visibility
     if (barApi && typeof barApi.onFilterChange === "function") {
@@ -533,7 +835,7 @@ window.tableViewFetcher = function (
           render(msg.payload, msg.effectiveFilter);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function requestFields() {
@@ -548,7 +850,7 @@ window.tableViewFetcher = function (
           viewKey: viewKey,
         });
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   try {
@@ -571,7 +873,7 @@ function getGroupingFieldName(snapshot: any): string | null {
       if (vgb && vgb.length > 0) return vgb[0].name || null;
       if (gb && gb.length > 0) return gb[0].name || null;
     }
-  } catch (e) {}
+  } catch (e) { }
   return null;
 }
 
@@ -595,7 +897,7 @@ if (!(window as any).__GH_OPEN_LISTENER_ADDED__) {
             message: "Global Listener Caught Click: " + url,
           });
         }
-      } catch (e) {}
+      } catch (e) { }
 
       if (url) {
         if (
