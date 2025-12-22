@@ -86,7 +86,7 @@ export class ProjectTable {
         "[ProjectTable] init: visibleFieldIds=",
         this.fields.map((f) => f.id),
       );
-    } catch (e) {}
+    } catch (e) { }
 
     // Also forward debug info to the extension output channel so it's visible
     try {
@@ -107,7 +107,7 @@ export class ProjectTable {
           viewKey: this.options.viewKey,
         });
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // Load and apply field order if stored
     this.applyFieldOrder();
@@ -213,6 +213,70 @@ export class ProjectTable {
     this.keyboardNavigator.makeCellsFocusable();
   }
 
+  // Return visible field ids as strings
+  public getVisibleFieldIds(): string[] {
+    return this.fields.map((f: any) => String(f.id));
+  }
+
+  // Toggle visibility for a single field and re-render table
+  public toggleFieldVisibility(fieldId: string, visible: boolean) {
+    try {
+      const id = String(fieldId);
+      if (visible) {
+        this.hiddenFieldIds.delete(id);
+      } else {
+        this.hiddenFieldIds.add(id);
+      }
+      // Recompute visible fields
+      this.fields = this.allFields.filter((f) => !this.hiddenFieldIds.has(f.id));
+      // Persist changes and notify
+      try {
+        if (this.options.onHiddenFieldsChange) {
+          this.options.onHiddenFieldsChange(Array.from(this.hiddenFieldIds));
+        }
+      } catch (e) { }
+      this.render();
+    } catch (e) { }
+  }
+
+  // Set grouping field name and notify
+  public setGroupingField(fieldName: string | null) {
+    try {
+      this.options.onGroupChange && this.options.onGroupChange(fieldName || "");
+      // update internal grouping option
+      (this.options as any).groupingFieldName = fieldName || undefined;
+      // Debugging: inform host about grouping change so we can inspect groups
+      try {
+        const dbg = {
+          action: "setGroupingField",
+          fieldName: fieldName || null,
+          viewKey: this.options.viewKey,
+        };
+        if (
+          (window as any).__APP_MESSAGING__ &&
+          typeof (window as any).__APP_MESSAGING__.postMessage === "function"
+        ) {
+          // Post as debug and info so logs appear regardless of debug setting
+          (window as any).__APP_MESSAGING__.postMessage({
+            command: "debugLog",
+            level: "debug",
+            message: "ProjectTable.setGroupingField",
+            data: dbg,
+            viewKey: this.options.viewKey,
+          });
+          (window as any).__APP_MESSAGING__.postMessage({
+            command: "debugLog",
+            level: "info",
+            message: "ProjectTable.setGroupingField",
+            data: dbg,
+            viewKey: this.options.viewKey,
+          });
+        }
+      } catch (e) { }
+      this.render();
+    } catch (e) { }
+  }
+
   private renderColGroup(table: HTMLTableElement) {
     const colgroup = document.createElement("colgroup");
     // Index column
@@ -264,7 +328,7 @@ export class ProjectTable {
         "[ProjectTable] showFieldsMenu: allFieldIds=",
         this.allFields.map((f) => f.id),
       );
-    } catch (e) {}
+    } catch (e) { }
 
     const menu = new FieldsMenu({
       fields: this.allFields.map((f) => ({
@@ -272,6 +336,7 @@ export class ProjectTable {
         name: f.name,
         iconClass: f.iconClass,
         dataType: f.dataType || f.type,
+        locked: f.name === "Title"
       })),
       visibleFieldIds: visibleSet,
       onToggleVisibility: (fieldId: string, visible: boolean) => {
@@ -282,7 +347,7 @@ export class ProjectTable {
         // Placeholder: open create field flow if available
         try {
           console.log("Create field requested");
-        } catch (e) {}
+        } catch (e) { }
       },
     });
 
@@ -309,19 +374,61 @@ export class ProjectTable {
         const fv = item.fieldValues.find(
           (v: any) => String(v.fieldId) === String(this.activeSlice!.fieldId),
         );
-        if (!fv) return this.activeSlice!.value === null; // Match empty if value is null
+        // Handle different field types
+        const field = this.allFields.find(f => f.id === this.activeSlice!.fieldId);
+        const dataType = field ? (field.dataType || field.type || '').toLowerCase() : '';
 
         // Extract value logic similar to SlicePanel
         let val = null;
-        if (fv.text !== undefined) val = fv.text;
-        else if (fv.title !== undefined) val = fv.title;
-        else if (fv.number !== undefined) val = fv.number;
-        else if (fv.date !== undefined) val = fv.date;
-        else if (fv.option) val = fv.option.name;
-        else if (fv.iteration) val = fv.iteration.title;
-        else val = fv.value;
+        if (!fv) {
+          // No field value found
+          val = null;
+        } else {
+          if (fv.text !== undefined) val = fv.text;
+          else if (fv.title !== undefined) val = fv.title;
+          else if (fv.number !== undefined) val = fv.number;
+          else if (fv.date !== undefined) val = fv.date;
+          else if (fv.option) val = fv.option.name;
+          else if (fv.iteration) val = fv.iteration.title;
+          else if (fv.assignees) val = fv.assignees;
+          else if (fv.labels) val = fv.labels;
+          else if (dataType === 'parent_issue') {
+            const p = fv.parent || fv.parentIssue || fv.issue || fv.item || fv.value || null;
+            if (p) val = p.title || p.name || p.number || p.id || p.url || null;
+          }
+          else if (dataType === 'milestone') {
+            val = fv.milestone?.title || fv.milestone?.name || fv.value || null;
+          }
+          else if (dataType === 'repository') {
+            val = fv.repository?.nameWithOwner || fv.repository?.full_name || fv.repository?.name || fv.value || null;
+          }
+          else val = fv.value;
+        }
 
-        return val === this.activeSlice!.value;
+        if (this.activeSlice!.value === null) {
+          // For null slice value, show items that have no value for this field
+          if (dataType === 'assignees' || dataType === 'labels') {
+            return !val || (Array.isArray(val) && val.length === 0);
+          } else {
+            return val === null || val === undefined;
+          }
+        }
+        if (dataType === 'assignees' || dataType === 'labels') {
+          if (!Array.isArray(val)) return false;
+          if (dataType === 'assignees') {
+            // For assignees, val is array of objects, slice value is object
+            return val.some((assignee: any) => 
+              assignee && (assignee.login === this.activeSlice!.value?.login || assignee.id === this.activeSlice!.value?.id)
+            );
+          } else if (dataType === 'labels') {
+            // For labels, val is array of objects, slice value is string (name)
+            return val.some((label: any) => 
+              label && (label.name === this.activeSlice!.value || label.id === this.activeSlice!.value)
+            );
+          }
+        } else {
+          return val === this.activeSlice!.value;
+        }
       });
     }
 
@@ -357,13 +464,13 @@ export class ProjectTable {
         this.options.projectId &&
         this.options.viewKey
         ? (itemId: string, fieldId: string, value: any) =>
-            this.options.onFieldUpdate!({
-              itemId,
-              fieldId,
-              value,
-              projectId: this.options.projectId as string,
-              viewKey: this.options.viewKey as string,
-            })
+          this.options.onFieldUpdate!({
+            itemId,
+            fieldId,
+            value,
+            projectId: this.options.projectId as string,
+            viewKey: this.options.viewKey as string,
+          })
         : undefined,
     );
 
@@ -383,7 +490,7 @@ export class ProjectTable {
     table.appendChild(tbody);
   }
 
-  private getGroupingField() {
+  public getGroupingField() {
     // Logic to determine grouping field from options or view details
     // Passed via options.groupingFieldName or similar
     if (this.options.groupingFieldName) {
@@ -391,7 +498,7 @@ export class ProjectTable {
         (f) =>
           (f.name &&
             f.name.toLowerCase() ===
-              this.options.groupingFieldName?.toLowerCase()) ||
+            this.options.groupingFieldName?.toLowerCase()) ||
           (f.id && f.id === this.options.groupingFieldName),
       );
     }
@@ -504,7 +611,8 @@ export class ProjectTable {
   ) {
     // Group items
     const groups = GroupDataService.groupItems(items, groupingField);
-    const groupRenderer = new GroupRenderer(this.fields, this.items);
+    const viewDivisors = (this.options && this.options.viewKey && (window as any).__viewStates) ? (window as any).__viewStates[this.options.viewKey]?.groupDivisors : undefined;
+    const groupRenderer = new GroupRenderer(this.fields, this.items, viewDivisors);
 
     for (const group of groups) {
       groupRenderer.renderGroup(tbody, group, groupingField, rowRenderer);
@@ -524,9 +632,10 @@ export class ProjectTable {
     }
 
     // Determine capabilities based on field type
-    const dataType = (field.dataType || "").toLowerCase();
+    const dataType = String(field.dataType || field.type || "").toLowerCase();
     // Mapping of GitHub ProjectV2 field data types to allowed operations
-    // Groupable: assignees, single_select, parent_issue, iteration, number, date, milestone, repository
+    // Groupable: assignees, single_select, parent_issue, iteration, number, date,
+    // milestone, repository, and text/string fields
     const groupableTypes = new Set([
       "assignees",
       "single_select",
@@ -536,6 +645,8 @@ export class ProjectTable {
       "date",
       "milestone",
       "repository",
+      "text",
+      "single_line_text",
     ]);
 
     // Sliceable: same as groupable, plus labels (multi-value) which can be sliced but not grouped
@@ -549,6 +660,8 @@ export class ProjectTable {
       "milestone",
       "repository",
       "labels",
+      "text",
+      "single_line_text",
     ]);
 
     const canGroup = groupableTypes.has(dataType);
@@ -604,7 +717,7 @@ export class ProjectTable {
       try {
         // Notify parent that grouping was cleared
         this.options.onGroupChange("");
-      } catch (e) {}
+      } catch (e) { }
     }
     this.render();
   }
@@ -771,7 +884,7 @@ export class ProjectTable {
       if (this.options.onGroupChange) {
         try {
           this.options.onGroupChange(field.name);
-        } catch (e) {}
+        } catch (e) { }
       }
     }
   }
@@ -850,7 +963,7 @@ export class ProjectTable {
         "hiddenFieldIds=",
         Array.from(this.hiddenFieldIds),
       );
-    } catch (e) {}
+    } catch (e) { }
     // If a parent callback is provided (e.g. tableViewFetcher managing Save/Discard),
     // notify it instead of immediately persisting to localStorage. This allows hide/unhide
     // to be treated as an unsaved view-level change which can be saved/discarded by the user.
@@ -862,10 +975,10 @@ export class ProjectTable {
       // Re-apply stored field order so the UI appears consistent after toggling
       try {
         this.applyFieldOrder();
-      } catch (e) {}
+      } catch (e) { }
       try {
         this.options.onHiddenFieldsChange(Array.from(this.hiddenFieldIds));
-      } catch (e) {}
+      } catch (e) { }
       this.render();
     } else {
       this.saveHiddenFields();
@@ -874,7 +987,7 @@ export class ProjectTable {
       );
       try {
         this.applyFieldOrder();
-      } catch (e) {}
+      } catch (e) { }
       this.render();
     }
   }
@@ -889,17 +1002,17 @@ export class ProjectTable {
         "hiddenFieldIds=",
         Array.from(this.hiddenFieldIds),
       );
-    } catch (e) {}
+    } catch (e) { }
     if (this.options.onHiddenFieldsChange) {
       this.fields = this.allFields.filter(
         (f) => !this.hiddenFieldIds.has(f.id),
       );
       try {
         this.applyFieldOrder();
-      } catch (e) {}
+      } catch (e) { }
       try {
         this.options.onHiddenFieldsChange(Array.from(this.hiddenFieldIds));
-      } catch (e) {}
+      } catch (e) { }
       this.render();
     } else {
       this.saveHiddenFields();
@@ -908,7 +1021,7 @@ export class ProjectTable {
       );
       try {
         this.applyFieldOrder();
-      } catch (e) {}
+      } catch (e) { }
       this.render();
     }
   }
@@ -952,7 +1065,7 @@ export class ProjectTable {
       const normalized = (arr || []).map((id: any) => String(id));
       try {
         console.debug("[ProjectTable] loadHiddenFields ->", normalized);
-      } catch (e) {}
+      } catch (e) { }
       return normalized;
     } catch (e) {
       return [];
@@ -966,7 +1079,7 @@ export class ProjectTable {
     const arr = Array.from(this.hiddenFieldIds).map((id) => String(id));
     try {
       console.debug("[ProjectTable] saveHiddenFields ->", arr);
-    } catch (e) {}
+    } catch (e) { }
     localStorage.setItem(key, JSON.stringify(arr));
   }
 
@@ -1046,7 +1159,7 @@ export class ProjectTable {
             (fv: any) =>
               String(fv.fieldId) === String(fieldId) ||
               fv.fieldName ===
-                this.fields.find((f) => String(f.id) === String(fieldId))?.name,
+              this.fields.find((f) => String(f.id) === String(fieldId))?.name,
           );
 
           if (fieldValue) {

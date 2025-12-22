@@ -193,7 +193,7 @@ export class SlicePanel {
   /**
    * Show dropdown menu to select a different field
    */
-  private showFieldDropdown(anchorButton: HTMLElement): void {
+  private showFieldDropdown(anchorButton: HTMLElement, anchorRectOverride?: DOMRect): void {
     // Get sliceable fields
     const sliceableTypes = new Set([
       "assignees",
@@ -205,6 +205,8 @@ export class SlicePanel {
       "milestone",
       "repository",
       "labels",
+      "text",
+      "single_line_text",
     ]);
 
     const sliceableFields = this.allFields.filter((f) => {
@@ -217,8 +219,16 @@ export class SlicePanel {
     // Create dropdown
     const dropdown = document.createElement("div");
     dropdown.style.position = "absolute";
-    dropdown.style.top = `${anchorButton.getBoundingClientRect().bottom + 4}px`;
-    dropdown.style.left = `${anchorButton.getBoundingClientRect().left}px`;
+    const rect = anchorRectOverride ? anchorRectOverride : anchorButton.getBoundingClientRect();
+    if (anchorRectOverride) {
+      // Accessed from ActiveTabMenu: position to the right
+      dropdown.style.top = `${rect.top}px`;
+      dropdown.style.left = `${rect.right + 4}px`;
+    } else {
+      // Accessed from sidepanel: position below
+      dropdown.style.top = `${rect.bottom + 4}px`;
+      dropdown.style.left = `${rect.left}px`;
+    }
     dropdown.style.minWidth = `${anchorButton.offsetWidth}px`;
     dropdown.style.background = "var(--vscode-dropdown-background)";
     dropdown.style.border = "1px solid var(--vscode-dropdown-border)";
@@ -232,6 +242,16 @@ export class SlicePanel {
       const item = document.createElement("div");
       item.style.display = "flex";
       item.style.alignItems = "center";
+
+      // Checkmark span (fixed width for alignment)
+      const checkSpan = document.createElement("span");
+      checkSpan.style.display = "inline-block";
+      checkSpan.style.width = "14px";
+      checkSpan.style.marginRight = "8px";
+      checkSpan.style.textAlign = "center";
+      checkSpan.textContent = field.id === this.field.id ? "✓" : "";
+      checkSpan.style.color = "var(--vscode-menu-selectionForeground)";
+      item.appendChild(checkSpan);
 
       // Icon for field type
       const iconSpan = document.createElement("span");
@@ -272,12 +292,28 @@ export class SlicePanel {
 
       item.addEventListener("click", () => {
         this.field = field;
-        dropdown.remove();
-        backdrop.remove();
+        // Update checkmarks and styles in the dropdown
+        const items = dropdown.querySelectorAll('div');
+        sliceableFields.forEach((f, idx) => {
+          const itemEl = items[idx] as HTMLElement;
+          if (!itemEl) return;
+          const checkSpanEl = itemEl.querySelector('span:first-child') as HTMLElement;
+          if (f.id === this.field.id) {
+            checkSpanEl.textContent = '✓';
+            itemEl.style.background = 'var(--vscode-list-activeSelectionBackground)';
+            itemEl.style.color = 'var(--vscode-list-activeSelectionForeground)';
+          } else {
+            checkSpanEl.textContent = '';
+            itemEl.style.background = 'transparent';
+            itemEl.style.color = 'var(--vscode-dropdown-foreground)';
+          }
+        });
         this.render();
         if (this.onFieldChangeCallback) {
           this.onFieldChangeCallback(field);
         }
+        // Refresh the menu info
+        try { if ((window as any).__sliceMenuRefresh) (window as any).__sliceMenuRefresh(); } catch (e) { }
       });
 
       dropdown.appendChild(item);
@@ -299,6 +335,20 @@ export class SlicePanel {
 
     document.body.appendChild(backdrop);
     document.body.appendChild(dropdown);
+  }
+
+  /**
+   * Public helper: open the field dropdown. If `anchorRect` is provided the dropdown
+   * will be positioned using that rect (useful when opening from an external menu).
+   */
+  public openFieldDropdown(anchorRect?: DOMRect): void {
+    try {
+      if (!this.panelElement) return;
+      const btn = this.panelElement.querySelector('button');
+      if (!btn) return;
+      // call internal method with optional rect override
+      this.showFieldDropdown(btn as HTMLElement, anchorRect);
+    } catch (e) { }
   }
 
   /**
