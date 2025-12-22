@@ -89,6 +89,18 @@ html, body {
   color: var(--vscode-list-activeSelectionForeground);
 }
 
+/* Label inside tab to anchor menu button */
+.tab .tab-label { display: inline-block; vertical-align: middle; }
+
+/* Small button placed next to the tab label */
+.tab-menu-button { background: transparent; border: none; padding: 0 4px; cursor: pointer; color: inherit; }
+.tab-menu-button:hover { background: transparent; opacity: 0.9; }
+
+/* Inline menu styles used by the fallback script */
+.inline-tab-menu { font-family: var(--vscode-font-family); }
+.inline-tab-menu-item { white-space: nowrap; }
+.inline-tab-menu-item:hover { }
+
 #tab-panels {
   flex: 1;
   overflow: auto;
@@ -314,8 +326,29 @@ export function getInlineScript(nonce: string, projectData: any): string {
 
         tabEl.appendChild(iconWrapper);
       }
-      const labelNode = document.createTextNode(tab.label);
-      tabEl.appendChild(labelNode);
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'tab-label';
+      labelSpan.textContent = tab.label;
+      tabEl.appendChild(labelSpan);
+
+      // For view tabs we mark the element with the layout so the client-side
+      // initializer can attach the ActiveTabMenu component. The client bundle
+      // provides the interactive behavior to avoid embedding heavy logic here.
+      if (tab.key) {
+        let layout = 'overview';
+        if (tab.key && String(tab.key).startsWith('view-')) {
+          layout = tab.layout || 'table';
+        }
+        if (layout === 'table' || layout === 'board' || layout === 'roadmap' || layout === 'overview') {
+          tabEl.setAttribute('data-layout', layout);
+        }
+      }
+
+      // Expose view key on the tab element so fetchers and client code can
+      // locate the corresponding tab for wiring view-specific APIs.
+      try {
+        tabEl.setAttribute('data-viewkey', String(tab.key));
+      } catch (e) {}
       tabsContainer.appendChild(tabEl);
 
       const panel = document.createElement('div');
