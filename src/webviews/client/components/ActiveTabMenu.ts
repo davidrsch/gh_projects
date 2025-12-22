@@ -187,6 +187,109 @@ export class ActiveTabMenu {
   }
 
   private buildMenu(container: HTMLElement, items: MenuItem[]) {
+    // (removed top separator - not needed visually)
+
+    // If this menu is attached to a view tab, render a compact view-generator selector
+    try {
+      const tabEl = this.anchorElement && this.anchorElement.parentElement ? (this.anchorElement.parentElement as HTMLElement) : null;
+      const viewKey = tabEl ? tabEl.getAttribute('data-viewkey') : null;
+      if (viewKey) {
+        const sel = document.createElement('div');
+        sel.style.display = 'flex';
+        sel.style.gap = '8px';
+        sel.style.padding = '6px 12px';
+        sel.style.justifyContent = 'center';
+        sel.style.alignItems = 'center';
+
+        const currentLayout = tabEl ? tabEl.getAttribute('data-layout') : null;
+
+        const makeOption = (layout: string, icon: string, label: string) => {
+          const opt = document.createElement('div');
+          opt.style.display = 'inline-flex';
+          opt.style.alignItems = 'center';
+          opt.style.gap = '8px';
+          opt.style.padding = '6px 10px';
+          opt.style.borderRadius = '6px';
+          opt.style.cursor = 'pointer';
+          opt.style.fontWeight = '500';
+          opt.style.color = 'var(--vscode-menu-foreground)';
+          // If this option matches the current layout, mark it with the same
+          // background used by table/column headers for visual consistency.
+          if (currentLayout && currentLayout === layout) {
+            opt.style.background = 'var(--vscode-sideBar-background)';
+            opt.style.color = 'var(--vscode-foreground)';
+            opt.style.fontWeight = '600';
+          }
+          opt.onmouseenter = () => { opt.style.background = 'var(--vscode-menu-selectionBackground)'; opt.style.color = 'var(--vscode-menu-selectionForeground)'; };
+          opt.onmouseleave = () => { opt.style.background = 'transparent'; opt.style.color = 'var(--vscode-menu-foreground)'; };
+
+          const iconSpan = document.createElement('span');
+          iconSpan.style.display = 'inline-flex';
+          iconSpan.style.alignItems = 'center';
+          iconSpan.style.justifyContent = 'center';
+          iconSpan.style.width = '16px';
+          iconSpan.style.height = '16px';
+          iconSpan.innerHTML = (window as any).getIconSvg ? (window as any).getIconSvg(icon) : '';
+          try { iconSpan.querySelectorAll && iconSpan.querySelectorAll('svg').forEach((s: any) => s.setAttribute('fill', 'currentColor')); } catch (e) { }
+
+          const lbl = document.createElement('span');
+          lbl.style.fontSize = '13px';
+          lbl.textContent = label;
+
+          opt.appendChild(iconSpan);
+          opt.appendChild(lbl);
+
+          opt.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            try {
+              // Update in-memory project view layout so the inline showTab logic picks it up
+              try {
+                const pd = (window as any).__PROJECT_DATA__ || (window as any).__project_data__;
+                if (pd && Array.isArray(pd.views)) {
+                  const idx = parseInt(String(viewKey).split('-')[1]);
+                  if (!isNaN(idx) && pd.views[idx]) pd.views[idx].layout = layout;
+                }
+              } catch (e) { }
+
+              // Update the tab DOM attribute/icon and re-click the tab to re-render
+              try {
+                if (tabEl) {
+                  tabEl.setAttribute('data-layout', layout);
+                  const iconWrapper = tabEl.querySelector('.tab-icon');
+                  if (iconWrapper) {
+                    const iconName = layout === 'table' ? 'table' : (layout === 'board' ? 'project' : 'roadmap');
+                    iconWrapper.innerHTML = (window as any).getIconSvg ? (window as any).getIconSvg(iconName) : '';
+                  }
+                  // Trigger a click to cause the tab's fetcher to run (inline script showTab handler)
+                  try { (tabEl as HTMLElement).click(); } catch (e) { }
+                }
+              } catch (e) { }
+
+              // Close the ActiveTabMenu after changing
+              try { this.hide(); } catch (e) { }
+            } catch (e) { }
+          });
+
+          return opt;
+        };
+
+        sel.appendChild(makeOption('table', 'table', 'Table'));
+        sel.appendChild(makeOption('board', 'project', 'Board'));
+        sel.appendChild(makeOption('roadmap', 'roadmap', 'Roadmap'));
+
+        container.appendChild(sel);
+      }
+    } catch (e) { }
+
+    // Add a bottom separator after selector / before actual items
+    try {
+      const midLine = document.createElement('div');
+      midLine.style.height = '1px';
+      midLine.style.background = 'var(--vscode-panel-border)';
+      midLine.style.margin = '6px 0';
+      container.appendChild(midLine);
+    } catch (e) { }
+
     items.forEach((item) => {
       const row = document.createElement("div");
       row.className = "active-tab-menu-item";
