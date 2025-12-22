@@ -65,6 +65,8 @@ export class GroupDataService {
         });
       }
 
+      
+
       return groups.filter((g: any) => g.items.length > 0);
     }
 
@@ -134,9 +136,22 @@ export class GroupDataService {
         return;
       }
 
-      const key = String(val);
+      // Normalize string values for grouping to avoid excessive fragmentation
+      let displayVal: any = val;
+      if (typeof val === "string") {
+        // Trim and use first line to represent multi-line text fields
+        try {
+          displayVal = String(val).trim();
+          const lines = displayVal.split(/\r?\n/);
+          if (lines.length > 0) displayVal = lines[0].trim();
+          // Limit length for display/key purposes
+          if (displayVal.length > 120) displayVal = displayVal.slice(0, 120);
+        } catch (e) {}
+      }
+
+      const key = String(typeof displayVal === "string" ? displayVal.toLowerCase() : displayVal);
       if (!map.has(key)) {
-        map.set(key, { option: { id: key, name: key, title: key }, items: [] });
+        map.set(key, { option: { id: key, name: String(displayVal), title: String(displayVal) }, items: [] });
       }
       map.get(key)!.items.push({ item, index });
     });
@@ -148,7 +163,7 @@ export class GroupDataService {
         items: unassignedFallback,
       });
     }
-
+    
     return groupsArr;
   }
 }
