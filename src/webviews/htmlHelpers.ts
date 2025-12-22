@@ -93,32 +93,8 @@ html, body {
 .tab .tab-label { display: inline-block; vertical-align: middle; }
 
 /* Small button placed next to the tab label */
-.tab-menu-button {
-  background: transparent;
-  border: none;
-  padding: 2px 4px;
-  cursor: pointer;
-  color: var(--vscode-foreground);
-  opacity: 0.6;
-  font-size: 14px;
-  line-height: 1;
-  border-radius: 3px;
-  margin-left: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-}
-
-.tab-menu-button:hover {
-  background: var(--vscode-toolbar-hoverBackground);
-  opacity: 1;
-}
-
-.tab-menu-button:active {
-  background: var(--vscode-toolbar-activeBackground);
-}
+.tab-menu-button { background: transparent; border: none; padding: 0 4px; cursor: pointer; color: inherit; }
+.tab-menu-button:hover { background: transparent; opacity: 0.9; }
 
 /* Inline menu styles used by the fallback script */
 .inline-tab-menu { font-family: var(--vscode-font-family); }
@@ -358,9 +334,12 @@ export function getInlineScript(nonce: string, projectData: any): string {
       // For view tabs we mark the element with the layout so the client-side
       // initializer can attach the ActiveTabMenu component. The client bundle
       // provides the interactive behavior to avoid embedding heavy logic here.
-      if (tab.key && String(tab.key).startsWith('view-')) {
-        const layout = tab.layout || 'table';
-        if (layout === 'table' || layout === 'board' || layout === 'roadmap') {
+      if (tab.key) {
+        let layout = 'overview';
+        if (tab.key && String(tab.key).startsWith('view-')) {
+          layout = tab.layout || 'table';
+        }
+        if (layout === 'table' || layout === 'board' || layout === 'roadmap' || layout === 'overview') {
           tabEl.setAttribute('data-layout', layout);
         }
       }
