@@ -89,6 +89,42 @@ html, body {
   color: var(--vscode-list-activeSelectionForeground);
 }
 
+/* Label inside tab to anchor menu button */
+.tab .tab-label { display: inline-block; vertical-align: middle; }
+
+/* Small button placed next to the tab label */
+.tab-menu-button {
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  color: var(--vscode-foreground);
+  opacity: 0.6;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 3px;
+  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.tab-menu-button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  opacity: 1;
+}
+
+.tab-menu-button:active {
+  background: var(--vscode-toolbar-activeBackground);
+}
+
+/* Inline menu styles used by the fallback script */
+.inline-tab-menu { font-family: var(--vscode-font-family); }
+.inline-tab-menu-item { white-space: nowrap; }
+.inline-tab-menu-item:hover { }
+
 #tab-panels {
   flex: 1;
   overflow: auto;
@@ -314,8 +350,26 @@ export function getInlineScript(nonce: string, projectData: any): string {
 
         tabEl.appendChild(iconWrapper);
       }
-      const labelNode = document.createTextNode(tab.label);
-      tabEl.appendChild(labelNode);
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'tab-label';
+      labelSpan.textContent = tab.label;
+      tabEl.appendChild(labelSpan);
+
+      // For view tabs we mark the element with the layout so the client-side
+      // initializer can attach the ActiveTabMenu component. The client bundle
+      // provides the interactive behavior to avoid embedding heavy logic here.
+      if (tab.key && String(tab.key).startsWith('view-')) {
+        const layout = tab.layout || 'table';
+        if (layout === 'table' || layout === 'board' || layout === 'roadmap') {
+          tabEl.setAttribute('data-layout', layout);
+        }
+      }
+
+      // Expose view key on the tab element so fetchers and client code can
+      // locate the corresponding tab for wiring view-specific APIs.
+      try {
+        tabEl.setAttribute('data-viewkey', String(tab.key));
+      } catch (e) {}
       tabsContainer.appendChild(tabEl);
 
       const panel = document.createElement('div');
